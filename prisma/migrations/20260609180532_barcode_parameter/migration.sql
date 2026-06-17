@@ -1,0 +1,47 @@
+-- CreateTable
+CREATE TABLE "TBLBARCODETYPE" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "code" VARCHAR(20) NOT NULL,
+    "name" VARCHAR(100),
+    "parseScript" TEXT,
+    "isProductionBarcode" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLBARCODETYPE_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPARAMETER" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "code" VARCHAR(100) NOT NULL,
+    "name" VARCHAR(200),
+    "value" VARCHAR(510),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPARAMETER_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "TBLBARCODETYPE_companyId_idx" ON "TBLBARCODETYPE"("companyId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TBLBARCODETYPE_companyId_code_key" ON "TBLBARCODETYPE"("companyId", "code");
+
+-- CreateIndex
+CREATE INDEX "TBLPARAMETER_companyId_idx" ON "TBLPARAMETER"("companyId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TBLPARAMETER_companyId_code_key" ON "TBLPARAMETER"("companyId", "code");
+
+-- AddForeignKey
+ALTER TABLE "TBLBARCODETYPE" ADD CONSTRAINT "TBLBARCODETYPE_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "TBLCOMPANY"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TBLPARAMETER" ADD CONSTRAINT "TBLPARAMETER_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "TBLCOMPANY"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+

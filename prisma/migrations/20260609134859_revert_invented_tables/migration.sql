@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "TBLPRODUCT" DROP COLUMN "costPrice";
+
+-- AlterTable
+ALTER TABLE "TBLSTOCK" DROP COLUMN "unitCost";
+
+-- DropTable
+DROP TABLE "TBLLOT";
+
+-- DropTable
+DROP TABLE "TBLSERIAL";
+
+-- DropTable
+DROP TABLE "TBLSTOCKLEDGER";
+

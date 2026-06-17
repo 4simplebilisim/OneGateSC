@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OneGate — Durum & Akış Panosu</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root{
+    --cyan:#44D4E3; --blue:#4E86FF; --violet:#9B5CF6; --ink:#1B2138;
+    --grad:linear-gradient(158deg,#44d4e3 0%,#4e86ff 47%,#9b5cf6 100%);
+    --done:#22b07d; --partial:#eab308; --todo:#c2c8d6; --bg:#f6f8fc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--grad);color:#fff;padding:28px 32px;box-shadow:0 4px 20px rgba(78,134,255,.25)}
+  header h1{margin:0;font-size:26px;font-weight:800;letter-spacing:.3px}
+  header p{margin:6px 0 0;opacity:.95;font-size:14px}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 32px 60px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin:18px 0}
+  .stat{background:#fff;border-radius:14px;padding:16px 18px;box-shadow:0 2px 10px rgba(27,33,56,.06);border:1px solid #eef1f7}
+  .stat .n{font-size:30px;font-weight:800;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;line-height:1}
+  .stat .l{font-size:12px;color:#5a6378;margin-top:6px}
+  h2{margin:34px 0 14px;font-size:19px;display:flex;align-items:center;gap:8px}
+  h2::before{content:"";width:5px;height:20px;border-radius:3px;background:var(--grad)}
+  .card{background:#fff;border-radius:16px;padding:22px;box-shadow:0 2px 14px rgba(27,33,56,.07);border:1px solid #eef1f7;overflow:auto}
+  .mermaid{display:flex;justify-content:center}
+  .bars{display:grid;grid-template-columns:1fr 1fr;gap:10px 26px}
+  @media(max-width:760px){.bars{grid-template-columns:1fr}}
+  .bar{margin:7px 0}
+  .bar .top{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:5px}
+  .bar .top b{font-weight:600}
+  .bar .track{height:11px;border-radius:7px;background:#eef1f7;overflow:hidden}
+  .bar .fill{height:100%;border-radius:7px}
+  .f-done{background:linear-gradient(90deg,#44d4e3,#22b07d)}
+  .f-part{background:linear-gradient(90deg,#4e86ff,#eab308)}
+  .f-todo{background:#c2c8d6}
+  .tag{font-size:11px;padding:2px 8px;border-radius:20px;color:#fff;font-weight:600}
+  .t-done{background:var(--done)} .t-part{background:var(--partial)} .t-todo{background:#8b93a7}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid #eef1f7}
+  th{color:#5a6378;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+  .legend{display:flex;gap:18px;font-size:12.5px;color:#5a6378;margin:10px 2px 0;flex-wrap:wrap}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+  .next li{margin:7px 0}
+  .big{font-size:15px;line-height:1.6}
+  .pill{display:inline-block;background:var(--grad);color:#fff;font-weight:700;border-radius:20px;padding:3px 14px;font-size:13px}
+  footer{color:#8b93a7;font-size:12px;text-align:center;margin-top:30px}
+</style>
+</head>
+<body>
+<header>
+  <h1>OneGate — Durum &amp; Akış Panosu</h1>
+  <p>WMS · Procurement · Sales platformu — operasyonel akış uçtan uca çalışıyor · 2026-06-09</p>
+</header>
+<div class="wrap">
+
+  <div class="grid">
+    <div class="stat"><div class="n">3</div><div class="l">Aktif modül / şema<br>(wms · procurement · sales)</div></div>
+    <div class="stat"><div class="n">22</div><div class="l">Domain tablo<br>(18 · 2 · 2)</div></div>
+    <div class="stat"><div class="n">45</div><div class="l">Foreign key</div></div>
+    <div class="stat"><div class="n">7</div><div class="l">Migration</div></div>
+    <div class="stat"><div class="n">~48</div><div class="l">API endpoint</div></div>
+    <div class="stat"><div class="n">34/34</div><div class="l">Smoke + 4 E2E paketi</div></div>
+  </div>
+
+  <h2>Operasyonel Akış (al → stok → sat)</h2>
+  <div class="card">
+    <pre class="mermaid">
+flowchart LR
+  SUP["🏭 Tedarikçi"] --> PO1
+  subgraph PROC["🛒 PROCUREMENT · satınalma"]
+    direction TB
+    PO1["PO DRAFT"] --> PO2["SUBMITTED"] --> PO3["APPROVED"] --> PO4[["receive · mal kabul"]]
+  end
+  PO4 ==>|"INBOUND ▲ stok artar"| STK
+  subgraph WMS["📦 WMS · stok çekirdeği"]
+    direction TB
+    STK[("TBLSTOCK<br/>lot · batch · seri · FEFO<br/>mainQty / reservedQty")]
+    MOV{{"Hareket motoru<br/>giriş · çıkış · transfer · ters-kayıt"}}
+    STK --- MOV
+  end
+  STK ==>|"OUTBOUND ▼ stok düşer"| SO4
+  subgraph SALES["💰 SALES · satış"]
+    direction TB
+    SO1["SO DRAFT"] --> SO2["SUBMITTED"] --> SO3["APPROVED"] --> SO4[["ship · sevk"]]
+  end
+  SO4 --> CUST["🏪 Müşteri"]
+
+  classDef done fill:#e7f8f1,stroke:#22b07d,stroke-width:2px,color:#0f5132;
+  classDef core fill:#eaf1ff,stroke:#4e86ff,stroke-width:2px,color:#1b2138;
+  class PO1,PO2,PO3,PO4,SO1,SO2,SO3,SO4 done;
+  class STK,MOV core;
+    </pre>
+    <div class="legend">
+      <span><span class="dot" style="background:#22b07d"></span>Tamamlandı &amp; E2E doğrulandı</span>
+      <span><span class="dot" style="background:#4e86ff"></span>WMS çekirdek motor</span>
+      <span><b>==&gt;</b> stok hareketi (transaction'lı)</span>
+    </div>
+  </div>
+
+  <h2>Veri Modeli Haritası</h2>
+  <div class="card">
+    <pre class="mermaid">
+flowchart TB
+  subgraph T["🏢 TENANT + AUTH"]
+    CO["TBLCOMPANY"]; US["TBLUSER<br/>+isSuperAdmin"]; RO["TBLROLE / USERROLE"]
+  end
+  subgraph M["📋 WMS MASTER"]
+    WH["WAREHOUSE"]; AR["AREA"]; LO["LOCATION (ağaç)"]; UN["UNIT"]; PU["PRODUCTUNIT"]; PR["PRODUCT"]; ST["STATUS"]; PT["PALLETTYPE"]; PA["PALLET"]; BP["BUSINESSPARTNER<br/>(cari)"]; OT["OPERATIONTYPE"]
+  end
+  subgraph S["📦 STOK + HAREKET"]
+    STK["TBLSTOCK"]; DO["DOCUMENT"]; DL["DOCUMENTLINE<br/>kaynak→hedef"]
+  end
+  subgraph P["🛒 PROCUREMENT"]
+    POH["PURCHASEORDER<br/>+finans"]; POL["PURCHASEORDERLINE"]
+  end
+  subgraph SL["💰 SALES"]
+    SOH["SALESORDER<br/>+finans"]; SOL["SALESORDERLINE"]
+  end
+  M --> S
+  P -.gevşek bağ.-> M
+  SL -.gevşek bağ.-> M
+  P ==>|receive| S
+  SL ==>|ship| S
+
+  classDef ok fill:#e7f8f1,stroke:#22b07d,color:#0f5132;
+  class T,M,S,P,SL ok;
+    </pre>
+    <p style="font-size:13px;color:#5a6378;margin:6px 2px 0">Tüm 22 tablo kuruldu (yeşil). Procurement/Sales, WMS'e <b>gevşek bağlı</b> (id ile, cross-schema FK yok) — modüller ayrı deploy edilebilir.</p>
+  </div>
+
+  <h2>Tamamlanma — Modül / Yetenek</h2>
+  <div class="card">
+    <div class="bars">
+      <div class="bar"><div class="top"><b>Marka / Altyapı</b><span>100%</span></div><div class="track"><div class="fill f-done" style="width:100%"></div></div></div>
+      <div class="bar"><div class="top"><b>WMS — Master data</b><span>95%</span></div><div class="track"><div class="fill f-done" style="width:95%"></div></div></div>
+      <div class="bar"><div class="top"><b>WMS — Stok (lot/FEFO/rezerve)</b><span>90%</span></div><div class="track"><div class="fill f-done" style="width:90%"></div></div></div>
+      <div class="bar"><div class="top"><b>WMS — Hareket motoru</b><span>90%</span></div><div class="track"><div class="fill f-done" style="width:90%"></div></div></div>
+      <div class="bar"><div class="top"><b>Cari (müşteri/tedarikçi)</b><span>80%</span></div><div class="track"><div class="fill f-done" style="width:80%"></div></div></div>
+      <div class="bar"><div class="top"><b>Sipariş finansı (iskonto/vergi/döviz)</b><span>75%</span></div><div class="track"><div class="fill f-done" style="width:75%"></div></div></div>
+      <div class="bar"><div class="top"><b>Procurement (sipariş→mal kabul)</b><span>70%</span></div><div class="track"><div class="fill f-done" style="width:70%"></div></div></div>
+      <div class="bar"><div class="top"><b>Sales (sipariş→allocate→sevk)</b><span>85%</span></div><div class="track"><div class="fill f-done" style="width:85%"></div></div></div>
+      <div class="bar"><div class="top"><b>Inventory (min/max · MRP · →PO)</b><span>70%</span></div><div class="track"><div class="fill f-done" style="width:70%"></div></div></div>
+      <div class="bar"><div class="top"><b>Auth / Tenant / Super-admin</b><span>70%</span></div><div class="track"><div class="fill f-done" style="width:70%"></div></div></div>
+      <div class="bar"><div class="top"><b>RBAC (rol yetki + kullanıcı CRUD)</b><span>75%</span></div><div class="track"><div class="fill f-done" style="width:75%"></div></div></div>
+      <div class="bar"><div class="top"><b>Logistics (sevkiyat + sales bağ)</b><span>80%</span></div><div class="track"><div class="fill f-done" style="width:80%"></div></div></div>
+      <div class="bar"><div class="top"><b>Sayım (stocktake)</b><span>65%</span></div><div class="track"><div class="fill f-done" style="width:65%"></div></div></div>
+      <div class="bar"><div class="top"><b>Kalite (quality control)</b><span>65%</span></div><div class="track"><div class="fill f-done" style="width:65%"></div></div></div>
+      <div class="bar"><div class="top"><b>Fatura / Muhasebe (PO/SO→fatura→tahsilat)</b><span>65%</span></div><div class="track"><div class="fill f-done" style="width:65%"></div></div></div>
+      <div class="bar"><div class="top"><b>Sayım / Kalite / İş emri</b><span>0%</span></div><div class="track"><div class="fill f-todo" style="width:3%"></div></div></div>
+      <div class="bar"><div class="top"><b>AI modülü</b><span>0%</span></div><div class="track"><div class="fill f-todo" style="width:3%"></div></div></div>
+    </div>
+  </div>
+
+  <h2>Genel Tamamlanma Yüzdeleri</h2>
+  <div class="card">
+    <table>
+      <tr><th>Boyut</th><th>Durum</th><th style="text-align:right">%</th></tr>
+      <tr><td><b>Çekirdek operasyonel akış</b> (al→stok→sat, uçtan uca)</td><td><span class="tag t-done">FONKSİYONEL</span> E2E kanıtlı</td><td style="text-align:right"><b>~100%</b></td></tr>
+      <tr><td><b>Aktif 3 modülün olgunluğu</b> (wms+procurement+sales)</td><td><span class="tag t-done">İLERİ</span></td><td style="text-align:right"><b>~78%</b></td></tr>
+      <tr><td><b>Tablolar</b> — aktif modül çekirdeği (22 / ~30)</td><td><span class="tag t-done">İYİ</span></td><td style="text-align:right"><b>~73%</b></td></tr>
+      <tr><td><b>Tablolar</b> — tüm platform vizyonu (22 / ~55)</td><td><span class="tag t-part">DEVAM</span></td><td style="text-align:right"><b>~40%</b></td></tr>
+      <tr><td><b>İleri akışlar</b> (rezervasyon-tahsis, iade, sayım, fatura, RBAC)</td><td><span class="tag t-part">BAŞLANGIÇ</span></td><td style="text-align:right"><b>~25%</b></td></tr>
+      <tr><td><b>Tüm platform vizyonu</b> (manifest 5 modül + AI + ileri)</td><td><span class="tag t-part">DEVAM</span></td><td style="text-align:right"><b>~40%</b></td></tr>
+    </table>
+    <p style="font-size:12.5px;color:#5a6378;margin-top:12px">Not: Legacy "SB" WMS 460 tabloydu; OneGate <b>kasıtlı sade yeniden tasarım</b> — sayıca değil <b>fonksiyonel omurga</b> hedefleniyor. 22 tablo legacy'nin en merkezi entity'lerini (birim·ürün·lokasyon·stok·belge·operasyon·palet·statü·cari) kapsıyor.</p>
+  </div>
+
+  <h2>Neredeyiz &amp; Sonraki Adım</h2>
+  <div class="card big">
+    <p><span class="pill">Neredeyiz</span> &nbsp; Satın al → mal kabul → <b>stok</b> → satış → sevk zinciri <b>uçtan uca çalışıyor ve test edildi</b>. Çok-kiracılı, lot/batch/seri/FEFO stok, kaynak→hedef hareket motoru (ters-kayıt dahil), rezervasyon, sipariş finansı ve super-admin tenant kilidi yerinde. Platform <b>operasyonel olarak ayakta.</b></p>
+    <p style="margin-top:14px"><span class="pill">Sonraki adım</span></p>
+    <ol class="next">
+      <li><b>Inventory modülü</b> — min/max stok seviyeleri + MRP (otomatik satınalma önerisi). Stok ve procurement'ı birbirine bağlar.</li>
+      <li><b>Satış sevkini rezervasyon/tahsisle entegre et</b> — order → reserve → pick → ship zinciri (rezervasyon motoru zaten hazır).</li>
+      <li><b>RBAC</b> — rol-bazlı yetki enforcement (ADMIN/OPERATOR/VIEWER fiilen kısıtlasın) + kullanıcı CRUD.</li>
+      <li><b>Logistics modülü</b> — sevkiyat / rota / araç yönetimi (sales sevkine bağlanır).</li>
+      <li><b>Fatura / muhasebe</b> — PO/SO finansından fatura üretimi.</li>
+    </ol>
+  </div>
+
+  <footer>OneGate — /yap orkestratörü · agent-ofis · diagram: Mermaid (internet yoksa metin/çubuklar yine görünür)</footer>
+</div>
+<script>mermaid.initialize({startOnLoad:true,theme:'base',themeVariables:{fontFamily:'Segoe UI,sans-serif',fontSize:'13px'}});</script>
+</body>
+</html>

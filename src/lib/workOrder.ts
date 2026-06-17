@@ -1,0 +1,122 @@
+import { prisma } from './prisma.js'
+import { completeDocument, MovementError } from './movement.js'
+import { docStatusId, DOC_STATUS } from './documentStatus.js'
+
+export class WorkOrderError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'WorkOrderError'
+  }
+}
+
+/** Kullanıcı ata (tamamlanmamış/iptal değil). */
+export async function assignWorkOrder(id: number, assignedToUserId: number) {
+  const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id } })
+  if (wo.status === 'COMPLETED' || wo.status === 'CANCELLED') {
+    throw new WorkOrderError(`Kapalı iş emrine atama yapılamaz (${wo.status})`)
+  }
+  return prisma.tBLWORKORDER.update({ where: { id }, data: { assignedToUserId } })
+}
+
+/** PLANNED → IN_PROGRESS (atanmış olmalı). */
+export async function startWorkOrder(id: number, now: Date) {
+  const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id } })
+  if (wo.status !== 'PLANNED') throw new WorkOrderError(`Sadece PLANNED iş emri başlatılır (mevcut: ${wo.status})`)
+  if (!wo.assignedToUserId) throw new WorkOrderError('Başlatmadan önce kullanıcı atayın')
+  return prisma.tBLWORKORDER.update({ where: { id }, data: { status: 'IN_PROGRESS', startDate: now } })
+}
+
+/** Satıra toplanan miktarı yaz (iş emri IN_PROGRESS olmalı). */
+export async function reportLine(workOrderId: number, lineId: number, collectedQty: number) {
+  const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id: workOrderId } })
+  if (wo.status !== 'IN_PROGRESS') throw new WorkOrderError(`İş emri devam etmiyor (${wo.status})`)
+  const line = await prisma.tBLWORKORDERLINE.findFirst({ where: { id: lineId, workOrderId } })
+  if (!line) throw new WorkOrderError('İş emri satırı bulunamadı')
+  return prisma.tBLWORKORDERLINE.update({ where: { id: lineId }, data: { collectedQty } })
+}
+
+/**
+ * IN_PROGRESS → COMPLETED.
+ * Köprü: toplanan miktarı (collectedQty) olan + kaynak&hedef lokasyon/statü tanımlı
+ * satırlar için INTERNAL hareket belgesi üretip stoğu hareket ettirir (movement engine).
+ * Hareket başarısız olursa (yetersiz stok vb.) iş emri IN_PROGRESS kalır.
+ */
+export async function completeWorkOrder(id: number, userId: number, now: Date) {
+  const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id }, include: { lines: true } })
+  if (wo.status !== 'IN_PROGRESS') throw new WorkOrderError(`Sadece IN_PROGRESS iş emri tamamlanır (mevcut: ${wo.status})`)
+
+  // Stok hareketine uygun satırlar (COUNT hareket üretmez)
+  const moveLines = wo.lines.filter(
+    (l) =>
+      wo.type !== 'COUNT' &&
+      l.collectedQty.greaterThan(0) &&
+      l.sourceLocationId != null &&
+      l.sourceStatusId != null &&
+      l.targetLocationId != null &&
+      l.targetStatusId != null,
+  )
+
+  let generatedDocumentId: number | null = null
+  if (moveLines.length > 0) {
+    const op = await prisma.tBLOPERATIONTYPE.findFirst({
+      where: { companyId: wo.companyId, direction: 'INTERNAL' },
+      orderBy: { code: 'asc' },
+    })
+    if (!op) throw new WorkOrderError('INTERNAL operasyon tipi (ör. TR) tanımlı değil — stok hareketi üretilemedi')
+
+    const doc = await prisma.tBLDOCUMENT.create({
+      data: {
+        companyId: wo.companyId,
+        documentNo: `WOTX-${wo.orderNo}-${now.getTime()}`,
+        operationTypeId: op.id,
+        warehouseId: wo.warehouseId,
+        createdById: userId,
+        status: 'CONFIRMED',
+        reasonId: moveLines[0]!.reasonId ?? undefined,
+        note: `İş emri ${wo.orderNo} otomatik stok hareketi`,
+        lines: {
+          create: moveLines.map((l, i) => ({
+            lineNo: i + 1,
+            productId: l.productId,
+            unitId: l.unitId,
+            quantity: l.collectedQty,
+            sourceLocationId: l.sourceLocationId,
+            sourceStatusId: l.sourceStatusId,
+            targetLocationId: l.targetLocationId,
+            targetStatusId: l.targetStatusId,
+            batchNo: l.batchNo,
+            serialNo: l.serialNo,
+            palletId: l.palletId,
+          })),
+        },
+      },
+    })
+
+    try {
+      await completeDocument(doc.id)
+    } catch (err) {
+      // Belgeyi temizle ki yarım CONFIRMED kayıt kalmasın; iş emri IN_PROGRESS kalır
+      await prisma.tBLDOCUMENT.delete({ where: { id: doc.id } }).catch(() => undefined)
+      if (err instanceof MovementError) throw new WorkOrderError(`Stok hareketi başarısız: ${err.message}`)
+      throw err
+    }
+    const onyId = await docStatusId(wo.companyId, DOC_STATUS.APPROVED)
+    if (onyId) await prisma.tBLDOCUMENT.update({ where: { id: doc.id }, data: { documentStatusId: onyId } })
+    generatedDocumentId = doc.id
+  }
+
+  const updated = await prisma.tBLWORKORDER.update({
+    where: { id },
+    data: { status: 'COMPLETED', endDate: now },
+    include: { lines: { orderBy: { lineNo: 'asc' } } },
+  })
+  return { ...updated, generatedDocumentId }
+}
+
+/** → CANCELLED (tamamlanmamış). */
+export async function cancelWorkOrder(id: number) {
+  const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id } })
+  if (wo.status === 'COMPLETED') throw new WorkOrderError('Tamamlanmış iş emri iptal edilemez')
+  if (wo.status === 'CANCELLED') throw new WorkOrderError('İş emri zaten iptal edilmiş')
+  return prisma.tBLWORKORDER.update({ where: { id }, data: { status: 'CANCELLED' } })
+}

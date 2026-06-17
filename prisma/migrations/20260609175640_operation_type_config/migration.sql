@@ -1,0 +1,35 @@
+-- CreateEnum
+CREATE TYPE "OperationDocumentType" AS ENUM ('STOCK_MOVEMENT', 'COUNT', 'PRODUCTION', 'ORDER', 'OTHER');
+
+-- AlterTable
+ALTER TABLE "TBLOPERATIONTYPE" ADD COLUMN     "approvedDocUpdate" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "batchAssignment" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "bulkSend" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "cancelLocationId" INTEGER,
+ADD COLUMN     "detailLocationToCoverage" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "documentType" "OperationDocumentType" NOT NULL DEFAULT 'STOCK_MOVEMENT',
+ADD COLUMN     "emailSend" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "equivalentApplication" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "groupSequenceId" INTEGER,
+ADD COLUMN     "grouping" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "integration" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "isControlled" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "logControl" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "logControlDays" INTEGER,
+ADD COLUMN     "logging" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "materialBasedCollection" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "materialBasedQtyEdit" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "operationSequenceId" INTEGER,
+ADD COLUMN     "originalQtyUpdate" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "palletBreaking" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "passiveProductUse" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "qualityControl" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "readBasedControl" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "readBasedInfoMessage" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "reasonInHeader" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "reasonRequired" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "reserveTransfer" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "reverseOperationTypeId" INTEGER,
+ADD COLUMN     "sameUsePallet" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "sameUseSerial" BOOLEAN NOT NULL DEFAULT false;
+

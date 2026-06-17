@@ -1,0 +1,11 @@
+-- CreateEnum
+CREATE TYPE "ControlMode" AS ENUM ('UNCONTROLLED', 'CONTROLLED', 'REFERENCE_CONTROLLED');
+
+-- AlterEnum
+ALTER TYPE "MovementDirection" ADD VALUE 'COUNT';
+
+-- AlterTable
+ALTER TABLE "TBLOPERATIONTYPE" DROP COLUMN "isControlled",
+ADD COLUMN     "controlMode" "ControlMode" NOT NULL DEFAULT 'UNCONTROLLED',
+ADD COLUMN     "facilityId" INTEGER;
+

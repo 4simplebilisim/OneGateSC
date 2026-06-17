@@ -1,0 +1,213 @@
+-- CreateTable
+CREATE TABLE "TBLREASONCATEGORY" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "code" VARCHAR(10) NOT NULL,
+    "name" VARCHAR(100),
+    "businessPartnerId" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLREASONCATEGORY_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLOPERATIONGROUPLINK" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "operationTypeId" INTEGER NOT NULL,
+    "operationGroupId" INTEGER NOT NULL,
+    "businessPartnerId" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLOPERATIONGROUPLINK_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLOPERATIONTYPETOLERANCE" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "operationTypeId" INTEGER,
+    "businessPartnerId" INTEGER,
+    "cariLinkType" INTEGER,
+    "cariLinkId" INTEGER,
+    "materialLinkType" INTEGER,
+    "materialLinkId" INTEGER,
+    "ignoreSplit" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLOPERATIONTYPETOLERANCE_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLOPERATIONTYPEFORBIDDENPRODUCT" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "operationTypeId" INTEGER NOT NULL,
+    "businessPartnerId" INTEGER,
+    "cariLinkType" INTEGER,
+    "cariLinkId" INTEGER,
+    "materialLinkType" INTEGER,
+    "materialLinkId" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLOPERATIONTYPEFORBIDDENPRODUCT_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLOPERATIONTYPECONVERSION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "operationTypeId" INTEGER NOT NULL,
+    "statusId" INTEGER,
+    "conversionCode" VARCHAR(10) NOT NULL,
+    "outgoing" BOOLEAN NOT NULL DEFAULT false,
+    "sourceLocLinkType" INTEGER,
+    "sourceLocLinkId" INTEGER,
+    "targetLocLinkType" INTEGER,
+    "targetLocLinkId" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLOPERATIONTYPECONVERSION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLSEQUENTIALOPERATION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "firstOperationId" INTEGER NOT NULL,
+    "secondOperationId" INTEGER NOT NULL,
+    "cariLinkType" INTEGER,
+    "cariLinkId" INTEGER,
+    "materialLinkType" INTEGER,
+    "materialLinkId" INTEGER,
+    "locationLinkType" INTEGER,
+    "locationLinkId" INTEGER,
+    "useInWorkOrder" BOOLEAN NOT NULL DEFAULT false,
+    "spName" VARCHAR(300),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLSEQUENTIALOPERATION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLAUTOREFERENCEDOCUMENT" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "sourcePartnerId" INTEGER NOT NULL,
+    "sourceOperationTypeId" INTEGER NOT NULL,
+    "sourceLocLinkType" INTEGER,
+    "sourceLocLinkId" INTEGER,
+    "targetPartnerId" INTEGER NOT NULL,
+    "targetOperationTypeId" INTEGER NOT NULL,
+    "targetLocLinkType" INTEGER,
+    "targetLocLinkId" INTEGER,
+    "facility" BOOLEAN NOT NULL DEFAULT false,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLAUTOREFERENCEDOCUMENT_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLOPERATIONTYPEBULKACTION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "operationTypeId" INTEGER NOT NULL,
+    "bulkActionType" INTEGER,
+    "description" VARCHAR(200),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLOPERATIONTYPEBULKACTION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPRODUCTADDITIONALGROUPLINK" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "productId" INTEGER NOT NULL,
+    "groupId" INTEGER NOT NULL,
+    "sortOrder" INTEGER NOT NULL DEFAULT 0,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPRODUCTADDITIONALGROUPLINK_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPRODUCTBASEDCOLLECTION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "businessPartnerId" INTEGER NOT NULL,
+    "sourceOperationTypeId" INTEGER NOT NULL,
+    "targetOperationTypeId" INTEGER NOT NULL,
+    "exemptLocations" VARCHAR(500),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPRODUCTBASEDCOLLECTION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLTRIPBASEDCOLLECTION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "businessPartnerId" INTEGER NOT NULL,
+    "sourceOperationTypeId" INTEGER NOT NULL,
+    "targetOperationTypeId" INTEGER NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLTRIPBASEDCOLLECTION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "TBLREASONCATEGORY_companyId_idx" ON "TBLREASONCATEGORY"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLOPERATIONGROUPLINK_companyId_idx" ON "TBLOPERATIONGROUPLINK"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLOPERATIONTYPETOLERANCE_companyId_idx" ON "TBLOPERATIONTYPETOLERANCE"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLOPERATIONTYPEFORBIDDENPRODUCT_companyId_idx" ON "TBLOPERATIONTYPEFORBIDDENPRODUCT"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLOPERATIONTYPECONVERSION_companyId_idx" ON "TBLOPERATIONTYPECONVERSION"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLSEQUENTIALOPERATION_companyId_idx" ON "TBLSEQUENTIALOPERATION"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLAUTOREFERENCEDOCUMENT_companyId_idx" ON "TBLAUTOREFERENCEDOCUMENT"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLOPERATIONTYPEBULKACTION_companyId_idx" ON "TBLOPERATIONTYPEBULKACTION"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLPRODUCTADDITIONALGROUPLINK_companyId_idx" ON "TBLPRODUCTADDITIONALGROUPLINK"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLPRODUCTBASEDCOLLECTION_companyId_idx" ON "TBLPRODUCTBASEDCOLLECTION"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLTRIPBASEDCOLLECTION_companyId_idx" ON "TBLTRIPBASEDCOLLECTION"("companyId");
+

@@ -1,0 +1,2639 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["wms", "procurement", "sales", "logistics", "finance"]
+}
+
+// ----------------------------------------------------------------------------
+// Tenant — çok-kiracılık kökü (legacy LNGDIST karşılığı, cari'den ayrıştırıldı)
+// ----------------------------------------------------------------------------
+
+model TBLCOMPANY {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @db.VarChar(40)
+  name      String   @db.VarChar(150)
+  taxNumber String?  @db.VarChar(20)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  warehouses       TBLWAREHOUSE[]
+  areas            TBLAREA[]
+  locations        TBLLOCATION[]
+  units            TBLUNIT[]
+  products         TBLPRODUCT[]
+  statuses         TBLSTATUS[]
+  palletTypes      TBLPALLETTYPE[]
+  pallets          TBLPALLET[]
+  stocks           TBLSTOCK[]
+  operationTypes   TBLOPERATIONTYPE[]
+  documents        TBLDOCUMENT[]
+  users            TBLUSER[]
+  businessPartners TBLBUSINESSPARTNER[]
+  inventoryRules   TBLINVENTORYRULE[]
+  productGroups    TBLPRODUCTGROUP[]
+  productTypes     TBLPRODUCTTYPE[]
+  productDetailTypes TBLPRODUCTDETAILTYPE[]
+  sequences        TBLSEQUENCE[]
+  reasons          TBLREASON[]
+  locationGroups   TBLLOCATIONGROUP[]
+  operationGroups  TBLOPERATIONGROUP[]
+  labelTypes          TBLLABELTYPE[]
+  productSubGroups    TBLPRODUCTSUBGROUP[]
+  workOrders          TBLWORKORDER[]
+  entryConditionTypes TBLENTRYCONDITIONTYPE[]
+  exitConditionTypes  TBLEXITCONDITIONTYPE[]
+  routingTypes        TBLROUTINGTYPE[]
+  routingRules        TBLROUTINGRULE[]
+  facilities          TBLFACILITY[]
+  regions             TBLREGION[]
+  partnerGroups       TBLPARTNERGROUP[]
+  locationCapacities  TBLLOCATIONCAPACITY[]
+  barcodeTypes        TBLBARCODETYPE[]
+  parameters          TBLPARAMETER[]
+  printers            TBLPRINTER[]
+  documentStatuses    TBLDOCUMENTSTATUS[]
+  documentStatusActions   TBLDOCUMENTSTATUSACTION[]
+  documentStatusCriteria  TBLDOCUMENTSTATUSCRITERIA[]
+  documentApprovalTypes   TBLDOCUMENTAPPROVALTYPE[]
+
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Auth — kullanıcı, rol, kullanıcı-rol bağlantısı (Faz 1'de global, tenant-bağımsız)
+// ----------------------------------------------------------------------------
+
+model TBLUSER {
+  id           Int       @id @default(autoincrement())
+  companyId    Int?
+  username     String    @unique @db.VarChar(50)
+  email        String    @unique @db.VarChar(150)
+  passwordHash String    @db.VarChar(255)
+  fullName     String    @db.VarChar(150)
+  isActive     Boolean   @default(true)
+  isSuperAdmin Boolean   @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company   TBLCOMPANY?   @relation(fields: [companyId], references: [id])
+  userRoles TBLUSERROLE[]
+  documents TBLDOCUMENT[] @relation("DocumentCreatedBy")
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLROLE {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(40)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles TBLUSERROLE[]
+
+  @@schema("wms")
+}
+
+model TBLUSERROLE {
+  userId     Int
+  roleId     Int
+  assignedAt DateTime @default(now())
+
+  user TBLUSER @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role TBLROLE @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Depo / alan / lokasyon (legacy DEPO, ALAN, LOKASYON)
+// ----------------------------------------------------------------------------
+
+model TBLWAREHOUSE {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  facilityId Int? // tesis (bizim eklediğimiz — legacy'de yok)
+  code       String   @db.VarChar(20)
+  name       String   @db.VarChar(100)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company        TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  facility       TBLFACILITY?       @relation(fields: [facilityId], references: [id])
+  areas          TBLAREA[]
+  locations      TBLLOCATION[]
+  documents      TBLDOCUMENT[]
+  inventoryRules TBLINVENTORYRULE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([facilityId])
+  @@schema("wms")
+}
+
+model TBLAREA {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  warehouseId Int
+  code        String   @db.VarChar(40)
+  name        String?  @db.VarChar(100)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  warehouse TBLWAREHOUSE  @relation(fields: [warehouseId], references: [id])
+  locations TBLLOCATION[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@schema("wms")
+}
+
+model TBLLOCATION {
+  id          Int            @id @default(autoincrement())
+  companyId   Int
+  warehouseId Int
+  areaId      Int?
+  parentId    Int?
+  code        String         @db.VarChar(40)
+  name        String?        @db.VarChar(100)
+  type        LocationType   @default(SHELF)
+  status      LocationStatus @default(ACTIVE)
+  barcode     String?        @db.VarChar(60)
+  isRamp      Boolean        @default(false)
+  priority    Int?
+  isActive    Boolean        @default(true)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  company             TBLCOMPANY             @relation(fields: [companyId], references: [id])
+  warehouse           TBLWAREHOUSE           @relation(fields: [warehouseId], references: [id])
+  area                TBLAREA?               @relation(fields: [areaId], references: [id])
+  parent              TBLLOCATION?           @relation("LocationTree", fields: [parentId], references: [id])
+  children            TBLLOCATION[]          @relation("LocationTree")
+  stocks              TBLSTOCK[]
+  sourceDocumentLines TBLDOCUMENTLINE[]      @relation("LineSourceLocation")
+  targetDocumentLines TBLDOCUMENTLINE[]      @relation("LineTargetLocation")
+  groupLinks          TBLLOCATIONGROUPLINK[]
+
+  @@unique([companyId, warehouseId, code])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@index([areaId])
+  @@index([parentId])
+  @@index([barcode])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Ürün / birim / ürün-birim çevrim (legacy URUN, BIRIM, URUNOLCUBIRIM)
+// ----------------------------------------------------------------------------
+
+model TBLUNIT {
+  id            Int       @id @default(autoincrement())
+  companyId     Int
+  code          String    @db.VarChar(20)
+  name          String    @db.VarChar(50)
+  type          UnitType?
+  referenceCode String?   @db.VarChar(50)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company            TBLCOMPANY        @relation(fields: [companyId], references: [id])
+  products           TBLPRODUCT[]
+  productUnits       TBLPRODUCTUNIT[]  @relation("ProductUnitMeasure")
+  weightProductUnits TBLPRODUCTUNIT[]  @relation("ProductUnitWeight")
+  pallets            TBLPALLET[]
+  stocks             TBLSTOCK[]
+  documentLines      TBLDOCUMENTLINE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLPRODUCT {
+  id                Int           @id @default(autoincrement())
+  companyId         Int
+  code              String        @db.VarChar(40)
+  name              String        @db.VarChar(240)
+  shortName         String?       @db.VarChar(50)
+  productGroupCode  String?       @db.VarChar(20)
+  productGroupId    Int?
+  productSubGroupId Int?
+  productTypeId     Int?
+  detailTypeId      Int?
+  manufacturerCode  String?       @db.VarChar(60)
+  barcode           String?       @db.VarChar(50)
+  gtin              String?       @db.VarChar(20)
+  unitId            Int?
+  vatRate           Decimal?      @db.Decimal(5, 2)
+  weight            Decimal?      @db.Decimal(18, 4)
+  volume            Decimal?      @db.Decimal(18, 4)
+  type              ProductType   @default(STANDARD)
+  status            ProductStatus @default(ACTIVE)
+  isActive          Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  company         TBLCOMPANY              @relation(fields: [companyId], references: [id])
+  unit            TBLUNIT?                @relation(fields: [unitId], references: [id])
+  productGroup    TBLPRODUCTGROUP?        @relation(fields: [productGroupId], references: [id])
+  productSubGroup TBLPRODUCTSUBGROUP?     @relation(fields: [productSubGroupId], references: [id])
+  productType     TBLPRODUCTTYPE?         @relation(fields: [productTypeId], references: [id])
+  detailType      TBLPRODUCTDETAILTYPE?   @relation(fields: [detailTypeId], references: [id])
+  productUnits    TBLPRODUCTUNIT[]
+  stocks          TBLSTOCK[]
+  documentLines   TBLDOCUMENTLINE[]
+  inventoryRules  TBLINVENTORYRULE[]
+  substitutes     TBLPRODUCTSUBSTITUTE[]  @relation("ProductSubstituteMain")
+  substituteOf    TBLPRODUCTSUBSTITUTE[]  @relation("ProductSubstituteSub")
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([unitId])
+  @@index([barcode])
+  @@index([productGroupId])
+  @@index([productSubGroupId])
+  @@index([productTypeId])
+  @@index([detailTypeId])
+  @@schema("wms")
+}
+
+model TBLPRODUCTUNIT {
+  id             Int      @id @default(autoincrement())
+  productId      Int
+  unitId         Int
+  isBaseUnit     Boolean  @default(false)
+  multiplier     Decimal  @default(1) @db.Decimal(28, 8)
+  divisor        Decimal  @default(1) @db.Decimal(28, 8)
+  barcode        String?  @db.VarChar(50)
+  length         Decimal? @db.Decimal(18, 4)
+  width          Decimal? @db.Decimal(18, 4)
+  height         Decimal? @db.Decimal(18, 4)
+  area           Decimal? @db.Decimal(18, 4)
+  volume         Decimal? @db.Decimal(18, 4)
+  netWeight      Decimal? @db.Decimal(18, 4)
+  grossWeight    Decimal? @db.Decimal(18, 4)
+  weightUnitId   Int?
+  batchTracking  Boolean  @default(false)
+  serialTracking Boolean  @default(false)
+  minPalletQty   Decimal? @db.Decimal(28, 8)
+  maxPalletQty   Decimal? @db.Decimal(28, 8)
+  isSalesUnit    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  product    TBLPRODUCT              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unit       TBLUNIT                 @relation("ProductUnitMeasure", fields: [unitId], references: [id])
+  weightUnit TBLUNIT?                @relation("ProductUnitWeight", fields: [weightUnitId], references: [id])
+  barcodes   TBLPRODUCTUNITBARCODE[]
+
+  @@unique([productId, unitId])
+  @@index([productId])
+  @@index([unitId])
+  @@index([barcode])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Statü (legacy STATU) — stok statüsü, tablo-driven (firma-bazlı)
+// ----------------------------------------------------------------------------
+
+model TBLSTATUS {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company             TBLCOMPANY        @relation(fields: [companyId], references: [id])
+  stocks              TBLSTOCK[]
+  sourceDocumentLines TBLDOCUMENTLINE[] @relation("LineSourceStatus")
+  targetDocumentLines TBLDOCUMENTLINE[] @relation("LineTargetStatus")
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Palet tipi / palet (legacy PALETTIPI, PALET)
+// ----------------------------------------------------------------------------
+
+model TBLPALLETTYPE {
+  id                   Int           @id @default(autoincrement())
+  companyId            Int
+  code                 String        @db.VarChar(20) // palet no öneki (prefix)
+  name                 String        @db.VarChar(100)
+  kind                 PalletKind? // bizim eklediğimiz fiziksel tür (EURO/INDUSTRIAL…) — opsiyonel
+  mixingType           PalletMixing? // legacy BYTTIP — Tek Ürün Palet / Karma Palet
+  facilityId           Int? // legacy LNGDISTKOD (Tesis)
+  palletNoLength       Int? // LNGPALETNOUZUNLUK — palet no uzunluğu
+  sequenceId           Int? // legacy LNGSAYACKOD — palet numarası bu sayaçtan
+  isDivisible          Boolean       @default(true) // !BYTBOLUNEMEZ (Bölünebilir)
+  partialUse           Boolean       @default(false) // BYTPARCALIKULLANIM — parçalı kullanım yapılsın
+  batchControl         Boolean       @default(false) // BYTBATCHKONTROL
+  singleProductControl Boolean       @default(false) // BYTTEKURUNKONTROLU — tek ürün kontrolü
+  newNoOnEdit          Boolean       @default(false) // BYTDUZENLEMEDEYENINOALSIN
+  // palet içi palet (üst/parçalı palet) + transfer davranışı
+  breakParentPallet         Boolean  @default(false) // BYTUSTPALETBOZULSUN — üst palet bozulsun
+  breakPartialPallet        Boolean  @default(false) // BYTPARCALIPALETBOZ — parçalı palet bozulsun
+  breakPalletOnTransfer     Boolean  @default(false) // BYTTRANSFERDEPALETIBOZ
+  removeFromPalletOnTransfer Boolean @default(false) // BYTTRANSFERDEPALETTENCIKAR
+  keepFullPalletOnTransfer  Boolean  @default(false) // BYTTRANSFERTUMPALETKORU
+  logging              Boolean       @default(false) // BYTLOGLAMA
+  logControl           Boolean       @default(false) // BYTLOGKONTROL
+  logControlWarningType Int? // BYTLOGKONTROLUYARITIPI
+  isActive             Boolean       @default(true)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  company  TBLCOMPANY   @relation(fields: [companyId], references: [id])
+  sequence TBLSEQUENCE? @relation(fields: [sequenceId], references: [id])
+  pallets  TBLPALLET[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([sequenceId])
+  @@schema("wms")
+}
+
+model TBLPALLET {
+  id             Int       @id @default(autoincrement())
+  companyId      Int
+  palletNo       String    @db.VarChar(40)
+  palletTypeId   Int
+  parentPalletId Int?
+  baseUnitId     Int?
+  originalQty    Decimal?  @db.Decimal(28, 8)
+  productionDate DateTime? @db.Date
+  expiryDate     DateTime? @db.Date
+  beaconId       String?   @db.VarChar(200)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company       TBLCOMPANY        @relation(fields: [companyId], references: [id])
+  palletType    TBLPALLETTYPE     @relation(fields: [palletTypeId], references: [id])
+  parentPallet  TBLPALLET?        @relation("PalletNesting", fields: [parentPalletId], references: [id])
+  childPallets  TBLPALLET[]       @relation("PalletNesting")
+  baseUnit      TBLUNIT?          @relation(fields: [baseUnitId], references: [id])
+  stocks        TBLSTOCK[]
+  documentLines TBLDOCUMENTLINE[]
+
+  @@unique([companyId, palletNo])
+  @@index([companyId])
+  @@index([palletTypeId])
+  @@index([parentPalletId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Stok durumu (legacy STOKDURUM) — STOK KALBİ
+// lokasyon × ürün × statü × batch × seri × palet kırılımı
+// ----------------------------------------------------------------------------
+
+model TBLSTOCK {
+  id             Int       @id @default(autoincrement())
+  companyId      Int
+  locationId     Int
+  productId      Int
+  statusId       Int
+  palletId       Int?
+  batchNo        String?   @db.VarChar(100)
+  serialNo       String?   @db.VarChar(100)
+  customerId     Int? // cari Faz 2 — şimdilik soft ref (FK yok)
+  poNo           String?   @db.VarChar(100)
+  poLine         String?   @db.VarChar(100)
+  mainQty        Decimal   @default(0) @db.Decimal(28, 8)
+  reservedQty    Decimal   @default(0) @db.Decimal(28, 8)
+  unitId         Int
+  netWeight      Decimal?  @db.Decimal(28, 8)
+  grossWeight    Decimal?  @db.Decimal(28, 8)
+  productionDate DateTime? @db.Date
+  expiryDate     DateTime? @db.Date
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  company  TBLCOMPANY  @relation(fields: [companyId], references: [id])
+  location TBLLOCATION @relation(fields: [locationId], references: [id])
+  product  TBLPRODUCT  @relation(fields: [productId], references: [id])
+  status   TBLSTATUS   @relation(fields: [statusId], references: [id])
+  pallet   TBLPALLET?  @relation(fields: [palletId], references: [id])
+  unit     TBLUNIT     @relation(fields: [unitId], references: [id])
+
+  @@unique([companyId, locationId, productId, statusId, batchNo, serialNo, palletId])
+  @@index([companyId])
+  @@index([locationId])
+  @@index([productId])
+  @@index([statusId])
+  @@index([palletId])
+  @@index([expiryDate])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Inventory — min/max stok seviyesi + reorder (MRP girdisi)
+// ----------------------------------------------------------------------------
+
+model TBLINVENTORYRULE {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  productId    Int
+  warehouseId  Int
+  minQty       Decimal  @default(0) @db.Decimal(28, 8)
+  maxQty       Decimal  @default(0) @db.Decimal(28, 8)
+  reorderPoint Decimal  @default(0) @db.Decimal(28, 8)
+  reorderQty   Decimal  @default(0) @db.Decimal(28, 8)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   TBLCOMPANY   @relation(fields: [companyId], references: [id])
+  product   TBLPRODUCT   @relation(fields: [productId], references: [id])
+  warehouse TBLWAREHOUSE @relation(fields: [warehouseId], references: [id])
+
+  @@unique([companyId, productId, warehouseId])
+  @@index([companyId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Cari — müşteri / tedarikçi (legacy MUSTERI/DIST'in iş-ortağı kısmı)
+// ----------------------------------------------------------------------------
+
+model TBLBUSINESSPARTNER {
+  id             Int         @id @default(autoincrement())
+  companyId      Int
+  code           String      @db.VarChar(40)
+  name           String      @db.VarChar(200)
+  type           PartnerType @default(CUSTOMER)
+  regionId       Int? // bölge (legacy TBLMSDBOLGE)
+  partnerGroupId Int? // cari/müşteri grup (legacy TBLMUSTERIGRUP)
+  parentId       Int? // zincir müşteri — üst cari (self-ref)
+  taxNumber      String?     @db.VarChar(20)
+  phone          String?     @db.VarChar(20)
+  email          String?     @db.VarChar(150)
+  city           String?     @db.VarChar(60)
+  address        String?     @db.VarChar(255)
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  company      TBLCOMPANY           @relation(fields: [companyId], references: [id])
+  region       TBLREGION?           @relation(fields: [regionId], references: [id])
+  partnerGroup TBLPARTNERGROUP?     @relation(fields: [partnerGroupId], references: [id])
+  parent       TBLBUSINESSPARTNER?  @relation("PartnerChain", fields: [parentId], references: [id])
+  children     TBLBUSINESSPARTNER[] @relation("PartnerChain")
+  documents    TBLDOCUMENT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([regionId])
+  @@index([partnerGroupId])
+  @@index([parentId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Operasyon tipi (legacy OPERASYONTIPI) — belge davranışını sürer (yön + stok etkisi)
+// ----------------------------------------------------------------------------
+
+model TBLOPERATIONTYPE {
+  id               Int               @id @default(autoincrement())
+  companyId        Int
+  code             String            @db.VarChar(20)
+  name             String            @db.VarChar(100)
+  direction        MovementDirection // legacy BYTKATEGORI (Giriş/Çıkış/Transfer/Sayım)
+  facilityId       Int? // legacy LNGDISTKOD (Tesis)
+  controlMode      ControlMode @default(UNCONTROLLED) // legacy BYTKONTROLLU (Kontrolsüz/Kontrollü/Referans Kontrollü)
+  documentType     OperationDocumentType @default(STOCK_MOVEMENT) // legacy BYTBELGETIPI
+  affectsStock     Boolean           @default(true)
+  sequenceId       Int? // legacy LNGSAYACKOD — belge numarası bu sayaçtan
+  operationSequenceId Int? // legacy LNGOPERASYONSAYACKOD
+  groupSequenceId  Int? // legacy LNGGRUPSAYACKOD
+  operationGroupId Int? // legacy LNGKONTROLGRUPKOD
+  reverseOperationTypeId Int? // legacy LNGTERSOPERASYONKOD — ters/iptal operasyonu
+  cancelLocationId Int? // legacy LNGIPTALLOKASYONKOD
+  logControlDays   Int? // legacy LNGLOGKONTROLGUNSAYISI
+
+  // Genel
+  emailSend        Boolean @default(false) // BYTMAILGONDERILSIN
+  // Stok Hareketi
+  equivalentApplication Boolean @default(false) // BYTMUADILUYGULAMASI
+  materialBasedCollection Boolean @default(false) // BYTMALBAZINDATOPLAMA
+  materialBasedQtyEdit Boolean @default(false) // BYTMALBAZINDAMIKTARDUZENLENSIN
+  batchAssignment  Boolean @default(false) // BYTBATCHATAMA
+  qualityControl   Boolean @default(false) // BYTKLTKONTROLYAPILSIN
+  detailLocationToCoverage Boolean @default(false) // BYTBELGEDETAYLOKASYONUKAPSAMAKTARILSIN
+  // Entegrasyon
+  integration      Boolean @default(false) // BYTPARAMENTEGRASYON
+  approvedDocUpdate Boolean @default(false) // BYTONAYLIBELGEGUNCELLENSIN
+  bulkSend         Boolean @default(false) // BYTTOPLUGONDERIM
+  // Kontrol / İşlem
+  readBasedControl Boolean @default(false) // BYTOKUTMABAZINDABILGILENDIRME
+  readBasedInfoMessage Boolean @default(false) // BYTOKUTMABAZINDABILGIMESAJIGOSTER
+  logging          Boolean @default(false) // BYTLOGLAMA
+  logControl       Boolean @default(false) // BYTLOGKONTROL
+  grouping         Boolean @default(false) // BYTGRUPLAMA
+  reasonRequired   Boolean @default(false) // BYTNEDENGIRISZORUNLU
+  reasonInHeader   Boolean @default(false) // BYTNEDENGIRISIBASLIKTA
+  // Stok İşlemleri
+  sameUsePallet    Boolean @default(false) // BYTAYNIPALETKULLANILSIN
+  sameUseSerial    Boolean @default(false) // BYTAYNISERIKULLANILSIN
+  passiveProductUse Boolean @default(false) // BYTPASIFURUNKULLANILSIN
+  palletBreaking   Boolean @default(false) // BYTPALETBOZMA
+  originalQtyUpdate Boolean @default(false) // BYTORJMIKGUNCELLENSIN
+  reserveTransfer  Boolean @default(false) // BYTREZERVETRANSFEREDILSIN
+
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  company         TBLCOMPANY                   @relation(fields: [companyId], references: [id])
+  sequence        TBLSEQUENCE?                 @relation(fields: [sequenceId], references: [id])
+  operationGroup  TBLOPERATIONGROUP?           @relation(fields: [operationGroupId], references: [id])
+  documents       TBLDOCUMENT[]
+  statusLinks     TBLOPERATIONTYPESTATUS[]
+  locationLinks   TBLOPERATIONTYPELOCATION[]
+  reasonLinks     TBLOPERATIONTYPEREASON[]
+  palletTypeLinks TBLOPERATIONTYPEPALLETTYPE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([sequenceId])
+  @@index([operationGroupId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Belge akışı — başlık + satır (kaynak→hedef hareket modeli)
+// ----------------------------------------------------------------------------
+
+model TBLDOCUMENT {
+  id              Int            @id @default(autoincrement())
+  companyId       Int
+  documentNo      String         @db.VarChar(40)
+  operationTypeId Int
+  status          DocumentStatus @default(DRAFT) // iç yaşam döngüsü (motor): DRAFT/CONFIRMED/COMPLETED/CANCELLED
+  documentStatusId Int? // kullanıcı-yüzlü Belge Durumu (Bekliyor→Toplanıyor→Onay Bekliyor→Onaylandı)
+  warehouseId     Int
+  createdById     Int
+  partnerId       Int?
+  reasonId        Int? // legacy LNGOPERASYONNEDENKOD
+  documentDate    DateTime       @default(now())
+  completedAt     DateTime?
+  note            String?        @db.VarChar(500)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  company        TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  operationType  TBLOPERATIONTYPE   @relation(fields: [operationTypeId], references: [id])
+  documentStatus TBLDOCUMENTSTATUS? @relation(fields: [documentStatusId], references: [id])
+  warehouse     TBLWAREHOUSE        @relation(fields: [warehouseId], references: [id])
+  createdBy     TBLUSER             @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  partner       TBLBUSINESSPARTNER? @relation(fields: [partnerId], references: [id])
+  reason        TBLREASON?          @relation(fields: [reasonId], references: [id])
+  lines         TBLDOCUMENTLINE[]
+
+  @@unique([companyId, documentNo])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@index([operationTypeId])
+  @@index([partnerId])
+  @@index([status])
+  @@schema("wms")
+}
+
+model TBLDOCUMENTLINE {
+  id               Int      @id @default(autoincrement())
+  documentId       Int
+  lineNo           Int
+  productId        Int
+  unitId           Int
+  quantity         Decimal  @db.Decimal(28, 8)
+  sourceLocationId Int?
+  sourceStatusId   Int?
+  targetLocationId Int?
+  targetStatusId   Int?
+  palletId         Int?
+  batchNo          String?  @db.VarChar(100)
+  serialNo         String?  @db.VarChar(100)
+  note             String?  @db.VarChar(255)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  document       TBLDOCUMENT  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  product        TBLPRODUCT   @relation(fields: [productId], references: [id])
+  unit           TBLUNIT      @relation(fields: [unitId], references: [id])
+  sourceLocation TBLLOCATION? @relation("LineSourceLocation", fields: [sourceLocationId], references: [id])
+  targetLocation TBLLOCATION? @relation("LineTargetLocation", fields: [targetLocationId], references: [id])
+  sourceStatus   TBLSTATUS?   @relation("LineSourceStatus", fields: [sourceStatusId], references: [id])
+  targetStatus   TBLSTATUS?   @relation("LineTargetStatus", fields: [targetStatusId], references: [id])
+  pallet         TBLPALLET?   @relation(fields: [palletId], references: [id])
+
+  @@unique([documentId, lineNo])
+  @@index([documentId])
+  @@index([productId])
+  @@index([sourceLocationId])
+  @@index([targetLocationId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum LocationType {
+  SHELF
+  FLOOR
+  RECEIVING
+  SHIPPING
+  STAGING
+  QUARANTINE
+
+  @@schema("wms")
+}
+
+enum LocationStatus {
+  ACTIVE
+  BLOCKED
+  FULL
+  MAINTENANCE
+
+  @@schema("wms")
+}
+
+enum UnitType {
+  COUNT
+  WEIGHT
+  VOLUME
+  LENGTH
+  AREA
+
+  @@schema("wms")
+}
+
+enum ProductType {
+  STANDARD
+  RAW_MATERIAL
+  SEMI_FINISHED
+  FINISHED
+  SERVICE
+
+  @@schema("wms")
+}
+
+enum ProductStatus {
+  ACTIVE
+  PASSIVE
+  BLOCKED
+
+  @@schema("wms")
+}
+
+enum PalletKind {
+  EURO
+  INDUSTRIAL
+  BOX
+  CUSTOM
+
+  @@schema("wms")
+}
+
+// Palet karma tipi (legacy BYTTIP) — Tek Ürün Palet / Karma Palet
+enum PalletMixing {
+  SINGLE_PRODUCT // Tek Ürün Palet
+  MIXED // Karma Palet
+
+  @@schema("wms")
+}
+
+enum MovementDirection {
+  INBOUND // Giriş
+  OUTBOUND // Çıkış
+  INTERNAL // Transfer
+  COUNT // Sayım
+
+  @@schema("wms")
+}
+
+// Kontrollü İşlem (legacy BYTKONTROLLU) — Kontrolsüz / Kontrollü / Referans Kontrollü
+enum ControlMode {
+  UNCONTROLLED // Kontrolsüz
+  CONTROLLED // Kontrollü İşlem
+  REFERENCE_CONTROLLED // Referans Kontrollü
+
+  @@schema("wms")
+}
+
+// Bağlantı kapsamı (legacy BYT*BAGLANTITIPI) — kural kime uygulanır: Hepsi / Grup / Belirli
+enum LinkScope {
+  ALL // Hepsi
+  GROUP // Grup
+  SPECIFIC // Belirli (cari/ürün/lokasyon)
+
+  @@schema("wms")
+}
+
+// Toplu işlem tipi (legacy BYTTOPLUISLEMTIPI)
+enum BulkActionType {
+  CONTROLLED_BULK // Kontrollü Toplu İşlem
+  BULK // Toplu İşlem
+  RESERVATION // Rezervasyon
+  SELECTED_DOCUMENT // Seçimli Belge
+  BATCH_CHANGE // Batch Değiştirme
+
+  @@schema("wms")
+}
+
+// Operasyon belge tipi (legacy BYTBELGETIPI)
+enum OperationDocumentType {
+  STOCK_MOVEMENT
+  COUNT
+  PRODUCTION
+  ORDER
+  OTHER
+
+  @@schema("wms")
+}
+
+enum PartnerType {
+  CUSTOMER
+  SUPPLIER
+  BOTH
+
+  @@schema("wms")
+}
+
+enum DocumentStatus {
+  DRAFT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+
+  @@schema("wms")
+}
+
+// ============================================================================
+// PROCUREMENT modülü — satınalma (schema: procurement)
+// wms'e GEVŞEK bağlı: wms entity'leri id ile referanslanır (cross-schema FK yok),
+// referans bütünlüğü uygulama katmanında doğrulanır. Modüller ayrı kalır.
+// ============================================================================
+
+model TBLPURCHASEORDER {
+  id            Int                 @id @default(autoincrement())
+  companyId     Int
+  orderNo       String              @db.VarChar(40)
+  supplierId    Int // → wms.TBLBUSINESSPARTNER (tedarikçi)
+  warehouseId   Int // → wms.TBLWAREHOUSE (teslim deposu)
+  status        PurchaseOrderStatus @default(DRAFT)
+  orderDate     DateTime            @default(now())
+  expectedDate  DateTime?
+  currency      String              @default("TRY") @db.VarChar(3)
+  exchangeRate  Decimal             @default(1) @db.Decimal(18, 6)
+  subTotal      Decimal             @default(0) @db.Decimal(18, 4)
+  discountTotal Decimal             @default(0) @db.Decimal(18, 4)
+  taxTotal      Decimal             @default(0) @db.Decimal(18, 4)
+  totalAmount   Decimal             @default(0) @db.Decimal(18, 4)
+  note          String?             @db.VarChar(500)
+  createdById   Int // → wms.TBLUSER
+  approvedById  Int? // → wms.TBLUSER
+  approvedAt    DateTime?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  lines TBLPURCHASEORDERLINE[]
+
+  @@unique([companyId, orderNo])
+  @@index([companyId])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([status])
+  @@schema("procurement")
+}
+
+model TBLPURCHASEORDERLINE {
+  id             Int      @id @default(autoincrement())
+  orderId        Int
+  lineNo         Int
+  productId      Int // → wms.TBLPRODUCT
+  unitId         Int // → wms.TBLUNIT
+  quantity       Decimal  @db.Decimal(28, 8)
+  receivedQty    Decimal  @default(0) @db.Decimal(28, 8)
+  unitPrice      Decimal  @default(0) @db.Decimal(18, 4)
+  discountRate   Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(18, 4)
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  lineTotal      Decimal  @default(0) @db.Decimal(18, 4)
+  note           String?  @db.VarChar(255)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  order TBLPURCHASEORDER @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, lineNo])
+  @@index([orderId])
+  @@index([productId])
+  @@schema("procurement")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+
+  @@schema("procurement")
+}
+
+// ============================================================================
+// SALES modülü — satış (schema: sales) — procurement'ın simetriği (OUTBOUND)
+// wms'e GEVŞEK bağlı (id ile, cross-schema FK yok).
+// ============================================================================
+
+model TBLSALESORDER {
+  id            Int              @id @default(autoincrement())
+  companyId     Int
+  orderNo       String           @db.VarChar(40)
+  customerId    Int // → wms.TBLBUSINESSPARTNER (müşteri)
+  warehouseId   Int // → wms.TBLWAREHOUSE (sevk deposu)
+  status        SalesOrderStatus @default(DRAFT)
+  orderDate     DateTime         @default(now())
+  requestedDate DateTime?
+  currency      String           @default("TRY") @db.VarChar(3)
+  exchangeRate  Decimal          @default(1) @db.Decimal(18, 6)
+  subTotal      Decimal          @default(0) @db.Decimal(18, 4)
+  discountTotal Decimal          @default(0) @db.Decimal(18, 4)
+  taxTotal      Decimal          @default(0) @db.Decimal(18, 4)
+  totalAmount   Decimal          @default(0) @db.Decimal(18, 4)
+  note          String?          @db.VarChar(500)
+  createdById   Int // → wms.TBLUSER
+  approvedById  Int?
+  approvedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  lines TBLSALESORDERLINE[]
+
+  @@unique([companyId, orderNo])
+  @@index([companyId])
+  @@index([customerId])
+  @@index([warehouseId])
+  @@index([status])
+  @@schema("sales")
+}
+
+model TBLSALESORDERLINE {
+  id             Int      @id @default(autoincrement())
+  orderId        Int
+  lineNo         Int
+  productId      Int // → wms.TBLPRODUCT
+  unitId         Int // → wms.TBLUNIT
+  quantity       Decimal  @db.Decimal(28, 8)
+  shippedQty     Decimal  @default(0) @db.Decimal(28, 8)
+  allocatedQty   Decimal  @default(0) @db.Decimal(28, 8)
+  unitPrice      Decimal  @default(0) @db.Decimal(18, 4)
+  discountRate   Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(18, 4)
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  lineTotal      Decimal  @default(0) @db.Decimal(18, 4)
+  note           String?  @db.VarChar(255)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  order       TBLSALESORDER        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  allocations TBLSALESALLOCATION[]
+
+  @@unique([orderId, lineNo])
+  @@index([orderId])
+  @@index([productId])
+  @@schema("sales")
+}
+
+// Satış stok ayırma (allocation) — sipariş satırını WMS stok satırına gevşek bağlar (stockId)
+model TBLSALESALLOCATION {
+  id          Int      @id @default(autoincrement())
+  orderLineId Int
+  stockId     Int // → wms.TBLSTOCK (gevşek bağ, cross-schema FK yok)
+  quantity    Decimal  @db.Decimal(28, 8)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderLine TBLSALESORDERLINE @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+
+  @@index([orderLineId])
+  @@index([stockId])
+  @@schema("sales")
+}
+
+enum SalesOrderStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+
+  @@schema("sales")
+}
+
+// ============================================================================
+// LOGISTICS modülü — sevkiyat/araç/rota (schema: logistics)
+// wms/sales'e GEVŞEK bağlı (id ile, cross-schema FK yok).
+// ============================================================================
+
+model TBLVEHICLE {
+  id         Int         @id @default(autoincrement())
+  companyId  Int
+  plateNo    String      @db.VarChar(20)
+  name       String?     @db.VarChar(100)
+  type       VehicleType @default(TRUCK)
+  capacityKg Decimal?    @db.Decimal(18, 3)
+  capacityM3 Decimal?    @db.Decimal(18, 3)
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  shipments TBLSHIPMENT[]
+
+  @@unique([companyId, plateNo])
+  @@index([companyId])
+  @@schema("logistics")
+}
+
+model TBLSHIPMENT {
+  id           Int            @id @default(autoincrement())
+  companyId    Int
+  shipmentNo   String         @db.VarChar(40)
+  vehicleId    Int?
+  driverName   String?        @db.VarChar(100)
+  status       ShipmentStatus @default(PLANNED)
+  plannedDate  DateTime?
+  dispatchedAt DateTime?
+  deliveredAt  DateTime?
+  note         String?        @db.VarChar(500)
+  createdById  Int // → wms.TBLUSER
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  vehicle TBLVEHICLE?       @relation(fields: [vehicleId], references: [id])
+  stops   TBLSHIPMENTSTOP[]
+
+  @@unique([companyId, shipmentNo])
+  @@index([companyId])
+  @@index([vehicleId])
+  @@index([status])
+  @@schema("logistics")
+}
+
+model TBLSHIPMENTSTOP {
+  id           Int        @id @default(autoincrement())
+  shipmentId   Int
+  sequence     Int
+  partnerId    Int // → wms.TBLBUSINESSPARTNER (müşteri)
+  salesOrderId Int? // → sales.TBLSALESORDER
+  address      String?    @db.VarChar(255)
+  status       StopStatus @default(PENDING)
+  arrivedAt    DateTime?
+  note         String?    @db.VarChar(255)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  shipment TBLSHIPMENT @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([shipmentId, sequence])
+  @@index([shipmentId])
+  @@schema("logistics")
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+  CAR
+  MOTORCYCLE
+
+  @@schema("logistics")
+}
+
+enum ShipmentStatus {
+  PLANNED
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+
+  @@schema("logistics")
+}
+
+enum StopStatus {
+  PENDING
+  DELIVERED
+  FAILED
+
+  @@schema("logistics")
+}
+
+// ----------------------------------------------------------------------------
+// Sayım (stocktake) — fiziksel sayım, sistem ile karşılaştır, fark düzelt (wms)
+// Operasyonel referanslar gevşek Int (intra-schema, index'li).
+// ----------------------------------------------------------------------------
+
+model TBLSTOCKCOUNT {
+  id          Int         @id @default(autoincrement())
+  companyId   Int
+  countNo     String      @db.VarChar(40)
+  warehouseId Int
+  status      CountStatus @default(DRAFT)
+  countDate   DateTime    @default(now())
+  note        String?     @db.VarChar(500)
+  createdById Int
+  completedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  lines TBLSTOCKCOUNTLINE[]
+
+  @@unique([companyId, countNo])
+  @@index([companyId])
+  @@index([warehouseId])
+  @@index([status])
+  @@schema("wms")
+}
+
+model TBLSTOCKCOUNTLINE {
+  id         Int      @id @default(autoincrement())
+  countId    Int
+  lineNo     Int
+  stockId    Int?
+  locationId Int
+  productId  Int
+  statusId   Int
+  unitId     Int
+  batchNo    String?  @db.VarChar(100)
+  serialNo   String?  @db.VarChar(100)
+  palletId   Int?
+  systemQty  Decimal  @default(0) @db.Decimal(28, 8)
+  countedQty Decimal? @db.Decimal(28, 8)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  count TBLSTOCKCOUNT @relation(fields: [countId], references: [id], onDelete: Cascade)
+
+  @@unique([countId, lineNo])
+  @@index([countId])
+  @@index([productId])
+  @@schema("wms")
+}
+
+enum CountStatus {
+  DRAFT
+  COUNTING
+  COMPLETED
+  CANCELLED
+
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Kalite kontrol — muayene + sonuç → stok statü geçişi (INTERNAL hareket) (wms)
+// ----------------------------------------------------------------------------
+
+model TBLQUALITYINSPECTION {
+  id            Int           @id @default(autoincrement())
+  companyId     Int
+  inspectionNo  String        @db.VarChar(40)
+  productId     Int
+  locationId    Int
+  statusId      Int // mevcut (kaynak) statü, ör. QUARANTINE
+  unitId        Int
+  batchNo       String?       @db.VarChar(100)
+  serialNo      String?       @db.VarChar(100)
+  palletId      Int?
+  quantity      Decimal       @db.Decimal(28, 8)
+  result        QualityResult @default(PENDING)
+  note          String?       @db.VarChar(500)
+  createdById   Int
+  inspectedById Int?
+  inspectedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([companyId, inspectionNo])
+  @@index([companyId])
+  @@index([productId])
+  @@index([result])
+  @@schema("wms")
+}
+
+enum QualityResult {
+  PENDING
+  PASSED
+  FAILED
+
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// İş emri (legacy TBLSBISEMRIBASLIK/DETAY) — planlı, atanabilir depo görevi
+// Operasyonel ref'ler gevşek Int (intra-schema, index'li).
+// ----------------------------------------------------------------------------
+
+model TBLWORKORDER {
+  id               Int             @id @default(autoincrement())
+  companyId        Int
+  orderNo          String          @db.VarChar(40)
+  type             WorkOrderType   @default(PICK)
+  status           WorkOrderStatus @default(PLANNED)
+  warehouseId      Int
+  salesOrderId     Int? // toplama emri → satış siparişi bağı (sales.TBLSALESORDER, gevşek)
+  assignedToUserId Int? // legacy LNGKULLANICIKOD
+  priority         Int?
+  startDate        DateTime? // legacy TRHBASLAMATARIHI
+  endDate          DateTime? // legacy TRHBITISTARIHI
+  note             String?         @db.VarChar(500)
+  createdById      Int
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  company TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  lines   TBLWORKORDERLINE[]
+
+  @@unique([companyId, orderNo])
+  @@index([companyId])
+  @@index([status])
+  @@index([assignedToUserId])
+  @@index([salesOrderId])
+  @@schema("wms")
+}
+
+model TBLWORKORDERLINE {
+  id               Int      @id @default(autoincrement())
+  workOrderId      Int
+  lineNo           Int
+  productId        Int
+  unitId           Int
+  quantity         Decimal  @db.Decimal(28, 8)
+  collectedQty     Decimal  @default(0) @db.Decimal(28, 8) // legacy DBLTOPLANANMIKTAR
+  sourceLocationId Int?
+  targetLocationId Int?
+  sourceStatusId   Int?
+  targetStatusId   Int?
+  palletId         Int?
+  batchNo          String?  @db.VarChar(100)
+  serialNo         String?  @db.VarChar(100)
+  reasonId         Int? // legacy LNGOPERASYONNEDENKOD
+  note             String?  @db.VarChar(255)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  workOrder TBLWORKORDER @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@unique([workOrderId, lineNo])
+  @@index([workOrderId])
+  @@index([productId])
+  @@schema("wms")
+}
+
+enum WorkOrderType {
+  PICK
+  PUTAWAY
+  COUNT
+  TRANSFER
+  REPLENISH
+
+  @@schema("wms")
+}
+
+enum WorkOrderStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Giriş/çıkış koşulu tipleri + yönlendirme (legacy GIRISKOSULTIPI/CIKISKOSULTIPI/
+// YONLENDIRMETIPI + YONLENDIRMEURUNLOKASYONBAGLANTI) — directed putaway çekirdeği
+// ----------------------------------------------------------------------------
+
+// Giriş koşulu tipi (legacy TBLSBGIRISKOSULTIPI)
+model TBLENTRYCONDITIONTYPE {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String?  @db.VarChar(100) // legacy TXTACIKLAMA
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Çıkış koşulu tipi (legacy TBLSBCIKISKOSULTIPI)
+model TBLEXITCONDITIONTYPE {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String?  @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme tipi (legacy TBLSBYONLENDIRMETIPI)
+model TBLROUTINGTYPE {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String?  @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY       @relation(fields: [companyId], references: [id])
+  rules   TBLROUTINGRULE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme kuralı: ürün/grup → lokasyon/grup (legacy TBLSBYONLENDIRMEURUNLOKASYONBAGLANTI)
+model TBLROUTINGRULE {
+  id               Int              @id @default(autoincrement())
+  companyId        Int
+  routingTypeId    Int?
+  materialLinkType MaterialLinkType // ürün mü grup mu (legacy BYTMALZEMEBAGLANTITIPI)
+  materialLinkCode Int // ürün veya ürün-grup id (gevşek ref)
+  locationLinkType LocationLinkType // lokasyon mu grup mu (legacy BYTLOKASYONBAGLANTITIPI)
+  locationLinkCode Int // lokasyon veya lokasyon-grup id (gevşek ref)
+  priority         Int? // legacy LNGEKGRUPSIRASI
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  company     TBLCOMPANY      @relation(fields: [companyId], references: [id])
+  routingType TBLROUTINGTYPE? @relation(fields: [routingTypeId], references: [id])
+
+  @@index([companyId])
+  @@index([materialLinkCode])
+  @@schema("wms")
+}
+
+enum MaterialLinkType {
+  PRODUCT
+  PRODUCT_GROUP
+
+  @@schema("wms")
+}
+
+enum LocationLinkType {
+  LOCATION
+  LOCATION_GROUP
+
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Demo tanım kırılımları: Tesis · Ürün-birim çoklu barkod · Bölge · Cari grup
+// ----------------------------------------------------------------------------
+
+// Tesis (facility) — BİZİM EKLEDİĞİMİZ (legacy'de depo doğrudan firmaya bağlı; çok-tesis için)
+model TBLFACILITY {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  city      String?  @db.VarChar(60)
+  address   String?  @db.VarChar(255)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company    TBLCOMPANY     @relation(fields: [companyId], references: [id])
+  warehouses TBLWAREHOUSE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürün-birim çoklu barkod (legacy TBLSBURUNBIRIMBARKOD)
+model TBLPRODUCTUNITBARCODE {
+  id            Int      @id @default(autoincrement())
+  productUnitId Int
+  barcode       String   @db.VarChar(100)
+  labelAddress  String?  @db.VarChar(100) // legacy TXTETIKETADRESI
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  productUnit TBLPRODUCTUNIT @relation(fields: [productUnitId], references: [id], onDelete: Cascade)
+
+  @@index([productUnitId])
+  @@index([barcode])
+  @@schema("wms")
+}
+
+// Bölge (legacy TBLMSDBOLGE)
+model TBLREGION {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(60)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY           @relation(fields: [companyId], references: [id])
+  partners TBLBUSINESSPARTNER[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Operasyon konfigürasyon dünyası: op-tipi ↔ statü / lokasyon / neden / palet tipi
+// (legacy TBLSBOPERASYONTIPISTATU / ...LOKASYON / ISEMRINEDENOPERASYONTIPI / ...PALETTIPI)
+// ----------------------------------------------------------------------------
+
+// Operasyon tipi ↔ statü geçişi (kaynak statü → hedef statü)
+model TBLOPERATIONTYPESTATUS {
+  id              Int        @id @default(autoincrement())
+  companyId       Int
+  operationTypeId Int
+  facilityId      Int? // Tesis
+  cariLinkType    LinkScope? // Cari Bağlantı Tipi (Hepsi/Grup/Belirli)
+  cariLinkId      Int? // cari/cari-grup
+  materialLinkType LinkScope? // Malzeme Bağlantı Tipi
+  materialLinkId  Int? // ürün/ürün-grup
+  sourceStatusId  Int? // boş = dış/kaynaksız (mal kabul gibi)
+  targetStatusId  Int
+  sortOrder       Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  operationType TBLOPERATIONTYPE @relation(fields: [operationTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Operasyon tipi ↔ lokasyon (kaynak/hedef lokasyon kuralı)
+model TBLOPERATIONTYPELOCATION {
+  id               Int        @id @default(autoincrement())
+  companyId        Int
+  operationTypeId  Int
+  facilityId       Int? // Tesis
+  cariLinkType     LinkScope?
+  cariLinkId       Int?
+  materialLinkType LinkScope?
+  materialLinkId   Int?
+  sourceLinkType   LinkScope? // Kaynak Bağlantı Tipi (Grup/Lokasyon)
+  sourceLocationId Int? // Kaynak Bağlantı Kodu
+  targetLinkType   LinkScope? // Hedef Bağlantı Tipi
+  targetLocationId Int? // Hedef Bağlantı Kodu
+  fixLocation      Boolean    @default(false) // legacy BYTLOKASYONSABITKALSIN
+  terminalFixSource Boolean   @default(false) // El Terminali Kaynak Alan Sabitlensin
+  terminalFixTarget Boolean   @default(false) // El Terminali Hedef Alan Sabitlensin
+  sortOrder        Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  operationType TBLOPERATIONTYPE @relation(fields: [operationTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Operasyon tipi ↔ neden (legacy TBLSBISEMRINEDENOPERASYONTIPI)
+model TBLOPERATIONTYPEREASON {
+  id               Int     @id @default(autoincrement())
+  companyId        Int
+  operationTypeId  Int
+  facilityId       Int? // Tesis
+  reasonCategoryId Int? // Neden Kategori
+  reasonId         Int
+  sortOrder        Int?
+  isAutomatic      Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  operationType TBLOPERATIONTYPE @relation(fields: [operationTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Operasyon tipi ↔ palet tipi (legacy TBLSBOPERASYONTIPIPALETTIPI)
+model TBLOPERATIONTYPEPALLETTYPE {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int
+  facilityId        Int? // Tesis
+  palletTypeId      Int
+  innerPalletTypeId Int?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  operationType TBLOPERATIONTYPE @relation(fields: [operationTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Barkod tipi / parse (legacy TBLSBBARKODTIPI) — müşteri/üretim barkodu parse mantığı
+model TBLBARCODETYPE {
+  id                  Int      @id @default(autoincrement())
+  companyId           Int
+  code                String   @db.VarChar(20)
+  name                String?  @db.VarChar(100)
+  parseScript         String?  @db.Text // barkod parse mantığı (regex/ifade — legacy TXTSCRIPT)
+  isProductionBarcode Boolean  @default(false) // legacy BYTURETIMBARKOD
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yazıcı tanımı (bizim eklediğimiz — legacy Excel'de yok) — etiket basımı + mDNS/IPP ağ keşfi
+model TBLPRINTER {
+  id         Int         @id @default(autoincrement())
+  companyId  Int
+  code       String      @db.VarChar(40)
+  name       String?     @db.VarChar(120)
+  type       PrinterType @default(IPP)
+  host       String?     @db.VarChar(120) // IP veya hostname
+  port       Int? // IPP genelde 631, ZPL ham 9100
+  path       String?     @db.VarChar(200) // IPP yolu, ör. /ipp/print
+  location   String?     @db.VarChar(120) // fiziksel konum etiketi
+  isDefault  Boolean     @default(false)
+  discovered Boolean     @default(false) // mDNS ile mi bulundu
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+enum PrinterType {
+  IPP // ağ yazıcısı (IPP/CUPS)
+  ZPL // termal Zebra (ham ZPL, TCP 9100)
+  SYSTEM // tarayıcı/OS diyaloğu
+
+  @@schema("wms")
+}
+
+// Belge durumu (legacy TBLSBBELGEDURUM) — belge yaşam döngüsü: Bekliyor→Toplanıyor→Onay Bekliyor→Onaylandı
+model TBLDOCUMENTSTATUS {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20) // ör. BKL/TPL/OBK/ONY
+  name      String?  @db.VarChar(100) // tanım (Bekliyor, Toplanıyor…)
+  color     String?  @db.VarChar(20) // hex renk (#16a34a) — legacy BYTRENK karşılığı
+  sortOrder Int? // yaşam döngüsü sırası
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  documents TBLDOCUMENT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Belge durum işlem (legacy TBLSBBELGEDURUMISLEM) — belge durumunda izinli işlem tipi
+model TBLDOCUMENTSTATUSACTION {
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  documentStatusId Int // LNGBELGEDURUMKOD
+  actionType       Int // BYTISLEMTIP
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Belge durum kriter (legacy TBLSBBELGEDURUMKRITER) — operasyon (+cari) bazında durum kriteri ifadesi
+model TBLDOCUMENTSTATUSCRITERIA {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int // LNGOPERASYONTIPKOD
+  businessPartnerId Int? // LNGDISTKOD (cari)
+  criteria          String   @db.Text // TXTKRITER
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Belge onay tipi (legacy TBLSBBELGEONAYTIPI) — operasyon bazında onay tipi + toplama kontrolü
+model TBLDOCUMENTAPPROVALTYPE {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int // LNGOPERASYONTIPKOD
+  approvalType      Int // BYTONAYTIPI
+  controlCollection Boolean  @default(false) // BYTKONTROLTOPLAMA
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ───────── Operasyon konfig tabloları (StokBar Operasyon grubu — legacy'e sadık) ─────────
+// Not: bu config tablolarında companyId düz Int (tenant app-katmanında filtrelenir); bağlantı tipi+kodu çiftleri legacy byte+int olarak korunur.
+
+// Neden Kategori (legacy TBLSBNEDENKATEGORI)
+model TBLREASONCATEGORY {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  code              String   @db.VarChar(10)
+  name              String?  @db.VarChar(100)
+  businessPartnerId Int? // LNGDISTKOD
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Grup Bağlantı (legacy TBLSBOPERASYONGRUPBAGLANTI)
+model TBLOPERATIONGROUPLINK {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int
+  facilityId        Int? // Tesis
+  operationGroupId  Int
+  businessPartnerId Int?
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Tipi Tolerans (legacy TBLSBOPERASYONTIPITOLERANS)
+model TBLOPERATIONTYPETOLERANCE {
+  id                Int        @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int?
+  facilityId        Int? // Tesis
+  businessPartnerId Int? // LNGDISTKOD
+  cariLinkType      LinkScope? // BYTCARIBAGLANTITIPI
+  cariLinkId        Int?
+  materialLinkType  LinkScope? // BYTMALZEMEBAGLANTITIPI
+  materialLinkId    Int?
+  ignoreSplit       Boolean    @default(false) // BYTBOLMEDIKKATEALINSIN
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Tipi Yasaklı Ürün (legacy TBLSBOPERASYONTIPIYASAKLIURUN)
+model TBLOPERATIONTYPEFORBIDDENPRODUCT {
+  id                Int        @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int
+  facilityId        Int? // Tesis
+  businessPartnerId Int?
+  cariLinkType      LinkScope?
+  cariLinkId        Int?
+  materialLinkType  LinkScope?
+  materialLinkId    Int?
+  isActive          Boolean    @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Tipi Dönüşüm (legacy TBLSBOPERASYONTIPIDONUSUM)
+model TBLOPERATIONTYPECONVERSION {
+  id                Int        @id @default(autoincrement())
+  companyId         Int
+  operationTypeId   Int
+  facilityId        Int? // Tesis
+  statusId          Int?
+  conversionCode    String     @db.VarChar(10) // TXTDONUSUMKOD
+  outgoing          Boolean    @default(false) // BYTGIDEN
+  sourceLocLinkType LinkScope?
+  sourceLocLinkId   Int?
+  targetLocLinkType LinkScope?
+  targetLocLinkId   Int?
+  isActive          Boolean    @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Sıralı Operasyon (legacy TBLSBSIRALIOPERASYON)
+model TBLSEQUENTIALOPERATION {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  facilityId        Int? // Tesis
+  firstOperationId  Int // LNGILKOPERASYONKOD
+  secondOperationId Int // LNGIKINCIOPERASYONKOD
+  cariLinkType      LinkScope?
+  cariLinkId        Int?
+  materialLinkType  LinkScope?
+  materialLinkId    Int?
+  locationLinkType  LinkScope?
+  locationLinkId    Int?
+  useInWorkOrder    Boolean    @default(false) // BYTISEMRINDEKULLANILSIN
+  spName            String?  @db.VarChar(300) // TXTSIRALIISLEMSSPADI
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Otomatik Referanslı Belge (legacy TBLSBOTOMATIKREFERANSLIBELGE)
+model TBLAUTOREFERENCEDOCUMENT {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int
+  sourcePartnerId       Int // LNGKAYNAKDISTKOD
+  sourceOperationTypeId Int
+  sourceLocLinkType     Int?
+  sourceLocLinkId       Int?
+  targetPartnerId       Int // LNGHEDEFDISTKOD
+  targetOperationTypeId Int
+  targetLocLinkType     Int?
+  targetLocLinkId       Int?
+  facility              Boolean  @default(false) // BYTTESIS
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Tipi Toplu İşlem Bağlantı (legacy TBLSBOPERASYONTIPITOPLUISLEMBAGLANTI)
+model TBLOPERATIONTYPEBULKACTION {
+  id              Int             @id @default(autoincrement())
+  companyId       Int
+  operationTypeId Int
+  facilityId      Int? // Tesis
+  bulkActionType  BulkActionType? // BYTTOPLUISLEMTIPI
+  description     String?         @db.VarChar(200)
+  isActive        Boolean         @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürün Ek Grup Bağlantı (legacy TBLSBURUNEKGRUPBAGLANTI)
+model TBLPRODUCTADDITIONALGROUPLINK {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  productId Int
+  groupId   Int
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürün Bazında Toplama Bağlantı (legacy TBLSBURUNBAZTOPLAMABAGLANTI)
+model TBLPRODUCTBASEDCOLLECTION {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int
+  businessPartnerId     Int // LNGDISTKOD
+  sourceOperationTypeId Int
+  targetOperationTypeId Int
+  exemptLocations       String?  @db.VarChar(500) // TXTMUAFLOKASYONLAR
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Sefer Bazında Toplama Bağlantı (legacy TBLSBSEFERBAZTOPLAMABAGLANTI)
+model TBLTRIPBASEDCOLLECTION {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int
+  businessPartnerId     Int
+  sourceOperationTypeId Int
+  targetOperationTypeId Int
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ───────── Giriş/Çıkış Koşulları · Yönlendirme · Sayım config (StokBar — legacy'e sadık) ─────────
+
+// Giriş Koşul Kırma Şifresi (TBLSBGIRISKOSULKIRMASIFRESI)
+model TBLENTRYCONDITIONBREAKPASSWORD {
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  password String? @db.VarChar(100)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Giriş Koşul Kırma Nedeni (TBLSBGIRISKOSULKIRMANEDENI)
+model TBLENTRYCONDITIONBREAKREASON {
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  businessPartnerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Giriş Koşul Tipi ↔ Operasyon Tipi (TBLSBGIRISKOSULTIPIOPERASYONTIPI)
+model TBLENTRYCONDITIONTYPEOPERATION {
+  id Int @id @default(autoincrement())
+  companyId Int
+  entryConditionTypeId Int
+  operationTypeId Int
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Çıkış Koşul Kontrol Sahası (TBLSBCIKISKOSULKONTROLSAHASI)
+model TBLEXITCONDITIONCONTROLFIELD {
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(40)
+  tableName String? @db.VarChar(100)
+  fieldName String? @db.VarChar(100)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Çıkış Koşul Kırma Şifresi (TBLSBCIKISKOSULKIRMASIFRESI)
+model TBLEXITCONDITIONBREAKPASSWORD {
+  id Int @id @default(autoincrement())
+  companyId Int
+  password String? @db.VarChar(100)
+  businessPartnerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Çıkış Koşul Kırma Nedeni (TBLSBCIKISKOSULKIRMANEDENI)
+model TBLEXITCONDITIONBREAKREASON {
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  businessPartnerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Çıkış Koşul Tipi ↔ Operasyon Tipi (TBLSBCIKISKOSULTIPIOPERASYONTIPI)
+model TBLEXITCONDITIONTYPEOPERATION {
+  id Int @id @default(autoincrement())
+  companyId Int
+  exitConditionTypeId Int
+  operationTypeId Int
+  locationLinkType Int?
+  locationId Int?
+  fifoCheckOnReverseScan Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme Tipi Kontrol Sahası (TBLSBYONLENDIRMETIPIKONTROLSAHA)
+model TBLROUTINGCONTROLFIELD {
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(40)
+  fieldName String? @db.VarChar(100)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme Tipi Kırma Şifresi (TBLSBYONLENDIRMETIPIKIRMASIFRESI)
+model TBLROUTINGBREAKPASSWORD {
+  id Int @id @default(autoincrement())
+  companyId Int
+  password String? @db.VarChar(100)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme Tipi Kırma Nedeni (TBLSBYONLENDIRMETIPIKIRMANEDENI)
+model TBLROUTINGBREAKREASON {
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme Tipi ↔ Operasyon Tipi (TBLSBYONLENDIRMETIPIOPERASYONTIPI)
+model TBLROUTINGTYPEOPERATION {
+  id Int @id @default(autoincrement())
+  companyId Int
+  routingTypeId Int
+  operationTypeId Int
+  locationLinkType Int?
+  locationId Int?
+  taskPlanId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Yönlendirme Ürün Lokasyon Bağlantı (TBLSBYONLENDIRMEURUNLOKASYONBAGLANTI)
+model TBLROUTINGPRODUCTLOCATION {
+  id Int @id @default(autoincrement())
+  companyId Int
+  materialLinkType Int?
+  additionalGroupOrder Int?
+  materialLinkId Int?
+  locationLinkType Int?
+  locationLinkId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Sayım Onay Kullanıcı Grubu (TBLSBSAYIMONAYKULLANICIGRUP)
+model TBLCOUNTAPPROVALUSERGROUP {
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  operationTypeId Int
+  userGroupId Int
+  sortOrder Int?
+  mailTemplateId Int?
+  mailGroupId Int?
+  mailSp String? @db.VarChar(200)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Sayım Kriter (TBLSBSAYIMKRITER) — operasyon bazında sayımda alan + zorunlu mu
+model TBLCOUNTCRITERIA {
+  id Int @id @default(autoincrement())
+  companyId Int
+  operationTypeId Int
+  fieldCode String @db.VarChar(40)
+  required Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Sayım Parametreleri (TBLSBSAYIMPARAMETRE)
+model TBLCOUNTPARAMETER {
+  id Int @id @default(autoincrement())
+  companyId Int
+  operationTypeId Int
+  countType Int? // BYTSAYIMTIP (kör sayım vb.)
+  entryOperationTypeId Int?
+  exitOperationTypeId Int?
+  transferOperationTypeId Int?
+  equalize Boolean @default(false)
+  weightDiff Boolean @default(false)
+  documentDetailCount Int?
+  palletQtyPartialEntry Boolean @default(false)
+  stacked Boolean @default(false)
+  partialPallet Boolean @default(false)
+  partialPalletWarning Boolean @default(false)
+  stockMoveOnActiveCount Boolean @default(false)
+  hideInnerPallets Boolean @default(false)
+  hideMixedPallet Boolean @default(false)
+  innerPalletCountCheck Boolean @default(false)
+  hideInnerPalletStock Boolean @default(false)
+  countDays Int?
+  dontRecountPallet Boolean @default(false)
+  askLocationOnScan Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ───────── Genel ek · İş Emri config · Dinamik Etiketleme (StokBar — basit config tabloları, legacy'e sadık) ─────────
+
+model TBLLANGUAGE { // Dil (TBLSBDIL)
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(10)
+  isDefault Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLSHIFT { // Vardiya (TBLSBVARDIYA)
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  name String? @db.VarChar(100)
+  startTime DateTime?
+  endTime DateTime?
+  businessPartnerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLSCREENREPORTLINK { // Ekran Rapor Bağlantı (TBLSBEKRANRAPORBAGLANTI)
+  id Int @id @default(autoincrement())
+  companyId Int
+  screenButtonCode String? @db.VarChar(50)
+  reportCode String? @db.VarChar(50)
+  businessPartnerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLSTOCKCONTROLPARAMETER { // Stok Kontrol Parametre (TBLSBSTOKKONTROLPARAMETRE)
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  distributionType Int?
+  customerPriority Int?
+  shipmentPriority Int?
+  askUser Boolean @default(false)
+  dontUpdatePreparedQty Boolean @default(false)
+  controlStatus String? @db.VarChar(50)
+  errorOnAllSplit Boolean @default(false)
+  controlLocation String? @db.VarChar(200)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLDOCUMENTPLANNINGPARAMETER { // Belge Planlama Parametre (TBLSBBELGEPLANLAMAPARAMETRE)
+  id Int @id @default(autoincrement())
+  companyId Int
+  plannedDocStatusId Int?
+  planningOperationTypeId Int?
+  partCount Int?
+  businessPartnerId Int?
+  splitByProductGroup Boolean @default(false)
+  fieldEntry Boolean @default(false)
+  templateOperationTypeId Int?
+  updateMainQty Boolean @default(false)
+  locationAssign Boolean @default(false)
+  extraField11 Int?
+  extraField12 Int?
+  extraField21 Int?
+  extraField22 Int?
+  extraField31 Int?
+  extraField32 Int?
+  extraField41 Int?
+  extraField42 Int?
+  extraField51 Int?
+  extraField52 Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLPICKORDERPARAMETER { // Toplama Emri Parametre (TBLSBTOPLAMAEMRIPARAMETRE)
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  fullPalletOpId Int?
+  fullCaseOpId Int?
+  partialProductOpId Int?
+  fullPalletUnitId Int?
+  fullCaseUnitId Int?
+  partialProductUnitId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLDASHBOARDREPORT { // Dashboard Rapor (TBLSBDASHBOARDREPORT)
+  id Int @id @default(autoincrement())
+  companyId Int
+  type Int?
+  reportSp String? @db.VarChar(200)
+  defaultReport Boolean @default(false)
+  reportName String? @db.VarChar(200)
+  userLinkType Int?
+  userLinkId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLWAREHOUSEVEHICLE { // Depo Araç (TBLSBDEPOARAC)
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  name String? @db.VarChar(100)
+  status Int?
+  pallet Boolean @default(false)
+  workType Int?
+  quantity Decimal? @db.Decimal(28, 8)
+  unitId Int?
+  businessPartnerId Int?
+  ipAddress String? @db.VarChar(50)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLWORKORDERGENERALPARAMETER { // İş Emri Genel Parametre (TBLSBISEMRIGENELPARAMETRE)
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  alarmDuration Int?
+  alarmUnit Int?
+  pickCancelOpId Int?
+  rackFeedbackOpId Int?
+  askEntryLocation Boolean @default(false)
+  locationPriority Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLWORKORDERREASON { // İş Emri Nedenleri (TBLSBISEMRINEDENLERI)
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  description String? @db.VarChar(200)
+  isCancel Boolean @default(false)
+  autoCreateOrder Boolean @default(false)
+  businessPartnerId Int?
+  createDocument Boolean @default(false)
+  clearSystemFault Boolean @default(false)
+  breakPassword String? @db.VarChar(100)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLWORKORDERREFERENCEOPERATION { // İş Emri Referans Operasyon (TBLSBISEMRIOPERASYONTIPI)
+  id Int @id @default(autoincrement())
+  companyId Int
+  category Int?
+  operationTypeId Int
+  businessPartnerId Int?
+  headerId Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLRACKFEEDPARAMETER { // Raf Besleme Parametre (TBLSBRAFBESLEMEPARAMETRE)
+  id Int @id @default(autoincrement())
+  companyId Int
+  businessPartnerId Int?
+  locationGroupId Int?
+  onStockEmpty Boolean @default(false)
+  capacityPercent Decimal? @db.Decimal(28, 8)
+  palletBreaking Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLMENUGROUP { // Menü Grubu (TBLSBDEMENUGRUP)
+  id Int @id @default(autoincrement())
+  companyId Int
+  code String @db.VarChar(20)
+  description String? @db.VarChar(200)
+  screenType Int?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Genel parametre (legacy TBLSBPARAMETRE) — kod/tanım/değer
+model TBLPARAMETER {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(100)
+  name      String?  @db.VarChar(200)
+  value     String?  @db.VarChar(510)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Lokasyon kapasite (legacy TBLSBLOKASYONKAPASITE) — lokasyon/grup × malzeme kapasite kuralı
+model TBLLOCATIONCAPACITY {
+  id                Int               @id @default(autoincrement())
+  companyId         Int
+  locationLinkType  LocationLinkType // LOCATION (göz) | LOCATION_GROUP
+  locationLinkCode  Int
+  materialLinkType  MaterialLinkType? // null = Hepsi (tüm malzeme)
+  materialLinkCode  Int?
+  quantity          Decimal?            @db.Decimal(28, 8)
+  unitId            Int?
+  palletQty         Decimal?            @db.Decimal(28, 8)
+  toleranceQty      Decimal?            @db.Decimal(28, 8)
+  toleranceUnitId   Int?
+  width             Decimal?            @db.Decimal(18, 4) // en
+  length            Decimal?            @db.Decimal(18, 4) // boy
+  height            Decimal?            @db.Decimal(18, 4) // yükseklik
+  placementHeight   Decimal?            @db.Decimal(18, 4) // yerleştirme yüksekliği
+  dimensionUnitId   Int?
+  weight            Decimal?            @db.Decimal(18, 4)
+  weightUnitId      Int?
+  messageType       CapacityMessageType @default(ERROR) // aşımda Hata/Uyarı
+  distributeToCells Boolean             @default(false) // gözlere dağıtılsın
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
+  @@index([locationLinkCode])
+  @@schema("wms")
+}
+
+enum CapacityMessageType {
+  ERROR
+  WARNING
+
+  @@schema("wms")
+}
+
+// Cari/müşteri grup (legacy TBLMUSTERIGRUP)
+model TBLPARTNERGROUP {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(60)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY           @relation(fields: [companyId], references: [id])
+  partners TBLBUSINESSPARTNER[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// WMS tanım tabloları (legacy: SAYAC·NEDEN·LOKASYONGRUP·OPERASYONGRUP·DEETIKETTIPI·URUNEKGRUP)
+// ----------------------------------------------------------------------------
+
+// Sayaç / numara serisi (legacy TBLSBSAYAC) — belge numarası otomatik üretir
+model TBLSEQUENCE {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  code         String   @db.VarChar(20)
+  name         String   @db.VarChar(100)
+  isAutomatic  Boolean  @default(true)
+  prefix       String?  @db.VarChar(20)
+  prefix2      String?  @db.VarChar(200)
+  padLength    Int      @default(6)
+  startNo      Int      @default(1)
+  endNo        Int?
+  currentValue Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company        TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  operationTypes TBLOPERATIONTYPE[]
+  palletTypes    TBLPALLETTYPE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Neden kodu (legacy TBLSBNEDEN)
+model TBLREASON {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(10)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  documents TBLDOCUMENT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Lokasyon grubu (legacy TBLSBLOKASYONGRUP)
+model TBLLOCATIONGROUP {
+  id               Int      @id @default(autoincrement())
+  companyId        Int
+  code             String   @db.VarChar(16)
+  name             String   @db.VarChar(100)
+  isWorkOrderGroup Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company       TBLCOMPANY             @relation(fields: [companyId], references: [id])
+  locationLinks TBLLOCATIONGROUPLINK[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Lokasyon ↔ grup bağlantı (M-N, legacy TBLSBLOKASYONGRUPBAGLANTI)
+model TBLLOCATIONGROUPLINK {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  locationId      Int
+  locationGroupId Int
+  createdAt       DateTime @default(now())
+
+  location      TBLLOCATION      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationGroup TBLLOCATIONGROUP @relation(fields: [locationGroupId], references: [id], onDelete: Cascade)
+
+  @@unique([locationId, locationGroupId])
+  @@index([companyId])
+  @@index([locationGroupId])
+  @@schema("wms")
+}
+
+// Operasyon grubu (legacy TBLSBOPERASYONGRUP)
+model TBLOPERATIONGROUP {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(16)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company        TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  operationTypes TBLOPERATIONTYPE[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Etiket tipi (legacy TBLSBDEETIKETTIPI)
+model TBLLABELTYPE {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  code        String   @db.VarChar(50)
+  labelName   String?  @db.VarChar(200)
+  screenTitle String?  @db.VarChar(200)
+  displayType Int?
+  reportType  Int?
+  col1Count   Int?
+  col2Count   Int?
+  col3Count   Int?
+  col1Length  Int?
+  col2Length  Int?
+  layoutJson  String?  @db.Text // görsel etiket tasarımı (boyut + element listesi JSON) — bizim eklediğimiz
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürün alt-grubu (legacy TBLURUNEKGRUP)
+model TBLPRODUCTSUBGROUP {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(120)
+  reference String?  @db.VarChar(200)
+  imagePath String?  @db.VarChar(500)
+  sortOrder Int?
+  colorCode String?  @db.VarChar(14)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY   @relation(fields: [companyId], references: [id])
+  products TBLPRODUCT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// ----------------------------------------------------------------------------
+// Ürün grup (legacy TBLURUNGRUP) — ağaç
+// ----------------------------------------------------------------------------
+
+// Ürün Tipi (TBLSBURUNTIPI — basit kod listesi)
+model TBLPRODUCTTYPE {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(40)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY   @relation(fields: [companyId], references: [id])
+  products TBLPRODUCT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürün Detay Tipi (TBLSBURUNDETAYTIPI)
+model TBLPRODUCTDETAILTYPE {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY   @relation(fields: [companyId], references: [id])
+  products TBLPRODUCT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Muadil Ürün (TBLSBMUADILURUN)
+model TBLPRODUCTSUBSTITUTE {
+  id                  Int      @id @default(autoincrement())
+  productId           Int
+  substituteProductId Int
+  createdAt           DateTime @default(now())
+
+  product     TBLPRODUCT @relation("ProductSubstituteMain", fields: [productId], references: [id], onDelete: Cascade)
+  substitute  TBLPRODUCT @relation("ProductSubstituteSub", fields: [substituteProductId], references: [id])
+
+  @@unique([productId, substituteProductId])
+  @@index([productId])
+  @@index([substituteProductId])
+  @@schema("wms")
+}
+
+model TBLPRODUCTGROUP {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  parentId  Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  TBLCOMPANY        @relation(fields: [companyId], references: [id])
+  parent   TBLPRODUCTGROUP?  @relation("ProductGroupTree", fields: [parentId], references: [id])
+  children TBLPRODUCTGROUP[] @relation("ProductGroupTree")
+  products TBLPRODUCT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([parentId])
+  @@schema("wms")
+}
+
+// ============================================================================
+// FINANCE modülü — fatura/muhasebe (schema: finance)
+// PO/SO'dan fatura üretir; wms cari'ye gevşek bağlı.
+// ============================================================================
+
+model TBLINVOICE {
+  id              Int            @id @default(autoincrement())
+  companyId       Int
+  invoiceNo       String         @db.VarChar(40)
+  type            InvoiceType
+  partnerId       Int // → wms.TBLBUSINESSPARTNER
+  sourceOrderType InvoiceSource?
+  sourceOrderId   Int?
+  status          InvoiceStatus  @default(DRAFT)
+  invoiceDate     DateTime       @default(now())
+  dueDate         DateTime?
+  currency        String         @default("TRY") @db.VarChar(3)
+  exchangeRate    Decimal        @default(1) @db.Decimal(18, 6)
+  subTotal        Decimal        @default(0) @db.Decimal(18, 4)
+  discountTotal   Decimal        @default(0) @db.Decimal(18, 4)
+  taxTotal        Decimal        @default(0) @db.Decimal(18, 4)
+  totalAmount     Decimal        @default(0) @db.Decimal(18, 4)
+  paidAmount      Decimal        @default(0) @db.Decimal(18, 4)
+  note            String?        @db.VarChar(500)
+  createdById     Int
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  lines TBLINVOICELINE[]
+
+  @@unique([companyId, invoiceNo])
+  @@index([companyId])
+  @@index([partnerId])
+  @@index([status])
+  @@schema("finance")
+}
+
+model TBLINVOICELINE {
+  id             Int      @id @default(autoincrement())
+  invoiceId      Int
+  lineNo         Int
+  productId      Int
+  unitId         Int
+  quantity       Decimal  @db.Decimal(28, 8)
+  unitPrice      Decimal  @default(0) @db.Decimal(18, 4)
+  discountRate   Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal  @default(0) @db.Decimal(18, 4)
+  taxRate        Decimal  @default(0) @db.Decimal(5, 2)
+  taxAmount      Decimal  @default(0) @db.Decimal(18, 4)
+  lineTotal      Decimal  @default(0) @db.Decimal(18, 4)
+  note           String?  @db.VarChar(255)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invoice TBLINVOICE @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, lineNo])
+  @@index([invoiceId])
+  @@schema("finance")
+}
+
+enum InvoiceType {
+  PURCHASE
+  SALES
+
+  @@schema("finance")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  CANCELLED
+
+  @@schema("finance")
+}
+
+enum InvoiceSource {
+  PURCHASE_ORDER
+  SALES_ORDER
+
+  @@schema("finance")
+}

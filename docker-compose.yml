@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: onegate-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: onegate
+      POSTGRES_PASSWORD: onegate2024
+      POSTGRES_DB: onegate
+    ports:
+      - "5432:5432"
+    volumes:
+      - onegate-pgdata:/var/lib/postgresql/data
+
+volumes:
+  onegate-pgdata:
