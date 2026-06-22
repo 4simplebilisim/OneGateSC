@@ -1,0 +1,4 @@
+
+-- AlterTable
+ALTER TABLE "TBLSTOCKCOUNT" ADD COLUMN     "countType" VARCHAR(20);
+

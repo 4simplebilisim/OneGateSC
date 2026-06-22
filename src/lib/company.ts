@@ -1,9 +1,12 @@
 import type { FastifyRequest } from 'fastify'
 
 /**
- * Faz 1 çok-kiracılık: companyId context.
- * Şimdilik `x-company-id` header'ından okunur, yoksa default firmaya (ONEGATE, id=1) düşer.
- * Faz 2'de JWT payload'ına taşınacak.
+ * Çok-kiracılık: companyId context. companyId JWT payload'ında taşınır.
+ * Tüm /api/* (login + branding hariç) global onRequest hook'unda kimlik doğrulamasından geçer (app.ts),
+ * dolayısıyla request.user GET dahil her korumalı istekte doludur:
+ *  - Normal kullanıcı → kendi JWT companyId'sine KİLİTLİ (x-company-id header yok sayılır).
+ *  - Super-admin → x-company-id header ile firma seçer; yoksa kendi firması/DEFAULT.
+ * DEFAULT yalnız super-admin (companyId=null) header'sız durumda devreye girer; normal okuma sızıntısı kapalı.
  */
 export const DEFAULT_COMPANY_ID = 1
 

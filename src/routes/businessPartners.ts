@@ -5,6 +5,39 @@ import { getCompanyId } from '../lib/company.js'
 
 const partnerTypes = ['CUSTOMER', 'SUPPLIER', 'BOTH'] as const
 
+// Genişletilmiş cari alanları (legacy TBLMUSTERI) — create & update'te opsiyonel
+const extraShape = z.object({
+  shortName: z.string().max(50),
+  contactPerson: z.string().max(100),
+  contactPerson2: z.string().max(100),
+  specialCode: z.string().max(40),
+  address2: z.string().max(255),
+  district: z.string().max(60),
+  postalCode: z.string().max(20),
+  country: z.string().max(60),
+  phone2: z.string().max(20),
+  mobilePhone: z.string().max(20),
+  fax: z.string().max(20),
+  website: z.string().max(150),
+  taxOffice: z.string().max(100),
+  nationalId: z.string().max(20),
+  licenseOffice: z.string().max(100),
+  licenseNo: z.string().max(40),
+  priorityOrder: z.number().int(),
+  palletized: z.boolean(),
+  minDeliveryTime: z.string().max(10),
+  maxDeliveryTime: z.string().max(10),
+  vehicleRestriction: z.string().max(255),
+  street: z.string().max(100),
+  streetName: z.string().max(100),
+  neighborhood: z.string().max(100),
+  otherAddress: z.string().max(255),
+  doorNo: z.string().max(20),
+  mapCode: z.number().int(),
+  coordinateX: z.number(),
+  coordinateY: z.number(),
+}).partial()
+
 const createSchema = z.object({
   code: z.string().min(1).max(40),
   name: z.string().min(1).max(200),
@@ -18,7 +51,7 @@ const createSchema = z.object({
   city: z.string().max(60).optional(),
   address: z.string().max(255).optional(),
   isActive: z.boolean().optional(),
-})
+}).merge(extraShape)
 
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -32,17 +65,18 @@ const updateSchema = z.object({
   city: z.string().max(60).nullable().optional(),
   address: z.string().max(255).nullable().optional(),
   isActive: z.boolean().optional(),
-})
+}).merge(extraShape)
 
 export async function businessPartnerRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
-    const q = request.query as { type?: string }
+    const q = request.query as { type?: string; parentId?: string }
     return prisma.tBLBUSINESSPARTNER.findMany({
       where: {
         companyId: getCompanyId(request),
         type: partnerTypes.includes(q.type as (typeof partnerTypes)[number])
           ? (q.type as (typeof partnerTypes)[number])
           : undefined,
+        ...(q.parentId ? { parentId: Number(q.parentId) } : {}),
       },
       orderBy: { code: 'asc' },
     })

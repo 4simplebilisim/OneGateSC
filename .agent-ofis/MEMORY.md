@@ -1,8 +1,8 @@
 ---
 title: "OneGate — Hafıza İndeksi"
 type: memory-index
-updated: 2026-06-16
-topics: [schema, migration, auth, api, prisma, wms, belge, legacy, stok, multi-tenant, procurement, satinalma, ui, ux, arayuz, frontend, tasarim, theme, mobil, el-terminali, handheld, barkod]
+updated: 2026-06-20
+topics: [schema, migration, auth, api, prisma, wms, belge, legacy, stok, multi-tenant, procurement, satinalma, ui, ux, arayuz, frontend, tasarim, theme, mobil, el-terminali, handheld, barkod, saha, eksaha, custom-field, gozlem, kopyala, isatama, stok-giris, etiketleme]
 ---
 
 # 📚 OneGate — WMS & Procurement — Topic İndeksi
@@ -78,7 +78,7 @@ Geçmiş runs:
 - [[runs/2026-06-12T08-15-00-ui-dark-mode]] — **Koyu mod**: theme.ts makeTheme(mode) darkAlgorithm; themeMode.tsx provider+useThemeMode hook; Shell ay/güneş toggle; yüzeyler semantik CSS değişkenlerinden (:root / [data-theme=dark]); Login açık sabit; localStorage og_theme kalıcı.
 Koyu mod: `makeTheme(mode)` + `<ThemeModeProvider>` (themeMode.tsx) + `useThemeMode()`. Yüzey renkleri semantik CSS değişkenlerinden döner (--og-page-bg/sunken/border-soft/table-head/muted/ink/formbar). Yeni ekranlarda sabit yüzey hex YASAK → bu değişkenleri kullan. Login markalı, koyu moddan muaf. **Otomatik algılama**: ilk açılış prefers-color-scheme'i izler (isAuto); kullanıcı toggle'ı kalıcı override (localStorage og_theme).
 Standart form deseni: `og-page` + `<PageHeader>` + `og-section-card` (bölüm) + `og-switchrow` (boolean toggle satırı) + `og-formbar` (sticky kaydet). 2-kolon (lg'de 3) responsive grid.
-Notlar: **theme.ts = TEK KAYNAK** — renk/tipografi/yarıçap(9)/elevation + komponent tokenları orada. Ekran-başı **inline hex YASAK**. BRAND export: cyan #44D4E3, blue #4E86FF (primary), violet #9B5CF6, ink #1B2138, gradient 135deg. Font: gövde Inter, başlık Plus Jakarta Sans (index.html Google Fonts). Standart sayfa: `.og-page` + `<PageHeader>`. Stack: React 19 + Refine 5 + AntD 6 + Vite 8, locale tr_TR. Dev: `npm --prefix web run dev` (:5173), API :3000.
+Notlar: **theme.ts = TEK KAYNAK** — renk/tipografi/yarıçap(9)/elevation + komponent tokenları orada. Ekran-başı **inline hex YASAK**. **YOĞUNLUK (2026-06-20): kullanıcı "puntolar büyük, küçült" → kompakt ölçek (2 tur)**. Final: fontSize **12** (SM 11, LG 13), başlıklar **22/18/15/13**, controlHeight **30** (LG36/SM24), Table cellPadding **5/9** (SM3), Card paddingLG **12** headerFontSize **13** headerHeight 38, Menu itemHeight **30** fontSize **12**, Button/Input/Select 30, Statistic 11/20, Form labelFontSize 11.5, Layout headerHeight 48. styles.css: og-pageheader__title **16px** sub 11.5px, og-page padding 20/28, section-card margin 12. Yeni ekranlarda bu kompakt tonu koru. BRAND export: cyan #44D4E3, blue #4E86FF (primary), violet #9B5CF6, ink #1B2138, gradient 135deg. Font: gövde Inter, başlık Plus Jakarta Sans (index.html Google Fonts). Standart sayfa: `.og-page` + `<PageHeader>`. Stack: React 19 + Refine 5 + AntD 6 + Vite 8, locale tr_TR. Dev: `npm --prefix web run dev` (:5173), API :3000.
 
 ## Marka / branding / assets / favicon
 Kanonik kod: [[src/lib/branding.ts]], [[src/routes/branding.ts]], [[OneGate-assets/README.md]]
@@ -114,7 +114,8 @@ Geçmiş runs:
 - [[runs/2026-06-12T12-15-00-belge-durum]] — Belge Durumları master (TBLDOCUMENTSTATUS, TBLSBBELGEDURUM'a sadık) + menü grupsuz öğe desteği
 - [[runs/2026-06-12T12-45-00-belge-tipleri]] — Belge Durum İşlem/Kriter/Onay Tipi (TBLDOCUMENTSTATUSACTION/CRITERIA, TBLDOCUMENTAPPROVALTYPE); documentTypes.ts code'suz simpleCrud; byte enumlar sayı olarak (semantik icat edilmedi)
 - [[runs/2026-06-12T13-05-00-uyarlamalar-duzen]] — Uyarlamalar menüsü StokBar grup düzenine (Genel→Operasyon→Belge Tipleri→Giriş/Çıkış Koşulları→Yönlendirme→Dinamik Etiketleme); grupsuz öğe (group:'') desteği
-- [[runs/2026-06-12T14-30-00-kosul-yonlendirme-sayim]] — Giriş/Çıkış Koşulları + Yönlendirme + Sayım (15 legacy config tablosu). wmsConfig.ts. Sayım Parametreleri 21 alan (StokBar modaline sadık). Uyarlamalar grupları StokBar parite ilerliyor.
+- [[runs/2026-06-12T14-30-00-kosul-yonlendirme-sayim]] — Giriş/Çıkış Koşulları + Yönlendirme + Sayım (15 legacy config tablosu). wmsConfig.ts. Sayım Parametreleri (StokBar modaline sadık). Uyarlamalar grupları StokBar parite ilerliyor.
+- [[runs/2026-06-20T14-02-15-749a-sayim-param-duzeltme]] — **Sayım Parametreleri düzeltme**: fazla `isActive` (Aktif) alanı StokBar TBLSBSAYIMPARAMETRE'de YOK → form/liste/zod/DB kolonu (migration DROP COLUMN) kaldırıldı. Tablo = 20 iş kolonu. **Sayım operasyonu seçimi `direction==='COUNT'` filtreli** → yeni **`FieldDef.refFilter`** (GenericForm ham ref satırlarını map'ten önce süzer). NOT: kolon düşünce çalışan tsx eski Prisma client'ı tutar (P2022) → api preview yönetimli restart şart.
 - [[runs/2026-06-12T21-15-00-scope-enforce-wo-durum]] — **SCOPE ENFORCE** (Yasaklı Ürün): movement.ts cariScopeMatches/materialScopeMatches (Hepsi/Grup/Belirli); completeDocument'ta yasaklı ürün kapsam eşleşince bloke (E2E SPECIFIC+GROUP). + İş Emri belgesi belge durumu=Onaylandı → dört akış (manuel/PO/SO/iş emri) tutarlı.
 - [[runs/2026-06-12T20-40-00-faz2-sevk-belge-durumu]] — **DAVRANIŞ Faz 2**: sevk(sales.ts ×2)+mal kabul(procurement.ts) belgeleri artık belge durumu=Onaylandı atıyor (docStatusId). Sevk E2E: SO→allocate(FEFO)→ship → GI Onaylandı + stok 100→99. (B scope şeması migrate'li, DB=şema.)
 - [[runs/2026-06-12T20-00-00-faz1-palet-karantina]] — **DAVRANIŞ Faz 1 TAMAM**: palet no = palet tipi öne­k(code)+sayaç+palletNoLength (PX000001); KARANTİNA akışı E2E (qualityControl GR→stok QUARANTINE; INTERNAL Kalite Onay op-statü geçişi→AVAILABLE). Kalite=stok statüsü, belge durumu ayrı eksen — ikisi birlikte çalışıyor.
@@ -140,3 +141,19 @@ Notlar: Karar = **ayrı PWA değil, /m rota grubu** (App.tsx, `<Authenticated>` 
 ## WMS belge / lokasyon / ürün
 Kanonik kod: [[src/routes/documents.ts]], [[src/routes/locations.ts]], [[src/routes/products.ts]]
 Notlar: Belge = başlık (TBLDOCUMENT) + satır (TBLDOCUMENTLINE), nested create ile lineNo otomatik. type: RECEIPT/SHIPMENT/TRANSFER/ADJUSTMENT/COUNT, status: DRAFT/CONFIRMED/COMPLETED/CANCELLED.
+
+## Ek Saha / custom field / Saha Tanımlamaları
+Kanonik kod: [[src/routes/extraFields.ts]], [[prisma/schema.prisma]], [[web/src/formConfig.ts]], [[web/src/resources.ts]]
+Kararlar:
+- [[decisions/0009-eksaha-birlesik-saha]] — Dinamik+Statik TEK tablo (fieldKind ayırt-edici), kullanıcı "biz tek yapalım"
+Geçmiş runs:
+- [[runs/2026-06-20T05-07-48-saha]] — Ek Saha birleşik + Operasyon Tipi Saha Bağlantı + Belge/Gözlem
+Notlar: **TBLEXTRAFIELD** (Dinamik+Statik, fieldKind=DYNAMIC/STATIC), **TBLEXTRAFIELDOPTION** (seçenek), **TBLOPERATIONTYPEEXTRAFIELD** (op-bağlantı). 3 string enum (ExtraFieldKind/Entity/DataType). Uygulama yeri (entityType=BYTTIP): Malzeme/Cari/Belge Başlık-Detay-Kapsam/Palet/Stok/Palet Bildirim/Operasyon Belge Detay. Ek Saha Özelliği (fieldDataType): Çoktan Seçmeli Sabit/Metin/Sayısal/Tarih/Rehber. "Tesis"=firma=companyId örtük (facility kolonu yok). Menü: Uyarlamalar > Saha Tanımlamaları (Ek Saha + Operasyon Tipi Saha Bağlantı). ✅ **Seçenek yönetimi (2026-06-20)**: Ek Saha listesinde "Seçenekler" butonu → [[web/src/pages/ExtraFieldOptions.tsx]] (/extra-fields/:id/options) — Çoktan Seçmeli/Rehber tipli sahalara seçenek ekle/sil (TBLEXTRAFIELDOPTION, /api/extra-field-options ownerField=extraFieldId). ProductUnitBarcodes deseni. E2E: Renk sahası→KRMZ/MAVI. ⏳ KALAN: Saha Bağlantı (field-to-field TBLEKSAHABAGLANTI).
+
+## Belge ekranları / Belge & Gözlem / belge kopyala
+Kanonik kod: [[src/routes/documents.ts]], [[web/src/resources.ts]], [[web/src/pages/GenericList.tsx]]
+Geçmiş runs:
+- [[runs/2026-06-20T05-07-48-saha]] — Belge (yönetim+kopyala) / Gözlem (salt-okunur izleme) ayrımı + POST /:id/copy
+- [[runs/2026-06-20T05-35-00-giris-ekranlar]] — Giriş eksik ekranları: İş Atama (TBLDOCUMENTASSIGNMENT) + Stok Giriş (StockEntry, barkod) + Giriş Etiketleme (EntryLabeling)
+- [[runs/2026-06-20T06-10-00-cikis-transfer-ekranlar]] — Çıkış/Transfer parite: Stok Çıkış + Çıkış Etiketleme (StockEntry/EntryLabeling direction prop) + İş Atama (Çıkış/Transfer). Çıkışta sourceStatusId=AVAILABLE şart.
+Notlar: İşlemler her yön grubunda (Giriş/Çıkış/Transfer) **Belge** (Yeni + **Belge Kopyala**) + **Gözlem** (ResourceDef.observe → GenericList salt-okunur: Yeni/Kopyala/Düzenle/Sil gizli, sadece İzle + durum segmenti). **Giriş** grubu tam: Belge·Gözlem·Giriş Etiketleme·Giriş Öneri Listesi·Stok Giriş·İş Atama. **İş Atama**=TBLDOCUMENTASSIGNMENT (belge↔kullanıcı, /api/document-assignments) → terminalde kullanıcıya atanmış belge. **Stok Giriş**=StockEntry.tsx özel ekran (Tesis/Op+barkod /api/lookup/barcode→satır→create+confirm+complete stok yazar; seri-takipli ürün qty=1+seri zorunlu). **Giriş Etiketleme**=EntryLabeling.tsx (belge→ürün→etiket tipi→code128Svg yazdır). Ref-fallback documentNo/username eklendi. **Belge Kopyala**: documents `POST /:id/copy` kaynak başlık+satırları yeni DRAFT'a kopyalar (yeni belge no sayaçtan). Durum segmenti (Tümü/Açık/Tamamlanmış) GenericList'te isDocuments için. NOT: önce tek "Belgeler"e konsolide edilmişti; kullanıcı Belge+Gözlem ayrımını geri istedi (Gözlem=izleme amaçlı).

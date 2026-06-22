@@ -4,12 +4,44 @@ export interface FieldDef {
   label: string
   type?: 'text' | 'number' | 'bool' | 'select' | 'ref' | 'color'
   required?: boolean
-  options?: { value: string; label: string }[]
+  options?: { value: string | number; label: string }[]
   refResource?: string // type 'ref' için seçenekleri buradan çeker
+  refFilter?: (row: Record<string, unknown>) => boolean // ref seçeneklerini süz (ör. sadece COUNT operasyon tipi)
 }
+
+// Belge Durum İşlem — İşlem Tipi (BYTISLEMTIP, tinyint). Etiketler StokBar dropdown sırasına göre.
+// NOT: int kodlar StokBar uygulama enum'unda; katalog yalnızca kolon tipini taşıyor → sıra-bazlı 1..16 atandı (gerekirse remap).
+export const DOC_ACTION_TYPE_OPTS = [
+  { value: 1, label: 'Toplama' },
+  { value: 2, label: 'Topl. İptal' },
+  { value: 3, label: 'Onay' },
+  { value: 4, label: 'Güncelleme' },
+  { value: 5, label: 'Silme' },
+  { value: 6, label: 'Tamam Onayı' },
+  { value: 7, label: 'Tamam Onayı İptal' },
+  { value: 8, label: 'Onay İptal' },
+  { value: 9, label: 'Bölme' },
+  { value: 10, label: 'Batch Atama' },
+  { value: 11, label: 'Palet Oluşturma' },
+  { value: 12, label: 'Hazırlama' },
+  { value: 13, label: 'Hazırlama İptal' },
+  { value: 14, label: 'Kalite Numune Alımı' },
+  { value: 15, label: 'Kalite Değer Girişi' },
+  { value: 16, label: 'Nakliye Sevkiyat Planlama' },
+]
 
 // Bağlantı kapsamı (LinkScope) — Hepsi/Grup/Belirli
 export const SCOPE_OPTS = [{ value: 'ALL', label: 'Hepsi' }, { value: 'GROUP', label: 'Grup' }, { value: 'SPECIFIC', label: 'Belirli' }]
+
+// Giriş/Çıkış koşulu kontrol tipi (SSP yerine yerleşik kontroller)
+export const CONDITION_CONTROL_OPTS = [
+  { value: 'MANUAL', label: 'Manuel Onay (gate)' },
+  { value: 'REQUIRE_BATCH', label: 'Parti No Zorunlu' },
+  { value: 'REQUIRE_SERIAL', label: 'Seri No Zorunlu' },
+  { value: 'REQUIRE_REASON', label: 'Neden Zorunlu' },
+  { value: 'CONTROL_FIELD_REQUIRED', label: 'Kontrol Sahası Dolu (çıkış)' },
+  { value: 'MIN_SHELF_LIFE', label: 'Min. Raf Ömrü — Gün (çıkış)' },
+]
 
 const codeName = (codeLabel = 'Kod', nameLabel = 'Ad'): FieldDef[] => [
   { name: 'code', label: codeLabel, type: 'text', required: true },
@@ -17,7 +49,222 @@ const codeName = (codeLabel = 'Kod', nameLabel = 'Ad'): FieldDef[] => [
   { name: 'isActive', label: 'Aktif', type: 'bool' },
 ]
 
+// Operasyon junction'ları flat menüde — ortak alan parçaları (LinkTab ile aynı, +operationTypeId seçici)
+const OP_TYPE_REF: FieldDef = { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' }
+const TESIS_REF: FieldDef = { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' }
+const CARI_SCOPE: FieldDef[] = [
+  { name: 'cariLinkType', label: 'Cari Bağ.', type: 'select', options: SCOPE_OPTS },
+  { name: 'cariLinkId', label: 'Cari', type: 'ref', refResource: 'partners' },
+]
+const MAT_SCOPE: FieldDef[] = [
+  { name: 'materialLinkType', label: 'Malzeme Bağ.', type: 'select', options: SCOPE_OPTS },
+  { name: 'materialLinkId', label: 'Ürün', type: 'ref', refResource: 'products' },
+]
+const BULK_ACTION_OPTS = [
+  { value: 'CONTROLLED_BULK', label: 'Kontrollü Toplu İşlem' },
+  { value: 'BULK', label: 'Toplu İşlem' },
+  { value: 'RESERVATION', label: 'Rezervasyon' },
+  { value: 'SELECTED_DOCUMENT', label: 'Seçimli Belge' },
+  { value: 'BATCH_CHANGE', label: 'Batch Değiştirme' },
+]
+
+// Ek Saha (custom field) enum'ları — Dinamik/Statik birleşik
+export const EXTRA_FIELD_KIND_OPTS = [
+  { value: 'DYNAMIC', label: 'Dinamik' },
+  { value: 'STATIC', label: 'Statik' },
+]
+export const EXTRA_FIELD_ENTITY_OPTS = [
+  { value: 'MATERIAL', label: 'Malzeme' },
+  { value: 'PARTNER', label: 'Cari' },
+  { value: 'DOC_HEADER', label: 'Belge Başlık' },
+  { value: 'DOC_DETAIL', label: 'Belge Detay' },
+  { value: 'DOC_SCOPE', label: 'Belge Kapsam' },
+  { value: 'PALLET', label: 'Palet' },
+  { value: 'STOCK', label: 'Stok' },
+  { value: 'PALLET_NOTIFY_HEADER', label: 'Palet Bildirim Başlık' },
+  { value: 'OPERATION_DOC_DETAIL', label: 'Operasyon Belge Detay' },
+]
+export const EXTRA_FIELD_DATATYPE_OPTS = [
+  { value: 'MULTI_SELECT_FIXED', label: 'Çoktan Seçmeli Sabit' },
+  { value: 'TEXT', label: 'Metin' },
+  { value: 'NUMERIC', label: 'Sayısal' },
+  { value: 'DATE', label: 'Tarih' },
+  { value: 'LOOKUP', label: 'Rehber' },
+]
+// Dinamik Etiket Tipi item tipi (StokBar BYTTIP)
+export const LABEL_ITEM_TYPE_OPTS = [
+  { value: 'TEXT', label: 'Metin' },
+  { value: 'NUMBER', label: 'Sayısal' },
+  { value: 'DATE', label: 'Tarih' },
+  { value: 'COMBO', label: 'Combo (Sorgu)' },
+  { value: 'LOOKUP', label: 'Rehber' },
+  { value: 'CHECKBOX', label: 'Onay Kutusu' },
+  { value: 'BARCODE', label: 'Barkod' },
+  { value: 'LABEL', label: 'Etiket' },
+]
+
 export const FORM_CONFIG: Record<string, FieldDef[]> = {
+  // ── Ek Saha (Dinamik+Statik birleşik) — StokBar Ek Saha Tanımlama ekranı. Tesis=firma=companyId (örtük). ──
+  'extra-fields': [
+    { name: 'fieldKind', label: 'Tip (Dinamik/Statik)', type: 'select', required: true, options: EXTRA_FIELD_KIND_OPTS },
+    { name: 'entityType', label: 'Uygulama Yeri', type: 'select', required: true, options: EXTRA_FIELD_ENTITY_OPTS },
+    { name: 'trackingCode', label: 'Takip Kodu', type: 'text' },
+    { name: 'description', label: 'Açıklama', type: 'text', required: true },
+    { name: 'fieldDataType', label: 'Ek Saha Özelliği', type: 'select', required: true, options: EXTRA_FIELD_DATATYPE_OPTS },
+    { name: 'defaultValue', label: 'Varsayılan Değer', type: 'text' },
+    { name: 'maxAnswerCount', label: 'Maksimum Cevap Sayısı', type: 'number' },
+    { name: 'minLength', label: 'Min. Uzunluk (dinamik)', type: 'number' },
+    { name: 'maxLength', label: 'Maks. Uzunluk (dinamik)', type: 'number' },
+    { name: 'isRequired', label: 'Zorunlu', type: 'bool' },
+    { name: 'useAsIncrementing', label: 'Ürün Bazında Artan Değer Olarak Kullanılsın', type: 'bool' },
+    { name: 'transferOnDocSplit', label: 'Belge Bölme İşleminde Aktarılsın', type: 'bool' },
+    { name: 'reference', label: 'Referans', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // Dinamik Etiket Tipi (StokBar) — başlık + Item + Sorgu alt-ekranları
+  'label-templates': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'screenTitle', label: 'Ekran Başlık', type: 'text' },
+    { name: 'labelName', label: 'Etiket Adı', type: 'text' },
+    { name: 'menuGroupId', label: 'Menü Grubu', type: 'ref', refResource: 'menu-groups' },
+    { name: 'col1Count', label: 'Kolon 1 Sayı', type: 'number' },
+    { name: 'col2Count', label: 'Kolon 2 Sayı', type: 'number' },
+    { name: 'col3Count', label: 'Kolon 3 Sayı', type: 'number' },
+    { name: 'password', label: 'Şifre', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'label-template-items': [
+    { name: 'title', label: 'Başlık', type: 'text' },
+    { name: 'itemType', label: 'Tip', type: 'select', options: LABEL_ITEM_TYPE_OPTS },
+    { name: 'designName', label: 'Dizayn İsim', type: 'text' },
+    { name: 'displayName', label: 'Görünüm İsim', type: 'text' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'width', label: 'Genişlik', type: 'number' },
+    { name: 'maxLength', label: 'Maks. Uzunluk', type: 'number' },
+    { name: 'defaultValue', label: 'Varsayılan', type: 'text' },
+    { name: 'comboQuery', label: 'Combo Sorgu', type: 'text' },
+    { name: 'isRequired', label: 'Zorunlu', type: 'bool' },
+    { name: 'isVisible', label: 'Görünür', type: 'bool' },
+  ],
+  'label-template-queries': [
+    { name: 'code', label: 'Kod', type: 'text' },
+    { name: 'queryTitle', label: 'Sorgu Başlık', type: 'text' },
+    { name: 'queryDetail', label: 'Sorgu (SQL)', type: 'text' },
+    { name: 'bindingField', label: 'Bağlantı Sahası', type: 'text' },
+  ],
+  // Ek Saha seçenekleri (Çoktan Seçmeli / Rehber için)
+  'extra-field-options': [
+    { name: 'extraFieldId', label: 'Ek Saha', type: 'ref', required: true, refResource: 'extra-fields' },
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'description', label: 'Açıklama', type: 'text' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'reference', label: 'Referans', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // Sayım/Palet ek ekranları
+  'control-counts': [
+    { name: 'code', label: 'Belge Kodu', type: 'text' },
+    { name: 'referenceCode', label: 'Referans Belge', type: 'text' },
+    { name: 'warehouseId', label: 'Depo', type: 'ref', refResource: 'warehouses' },
+    { name: 'note', label: 'Not', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'control-count-lines': [
+    { name: 'productId', label: 'Ürün', type: 'ref', required: true, refResource: 'products' },
+    { name: 'mainQty', label: 'Sistem Miktar', type: 'number' },
+    { name: 'unitId', label: 'Birim', type: 'ref', refResource: 'units' },
+    { name: 'countedQty', label: 'Sayılan', type: 'number' },
+  ],
+  'count-assignments': [
+    { name: 'stockCountId', label: 'Sayım', type: 'ref', required: true, refResource: 'stock-counts' },
+    { name: 'userId', label: 'Kullanıcı', type: 'ref', required: true, refResource: 'users' },
+    { name: 'note', label: 'Not', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'pallet-notifications': [
+    { name: 'palletNo', label: 'Palet No', type: 'text' },
+    { name: 'oldPalletNo', label: 'Eski Palet No', type: 'text' },
+    { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', refResource: 'pallet-types' },
+    { name: 'locationId', label: 'Lokasyon', type: 'ref', refResource: 'locations' },
+    { name: 'statusId', label: 'Statü', type: 'ref', refResource: 'statuses' },
+    { name: 'partnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
+    { name: 'tripNo', label: 'Sefer No', type: 'text' },
+    { name: 'note', label: 'Not', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'pallet-notification-lines': [
+    { name: 'productId', label: 'Ürün', type: 'ref', required: true, refResource: 'products' },
+    { name: 'mainQty', label: 'Miktar', type: 'number' },
+    { name: 'unitId', label: 'Birim', type: 'ref', refResource: 'units' },
+    { name: 'batchNo', label: 'Parti', type: 'text' },
+    { name: 'serialNo', label: 'Seri', type: 'text' },
+  ],
+  // İş Atama — belge ↔ kullanıcı eşleştirme
+  'document-assignments': [
+    { name: 'documentId', label: 'Belge', type: 'ref', required: true, refResource: 'documents' },
+    { name: 'userId', label: 'Kullanıcı', type: 'ref', required: true, refResource: 'users' },
+    { name: 'note', label: 'Not', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // Operasyon Tipi Saha Bağlantı
+  'operation-type-extra-fields': [
+    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
+    { name: 'extraFieldId', label: 'Ek Saha', type: 'ref', required: true, refResource: 'extra-fields' },
+    { name: 'isStatic', label: 'Statik', type: 'bool' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'useInTerminal', label: 'El Terminalinde Kullanılsın', type: 'bool' },
+    { name: 'useInApproval', label: 'Onayda Kullanılsın', type: 'bool' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // ── Operasyon junction'ları (flat menü) — backend zod şemalarına birebir ──
+  'operation-type-reasons': [OP_TYPE_REF, TESIS_REF,
+    { name: 'reasonCategoryId', label: 'Neden Kategori', type: 'ref', refResource: 'reason-categories' },
+    { name: 'reasonId', label: 'Neden', type: 'ref', required: true, refResource: 'reasons' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'isAutomatic', label: 'Otomatik', type: 'bool' },
+  ],
+  'operation-group-links': [OP_TYPE_REF, TESIS_REF,
+    { name: 'operationGroupId', label: 'Operasyon Grubu', type: 'ref', required: true, refResource: 'operation-groups' },
+    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
+  ],
+  'operation-type-locations': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE,
+    { name: 'sourceLinkType', label: 'Kaynak Bağ.', type: 'select', options: SCOPE_OPTS },
+    { name: 'sourceLocationId', label: 'Kaynak Lokasyon', type: 'ref', refResource: 'locations' },
+    { name: 'targetLinkType', label: 'Hedef Bağ.', type: 'select', options: SCOPE_OPTS },
+    { name: 'targetLocationId', label: 'Hedef Lokasyon', type: 'ref', refResource: 'locations' },
+    { name: 'fixLocation', label: 'Lokasyon Sabit', type: 'bool' },
+    { name: 'terminalFixSource', label: 'El Terminali Kaynak Sabit', type: 'bool' },
+    { name: 'terminalFixTarget', label: 'El Terminali Hedef Sabit', type: 'bool' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+  ],
+  'operation-type-statuses': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE,
+    { name: 'sourceStatusId', label: 'Kaynak Statü (boş=dış)', type: 'ref', refResource: 'statuses' },
+    { name: 'targetStatusId', label: 'Hedef Statü', type: 'ref', required: true, refResource: 'statuses' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+  ],
+  'operation-tolerances': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE,
+    { name: 'tolerancePercent', label: 'Tolerans %', type: 'number' },
+    { name: 'toleranceQty', label: 'Tolerans Miktar', type: 'number' },
+    { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' },
+  ],
+  'operation-forbidden-products': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE],
+  'operation-type-pallet-types': [OP_TYPE_REF, TESIS_REF,
+    { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', required: true, refResource: 'pallet-types' },
+    { name: 'innerPalletTypeId', label: 'İç Palet Tipi', type: 'ref', refResource: 'pallet-types' },
+  ],
+  'operation-conversions': [OP_TYPE_REF, TESIS_REF,
+    { name: 'conversionCode', label: 'Dönüşüm Kodu', type: 'text', required: true },
+    { name: 'statusId', label: 'Statü', type: 'ref', refResource: 'statuses' },
+    { name: 'outgoing', label: 'Giden', type: 'bool' },
+    { name: 'sourceLocLinkType', label: 'Kaynak Lok. Bağ.', type: 'select', options: SCOPE_OPTS },
+    { name: 'sourceLocLinkId', label: 'Kaynak Lokasyon', type: 'ref', refResource: 'locations' },
+    { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ.', type: 'select', options: SCOPE_OPTS },
+    { name: 'targetLocLinkId', label: 'Hedef Lokasyon', type: 'ref', refResource: 'locations' },
+  ],
+  'operation-bulk-actions': [OP_TYPE_REF, TESIS_REF,
+    { name: 'bulkActionType', label: 'Toplu İşlem Tipi', type: 'select', options: BULK_ACTION_OPTS },
+    { name: 'description', label: 'Açıklama', type: 'text' },
+  ],
   'document-statuses': [
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Tanım', type: 'text' },
@@ -39,6 +286,18 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   'entry-condition-type-operations': [
     { name: 'entryConditionTypeId', label: 'Giriş Koşul Tipi', type: 'ref', required: true, refResource: 'entry-condition-types' },
     { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'entry-condition-parameters': [
+    { name: 'entryConditionTypeId', label: 'Giriş Koşul Tipi', type: 'ref', required: true, refResource: 'entry-condition-types' },
+    { name: 'controlType', label: 'Kontrol Tipi', type: 'select', required: true, options: CONDITION_CONTROL_OPTS },
+    { name: 'cariLinkType', label: 'Cari Kapsam', type: 'select', options: SCOPE_OPTS },
+    { name: 'cariLinkId', label: 'Cari', type: 'ref', refResource: 'partners' },
+    { name: 'materialLinkType', label: 'Malzeme Kapsam', type: 'select', options: SCOPE_OPTS },
+    { name: 'materialLinkId', label: 'Ürün/Grup', type: 'ref', refResource: 'products' },
+    { name: 'conditionBreakAllowed', label: 'Koşul Kırma İzinli', type: 'bool' },
+    { name: 'exclude', label: 'Hariç Tut', type: 'bool' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   // ── Çıkış Koşulları ──
@@ -66,6 +325,20 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'fifoCheckOnReverseScan', label: 'Geri Okutmada FIFO Kontrolü', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  'exit-condition-parameters': [
+    { name: 'exitConditionTypeId', label: 'Çıkış Koşul Tipi', type: 'ref', required: true, refResource: 'exit-condition-types' },
+    { name: 'controlType', label: 'Kontrol Tipi', type: 'select', required: true, options: CONDITION_CONTROL_OPTS },
+    { name: 'cariLinkType', label: 'Cari Kapsam', type: 'select', options: SCOPE_OPTS },
+    { name: 'cariLinkId', label: 'Cari', type: 'ref', refResource: 'partners' },
+    { name: 'materialLinkType', label: 'Malzeme Kapsam', type: 'select', options: SCOPE_OPTS },
+    { name: 'materialLinkId', label: 'Ürün/Grup', type: 'ref', refResource: 'products' },
+    { name: 'controlFieldId', label: 'Kontrol Sahası', type: 'ref', refResource: 'exit-condition-control-fields' },
+    { name: 'dayCount', label: 'Gün Sayısı', type: 'number' },
+    { name: 'conditionBreakAllowed', label: 'Koşul Kırma İzinli', type: 'bool' },
+    { name: 'exclude', label: 'Hariç Tut', type: 'bool' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
   // ── Yönlendirme ──
   'routing-control-fields': [
     { name: 'code', label: 'Kod', type: 'text', required: true },
@@ -80,12 +353,29 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Yönlendirme Parametre — yönlendirme tipine bağlı (StokBar alt-ekranı)
+  'routing-parameters': [
+    { name: 'cariLinkType', label: 'Cari Bağ. Tipi', type: 'select', options: SCOPE_OPTS },
+    { name: 'cariLinkId', label: 'Müşteri', type: 'ref', refResource: 'partners' },
+    { name: 'materialLinkType', label: 'Malzeme Bağ. Tipi', type: 'select', options: SCOPE_OPTS },
+    { name: 'materialLinkId', label: 'Ürün', type: 'ref', refResource: 'products' },
+    { name: 'controlFieldId', label: 'Kontrol Sahası', type: 'ref', refResource: 'routing-control-fields' },
+    { name: 'messageType', label: 'Mesaj Tipi', type: 'select', options: [{ value: 'WARNING', label: 'Uyarı' }, { value: 'ERROR', label: 'Hata' }] },
+    { name: 'controlMode', label: 'Yönlendirme Tipi', type: 'select', options: [{ value: 'SIDE_BY_SIDE', label: 'Yan Yana Gelsin' }, { value: 'FREE_CONTROL', label: 'Serbest Kontrol' }, { value: 'PRODUCT_LOCATION', label: 'Ürün Lokasyon Bağlantı' }] },
+    { name: 'conditionBreak', label: 'Koşul Kırma', type: 'bool' },
+    { name: 'spName', label: 'SSP', type: 'text' },
+    { name: 'controlTypeDescription', label: 'Kontrol Tipi Açıklama', type: 'text' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'incrementalSort', label: 'Artan Sıralama Uygulansın', type: 'bool' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
   'routing-type-operations': [
-    { name: 'routingTypeId', label: 'Yönlendirme Tipi', type: 'ref', required: true, refResource: 'routing-types' },
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
+    { name: 'routingTypeId', label: 'Yönlendirme Tip Kod', type: 'ref', required: true, refResource: 'routing-types' },
     { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'locationLinkType', label: 'Lokasyon Bağ. Tipi', type: 'number' },
-    { name: 'locationId', label: 'Lokasyon Kodu', type: 'number' },
-    { name: 'taskPlanId', label: 'Görev Plan Kodu', type: 'number' },
+    { name: 'locationLinkType', label: 'Lok. Bağlantı Tipi', type: 'select', options: SCOPE_OPTS },
+    { name: 'locationId', label: 'Lokasyon Kod', type: 'ref', refResource: 'locations' },
+    { name: 'taskPlanId', label: 'Görev Kod', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'routing-product-locations': [
@@ -113,41 +403,34 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'required', label: 'Zorunlu', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Alan SIRASI + etiketler StokBar "Sayım Parametreleri" (Kayıt Görüntüle) ekranıyla birebir hizalı.
+  // NOT: Transfer Operasyon StokBar ekranında YOK → formda yok (legacy TBLSBSAYIMPARAMETRE.LNGTRANSFEROPERASYONTIPKOD kolonu DB'de durur).
   'count-parameters': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'countType', label: 'Sayım Tipi', type: 'number' },
+    // Sayım operasyonu: yalnızca operasyon tipi "Sayım" (direction=COUNT) olanlar seçilebilir
+    { name: 'operationTypeId', label: 'Sayım Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types', refFilter: (x) => x.direction === 'COUNT' },
+    { name: 'countType', label: 'Sayım Tipi', type: 'select', options: [{ value: 1, label: 'Kör Sayım' }, { value: 2, label: 'Açık Sayım' }] },
     { name: 'entryOperationTypeId', label: 'Giriş Operasyon', type: 'ref', refResource: 'operation-types' },
     { name: 'exitOperationTypeId', label: 'Çıkış Operasyon', type: 'ref', refResource: 'operation-types' },
-    { name: 'transferOperationTypeId', label: 'Transfer Operasyon', type: 'ref', refResource: 'operation-types' },
     { name: 'documentDetailCount', label: 'Belge Detay Sayısı', type: 'number' },
-    { name: 'countDays', label: 'Sayım Gün Sayısı', type: 'number' },
     { name: 'equalize', label: 'Eşitleme Yapılsın', type: 'bool' },
     { name: 'weightDiff', label: 'Ağırlık Farkı Alınsın', type: 'bool' },
     { name: 'palletQtyPartialEntry', label: 'Palet Miktarı Parçalı Giriş', type: 'bool' },
-    { name: 'stacked', label: 'Miktar Girişi İstifli', type: 'bool' },
-    { name: 'partialPallet', label: 'Parçalı Palet Kullanımı', type: 'bool' },
-    { name: 'partialPalletWarning', label: 'Parçalı Palet Uyarısı', type: 'bool' },
-    { name: 'stockMoveOnActiveCount', label: 'Aktif Sayımda Stok Hareketi', type: 'bool' },
+    { name: 'stacked', label: 'Miktar Girişi İstifli Olsun', type: 'bool' },
+    { name: 'partialPallet', label: 'Parçalı Palet Kullanımı Yapılsın', type: 'bool' },
+    { name: 'partialPalletWarning', label: 'Parçalı Palet Uyarısı Verilsin', type: 'bool' },
+    { name: 'stockMoveOnActiveCount', label: 'Aktif Sayımda Stok Hareketi Yapılsın', type: 'bool' },
     { name: 'hideInnerPallets', label: 'İç Paletler Gösterilmesin', type: 'bool' },
     { name: 'hideMixedPallet', label: 'Karma Palet Gösterilmesin', type: 'bool' },
     { name: 'innerPalletCountCheck', label: 'Palet İçi Sayı Kontrolü', type: 'bool' },
-    { name: 'hideInnerPalletStock', label: 'Palet İçi Stok Gösterilmesin', type: 'bool' },
     { name: 'dontRecountPallet', label: 'Palet Tekrar Sayılmasın', type: 'bool' },
+    { name: 'hideInnerPalletStock', label: 'Palet İçi Stok Gösterilmesin', type: 'bool' },
+    { name: 'countDays', label: 'Sayım Gün Sayısı', type: 'number' },
     { name: 'askLocationOnScan', label: 'Okutmada Lokasyon Sorulsun', type: 'bool' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   // ── Genel ek · İş Emri · Dinamik Etiketleme (StokBar) ──
   languages: [
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'isDefault', label: 'Varsayılan', type: 'bool' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
-  shifts: [
-    { name: 'code', label: 'Kod', type: 'text', required: true },
-    { name: 'name', label: 'Tanım', type: 'text' },
-    { name: 'startTime', label: 'Başlangıç (ISO)', type: 'text' },
-    { name: 'endTime', label: 'Bitiş (ISO)', type: 'text' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'screen-report-links': [
@@ -252,46 +535,10 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   // ── Operasyon config (StokBar) ──
+  // Tesis = firma (LNGDISTKOD) = companyId (örtük). StokBar: Tesis + Kod + Tanım → bizde Kod + Tanım.
   'reason-categories': [
-    { name: 'code', label: 'Kod', type: 'text', required: true },
-    { name: 'name', label: 'Tanım', type: 'text' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
-  'operation-group-links': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'operationGroupId', label: 'Operasyon Grubu', type: 'ref', required: true, refResource: 'operation-groups' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
-  'operation-tolerances': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', refResource: 'operation-types' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
-    { name: 'cariLinkType', label: 'Cari Bağ. Tipi', type: 'number' },
-    { name: 'cariLinkId', label: 'Cari Bağ. Kodu', type: 'number' },
-    { name: 'materialLinkType', label: 'Malzeme Bağ. Tipi', type: 'number' },
-    { name: 'materialLinkId', label: 'Malzeme Bağ. Kodu', type: 'number' },
-    { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
-  'operation-forbidden-products': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
-    { name: 'cariLinkType', label: 'Cari Bağ. Tipi', type: 'number' },
-    { name: 'cariLinkId', label: 'Cari Bağ. Kodu', type: 'number' },
-    { name: 'materialLinkType', label: 'Malzeme Bağ. Tipi', type: 'number' },
-    { name: 'materialLinkId', label: 'Malzeme Bağ. Kodu', type: 'number' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
-  'operation-conversions': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'statusId', label: 'Statü', type: 'ref', refResource: 'statuses' },
-    { name: 'conversionCode', label: 'Dönüşüm Kodu', type: 'text', required: true },
-    { name: 'outgoing', label: 'Giden', type: 'bool' },
-    { name: 'sourceLocLinkType', label: 'Kaynak Lok. Bağ. Tipi', type: 'number' },
-    { name: 'sourceLocLinkId', label: 'Kaynak Lok. Bağ. Kodu', type: 'number' },
-    { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ. Tipi', type: 'number' },
-    { name: 'targetLocLinkId', label: 'Hedef Lok. Bağ. Kodu', type: 'number' },
+    { name: 'code', label: 'Neden Kategori', type: 'text', required: true },
+    { name: 'name', label: 'Tanımı', type: 'text' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'sequential-operations': [
@@ -320,12 +567,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'facility', label: 'Tesis', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
-  'operation-bulk-actions': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'bulkActionType', label: 'Toplu İşlem Tipi', type: 'number' },
-    { name: 'description', label: 'Açıklama', type: 'text' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
   'product-additional-groups': [
     { name: 'productId', label: 'Ürün', type: 'ref', required: true, refResource: 'products' },
     { name: 'groupId', label: 'Grup', type: 'ref', required: true, refResource: 'product-groups' },
@@ -347,13 +588,13 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   ],
   'document-status-actions': [
     { name: 'documentStatusId', label: 'Belge Durumu', type: 'ref', required: true, refResource: 'document-statuses' },
-    { name: 'actionType', label: 'İşlem Tipi', type: 'number', required: true },
+    { name: 'actionType', label: 'İşlem Tipi', type: 'select', required: true, options: DOC_ACTION_TYPE_OPTS },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Tesis = firma (LNGDISTKOD) = companyId (örtük). StokBar: Tesis + Operasyon Tipi + Kriter → bizde Operasyon + Kriter.
   'document-status-criteria': [
     { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
-    { name: 'criteria', label: 'Kriter (ifade)', type: 'text', required: true },
+    { name: 'criteria', label: 'Kriter', type: 'text', required: true },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'document-approval-types': [
@@ -376,7 +617,69 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   'product-detail-types': codeName(),
   'operation-groups': codeName(),
   'partner-groups': codeName(),
-  regions: codeName(),
+  regions: [
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
+    { name: 'code', label: 'Bölge Kodu', type: 'text', required: true },
+    { name: 'name', label: 'Tanımı', type: 'text', required: true },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'partner-extra-groups': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'name', label: 'Ad', type: 'text', required: true },
+    { name: 'colorCode', label: 'Renk Kodu', type: 'color' },
+    { name: 'reference', label: 'Referans', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'partner-extra-field-defs': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'label', label: 'Etiket', type: 'text', required: true },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // Palet Güncelleme — palletNo/tip değişmez; diğer alanlar (GenericForm edit)
+  pallets: [
+    { name: 'parentPalletId', label: 'Üst Palet', type: 'ref', refResource: 'pallets' },
+    { name: 'baseUnitId', label: 'Ana Birim', type: 'ref', refResource: 'units' },
+    { name: 'originalQty', label: 'Başlangıç Miktarı', type: 'number' },
+    { name: 'expiryDate', label: 'Son Kullanma (YYYY-MM-DD)', type: 'text' },
+    { name: 'beaconId', label: 'Beacon ID', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // Rapor tanım tabloları (metadata-driven motor)
+  'report-defs': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'name', label: 'Ad', type: 'text', required: true },
+    { name: 'sourceKey', label: 'Veri Kaynağı', type: 'select', required: true, options: [{ value: 'STOCK', label: 'Stok' }, { value: 'DOCUMENTS', label: 'Belgeler' }, { value: 'PALLETS', label: 'Paletler' }] },
+    { name: 'category', label: 'Kategori', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'report-criteria': [
+    { name: 'reportId', label: 'Rapor', type: 'ref', required: true, refResource: 'report-defs' },
+    { name: 'fieldCode', label: 'Alan Kodu', type: 'text', required: true },
+    { name: 'label', label: 'Etiket', type: 'text', required: true },
+    { name: 'type', label: 'Tip', type: 'select', required: true, options: [{ value: 'TEXT', label: 'Metin' }, { value: 'NUMBER', label: 'Sayı' }, { value: 'DATE', label: 'Tarih' }, { value: 'SELECT', label: 'Liste' }, { value: 'REF', label: 'Referans' }] },
+    { name: 'refResource', label: 'Ref Kaynak (REF için)', type: 'text' },
+    { name: 'options', label: 'Seçenekler (val:label,...)', type: 'text' },
+    { name: 'required', label: 'Zorunlu', type: 'bool' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+  ],
+  'report-fields': [
+    { name: 'reportId', label: 'Rapor', type: 'ref', required: true, refResource: 'report-defs' },
+    { name: 'fieldCode', label: 'Alan Kodu', type: 'text', required: true },
+    { name: 'label', label: 'Etiket', type: 'text', required: true },
+    { name: 'align', label: 'Hizalama', type: 'select', options: [{ value: 'left', label: 'Sol' }, { value: 'right', label: 'Sağ' }] },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+  ],
+  // Entegrasyon Aktarım — manuel tetikleme (kaydet = aktarım denemesi log'lanır)
+  'integration-logs': [
+    { name: 'direction', label: 'Yön', type: 'select', required: true, options: [{ value: 'IN', label: 'Gelen' }, { value: 'OUT', label: 'Giden' }] },
+    { name: 'entityType', label: 'İşlem Tipi', type: 'select', required: true, options: [
+      { value: 'MALZEME', label: 'Malzeme' }, { value: 'CARI', label: 'Cari' }, { value: 'SIPARIS', label: 'Sipariş' },
+      { value: 'FATURA', label: 'Fatura' }, { value: 'ISEMRI', label: 'İş Emri' }, { value: 'DEPO', label: 'Depo' },
+      { value: 'ZINCIR', label: 'Zincir' }, { value: 'URUN_AGACI', label: 'Ürün Ağacı' },
+    ] },
+    { name: 'referenceKey', label: 'Referans Anahtar', type: 'text' },
+    { name: 'message', label: 'Mesaj', type: 'text' },
+  ],
   statuses: codeName(),
   'pallet-types': [
     { name: 'code', label: 'Palet No Öneki (Kod)', type: 'text', required: true },
@@ -399,23 +702,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'logControl', label: 'Log Kontrol', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
-  'operation-type-statuses': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'sourceStatusId', label: 'Kaynak Statü (boş=dış)', type: 'ref', refResource: 'statuses' },
-    { name: 'targetStatusId', label: 'Hedef Statü', type: 'ref', required: true, refResource: 'statuses' },
-    { name: 'sortOrder', label: 'Sıra', type: 'number' },
-  ],
-  'operation-type-locations': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'sourceLocationId', label: 'Kaynak Lokasyon', type: 'ref', refResource: 'locations' },
-    { name: 'targetLocationId', label: 'Hedef Lokasyon', type: 'ref', refResource: 'locations' },
-    { name: 'fixLocation', label: 'Lokasyon Sabit', type: 'bool' },
-  ],
-  'operation-type-reasons': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'reasonId', label: 'Neden', type: 'ref', required: true, refResource: 'reasons' },
-    { name: 'isAutomatic', label: 'Otomatik', type: 'bool' },
-  ],
   'location-capacities': [
     { name: 'locationLinkType', label: 'Lokasyon Bağ. Tipi', type: 'select', required: true, options: [{ value: 'LOCATION', label: 'Göz / Lokasyon' }, { value: 'LOCATION_GROUP', label: 'Lokasyon Grup' }] },
     { name: 'locationLinkCode', label: 'Lokasyon', type: 'ref', required: true, refResource: 'locations' },
@@ -435,11 +721,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'weightUnitId', label: 'Ağırlık Birim', type: 'ref', refResource: 'units' },
     { name: 'messageType', label: 'Mesaj Tipi', type: 'select', options: [{ value: 'ERROR', label: 'Hata' }, { value: 'WARNING', label: 'Uyarı' }] },
     { name: 'distributeToCells', label: 'Gözlere Dağıtılsın', type: 'bool' },
-  ],
-  'operation-type-pallet-types': [
-    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', required: true, refResource: 'pallet-types' },
-    { name: 'innerPalletTypeId', label: 'İç Palet Tipi', type: 'ref', refResource: 'pallet-types' },
   ],
   'entry-condition-types': codeName('Kod', 'Açıklama'),
   'exit-condition-types': codeName('Kod', 'Açıklama'),

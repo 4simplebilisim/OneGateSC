@@ -131,8 +131,14 @@ export async function productUnitRoutes(app: FastifyInstance) {
     if (!pu) return reply.code(404).send({ error: 'Product unit not found' })
     try { await assertBarcodeUnique(companyId, parsed.data.barcode) }
     catch (err) { if (err instanceof BarcodeError) return reply.code(409).send({ error: err.message }); throw err }
-    const row = await prisma.tBLPRODUCTUNITBARCODE.create({ data: { productUnitId: id, ...parsed.data } })
-    return reply.code(201).send(row)
+    try {
+      const row = await prisma.tBLPRODUCTUNITBARCODE.create({ data: { productUnitId: id, companyId, ...parsed.data } })
+      return reply.code(201).send(row)
+    } catch (err) {
+      // DB-seviyesi @@unique([companyId, barcode]) — yarış durumunda app-kontrolünü atlasa bile burada yakalanır
+      if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: `"${parsed.data.barcode}" barkodu zaten kullanılıyor` })
+      throw err
+    }
   })
 
   app.delete('/:id/barcodes/:barcodeId', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

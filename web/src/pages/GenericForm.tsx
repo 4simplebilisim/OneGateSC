@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { App, Button, Card, Col, Form, Input, InputNumber, Row, Select, Switch, ColorPicker } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
@@ -11,6 +11,9 @@ type RefOpts = Record<string, { value: number; label: string }[]>
 
 export const GenericForm = ({ resource, mode }: { resource: string; mode: 'create' | 'edit' }) => {
   const { id } = useParams()
+  const [search] = useSearchParams()
+  const copyFrom = search.get('copyFrom')
+  const location = useLocation()
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm()
@@ -24,10 +27,15 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
       .filter((f) => f.type === 'ref' && f.refResource)
       .forEach((f) => {
         axiosInstance.get(`/api/${f.refResource}`, { params: { pageSize: 200 } }).then((r) => {
-          const rows = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
+          const raw = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
+          const rows = f.refFilter ? raw.filter(f.refFilter) : raw
           setRefOptions((prev) => ({
             ...prev,
-            [f.name]: rows.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code} — ${x.name}` })),
+            // code/name yoksa description/trackingCode'a düş (ör. Ek Saha)
+            [f.name]: rows.map((x: Record<string, unknown>) => ({
+              value: x.id as number,
+              label: x.code ? `${x.code}${x.name ? ' — ' + x.name : ''}` : String(x.palletNo ?? x.documentNo ?? x.countNo ?? x.orderNo ?? x.username ?? x.description ?? x.trackingCode ?? `#${x.id}`),
+            })),
           }))
         })
       })
@@ -37,9 +45,20 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
   useEffect(() => {
     if (mode === 'edit' && id) {
       axiosInstance.get(`/api/${resource}/${id}`).then((r) => form.setFieldsValue(r.data))
+    } else if (mode === 'create' && copyFrom) {
+      // Kopyala: kimlik/zaman/kod alanlarını at → kod yeni girilsin. Kaynak satır state ile geldiyse refetch yok
+      // (çoğu liste-kaynağında GET /:id yok); gelmemişse (deep-link) GET /:id'e düş.
+      const apply = (data: Record<string, unknown>) => {
+        const { id: _id, code: _code, createdAt: _c, updatedAt: _u, companyId: _co, createdById: _cb, ...rest } = data
+        // null alanları ele — backend zod .optional() null kabul etmez (boş bırakılırsa undefined gider)
+        form.setFieldsValue(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null)))
+      }
+      const src = (location.state as { copySource?: Record<string, unknown> } | null)?.copySource
+      if (src) apply(src)
+      else axiosInstance.get(`/api/${resource}/${copyFrom}`).then((r) => apply(r.data)).catch(() => { /* GET /:id yoksa boş başla */ })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id, resource])
+  }, [mode, id, resource, copyFrom])
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
@@ -75,8 +94,8 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
   return (
     <div className="og-page" style={{ maxWidth: 820 }}>
       <PageHeader
-        title={`${label} — ${mode === 'create' ? 'Yeni kayıt' : 'Düzenle'}`}
-        subtitle={mode === 'create' ? 'Alanları doldurup kaydedin' : `#${id} kaydı düzenleniyor`}
+        title={`${label} — ${mode === 'create' ? (copyFrom ? 'Kopyala' : 'Yeni kayıt') : 'Düzenle'}`}
+        subtitle={mode === 'create' ? (copyFrom ? `#${copyFrom} kaydından kopyalandı — yeni bir kod girip kaydedin` : 'Alanları doldurup kaydedin') : `#${id} kaydı düzenleniyor`}
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${resource}`)}>Liste</Button>}
       />
       <Form form={form} layout="vertical" onFinish={onFinish}>

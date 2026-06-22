@@ -1,0 +1,144 @@
+-- CreateTable
+CREATE TABLE "TBLCOUNTASSIGNMENT" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "stockCountId" INTEGER NOT NULL,
+    "userId" INTEGER NOT NULL,
+    "note" VARCHAR(200),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLCOUNTASSIGNMENT_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLCONTROLCOUNT" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "code" VARCHAR(40),
+    "referenceCode" VARCHAR(40),
+    "warehouseId" INTEGER,
+    "approvedAt" TIMESTAMP(3),
+    "note" VARCHAR(200),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLCONTROLCOUNT_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLCONTROLCOUNTLINE" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "controlCountId" INTEGER NOT NULL,
+    "lineNo" INTEGER NOT NULL DEFAULT 1,
+    "productId" INTEGER NOT NULL,
+    "mainQty" DECIMAL(28,8) NOT NULL DEFAULT 0,
+    "unitId" INTEGER,
+    "countedQty" DECIMAL(28,8),
+    "countedUnitId" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLCONTROLCOUNTLINE_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPALLETNOTIFICATION" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "palletNo" VARCHAR(40),
+    "oldPalletNo" VARCHAR(40),
+    "palletTypeId" INTEGER,
+    "locationId" INTEGER,
+    "statusId" INTEGER,
+    "partnerId" INTEGER,
+    "tripNo" VARCHAR(40),
+    "approvedAt" TIMESTAMP(3),
+    "note" VARCHAR(200),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPALLETNOTIFICATION_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPALLETNOTIFICATIONLINE" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "notificationId" INTEGER NOT NULL,
+    "lineNo" INTEGER NOT NULL DEFAULT 1,
+    "productId" INTEGER NOT NULL,
+    "mainQty" DECIMAL(28,8) NOT NULL DEFAULT 0,
+    "unitId" INTEGER,
+    "netWeight" DECIMAL(28,8),
+    "grossWeight" DECIMAL(28,8),
+    "batchNo" VARCHAR(100),
+    "serialNo" VARCHAR(100),
+    "statusId" INTEGER,
+    "locationId" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPALLETNOTIFICATIONLINE_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLPALLETHISTORY" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "palletId" INTEGER NOT NULL,
+    "parentPalletId" INTEGER,
+    "originalQty" DECIMAL(28,8),
+    "unitId" INTEGER,
+    "operationDocCode" VARCHAR(40),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "archived" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLPALLETHISTORY_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "TBLCOUNTASSIGNMENT_companyId_idx" ON "TBLCOUNTASSIGNMENT"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLCOUNTASSIGNMENT_stockCountId_idx" ON "TBLCOUNTASSIGNMENT"("stockCountId");
+
+-- CreateIndex
+CREATE INDEX "TBLCOUNTASSIGNMENT_userId_idx" ON "TBLCOUNTASSIGNMENT"("userId");
+
+-- CreateIndex
+CREATE INDEX "TBLCONTROLCOUNT_companyId_idx" ON "TBLCONTROLCOUNT"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLCONTROLCOUNTLINE_companyId_idx" ON "TBLCONTROLCOUNTLINE"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLCONTROLCOUNTLINE_controlCountId_idx" ON "TBLCONTROLCOUNTLINE"("controlCountId");
+
+-- CreateIndex
+CREATE INDEX "TBLPALLETNOTIFICATION_companyId_idx" ON "TBLPALLETNOTIFICATION"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLPALLETNOTIFICATIONLINE_companyId_idx" ON "TBLPALLETNOTIFICATIONLINE"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLPALLETNOTIFICATIONLINE_notificationId_idx" ON "TBLPALLETNOTIFICATIONLINE"("notificationId");
+
+-- CreateIndex
+CREATE INDEX "TBLPALLETHISTORY_companyId_idx" ON "TBLPALLETHISTORY"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLPALLETHISTORY_palletId_idx" ON "TBLPALLETHISTORY"("palletId");
+
+-- AddForeignKey
+ALTER TABLE "TBLCONTROLCOUNTLINE" ADD CONSTRAINT "TBLCONTROLCOUNTLINE_controlCountId_fkey" FOREIGN KEY ("controlCountId") REFERENCES "TBLCONTROLCOUNT"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TBLPALLETNOTIFICATIONLINE" ADD CONSTRAINT "TBLPALLETNOTIFICATIONLINE_notificationId_fkey" FOREIGN KEY ("notificationId") REFERENCES "TBLPALLETNOTIFICATION"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+

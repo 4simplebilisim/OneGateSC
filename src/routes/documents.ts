@@ -6,11 +6,13 @@ import { completeDocument, reverseDocument, MovementError } from '../lib/movemen
 import { docStatusId, DOC_STATUS } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
+import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
   unitId: z.number().int().positive(),
   quantity: z.number().positive(),
+  referenceQty: z.number().nonnegative().optional(), // beklenen/referans miktar (tolerans kontrolü)
   sourceLocationId: z.number().int().positive().optional(),
   sourceStatusId: z.number().int().positive().optional(),
   targetLocationId: z.number().int().positive().optional(),
@@ -18,6 +20,9 @@ const lineSchema = z.object({
   palletId: z.number().int().positive().optional(),
   batchNo: z.string().max(100).optional(),
   serialNo: z.string().max(100).optional(),
+  customerId: z.number().int().positive().optional(), // consignment — müşteri-sahipli stok
+  poNo: z.string().max(50).optional(), // PO-bazlı izlenebilirlik
+  poLine: z.string().max(50).optional(),
   note: z.string().max(255).optional(),
 })
 
@@ -44,15 +49,21 @@ const lineInclude = {
 export async function documentRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const companyId = getCompanyId(request)
-    const query = request.query as { warehouseId?: string; status?: string; operationTypeId?: string }
+    const query = request.query as { warehouseId?: string; status?: string; operationTypeId?: string; direction?: string; openOnly?: string }
     const statuses = ['DRAFT', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const
+    const directions = ['INBOUND', 'OUTBOUND', 'INTERNAL', 'COUNT'] as const
     return prisma.tBLDOCUMENT.findMany({
       where: {
         companyId,
         warehouseId: query.warehouseId ? Number(query.warehouseId) : undefined,
         operationTypeId: query.operationTypeId ? Number(query.operationTypeId) : undefined,
-        status: statuses.includes(query.status as (typeof statuses)[number])
-          ? (query.status as (typeof statuses)[number])
+        status: query.openOnly === 'true'
+          ? { in: ['DRAFT', 'CONFIRMED'] } // Açık Belgeler (toplanmamış/onaylanmamış)
+          : statuses.includes(query.status as (typeof statuses)[number])
+            ? (query.status as (typeof statuses)[number])
+            : undefined,
+        operationType: directions.includes(query.direction as (typeof directions)[number])
+          ? { direction: query.direction as (typeof directions)[number] }
           : undefined,
       },
       orderBy: { id: 'desc' },
@@ -98,6 +109,40 @@ export async function documentRoutes(app: FastifyInstance) {
       include: { sequence: true },
     })
     if (!opType) return reply.code(400).send({ error: 'Geçersiz operasyon tipi' })
+
+    // Cross-tenant koruması: header (depo/cari/neden) + satır referansları (ürün/birim/lokasyon/statü/palet)
+    // bu firmaya ait olmalı — aksi halde A firması belgesi B'nin ürün/lokasyonunu referans edip stok yazabiliyordu.
+    const refProduct = new Set<number>(), refUnit = new Set<number>(), refLoc = new Set<number>(), refStatus = new Set<number>(), refPallet = new Set<number>()
+    for (const l of lines) {
+      refProduct.add(l.productId); refUnit.add(l.unitId)
+      if (l.sourceLocationId) refLoc.add(l.sourceLocationId)
+      if (l.targetLocationId) refLoc.add(l.targetLocationId)
+      if (l.sourceStatusId) refStatus.add(l.sourceStatusId)
+      if (l.targetStatusId) refStatus.add(l.targetStatusId)
+      if (l.palletId) refPallet.add(l.palletId)
+    }
+    const [whOk, prOk, unOk, locOk, stOk, palOk, partOk, rsnOk] = await Promise.all([
+      header.warehouseId ? prisma.tBLWAREHOUSE.count({ where: { id: header.warehouseId, companyId } }) : 1,
+      prisma.tBLPRODUCT.count({ where: { id: { in: [...refProduct] }, companyId } }),
+      prisma.tBLUNIT.count({ where: { id: { in: [...refUnit] }, companyId } }),
+      refLoc.size ? prisma.tBLLOCATION.count({ where: { id: { in: [...refLoc] }, companyId } }) : 0,
+      refStatus.size ? prisma.tBLSTATUS.count({ where: { id: { in: [...refStatus] }, companyId } }) : 0,
+      refPallet.size ? prisma.tBLPALLET.count({ where: { id: { in: [...refPallet] }, companyId } }) : 0,
+      header.partnerId ? prisma.tBLBUSINESSPARTNER.count({ where: { id: header.partnerId, companyId } }) : 1,
+      header.reasonId ? prisma.tBLREASON.count({ where: { id: header.reasonId, companyId } }) : 1,
+    ])
+    if (prOk !== refProduct.size || unOk !== refUnit.size || locOk !== refLoc.size || stOk !== refStatus.size || palOk !== refPallet.size ||
+        (header.warehouseId && whOk !== 1) || (header.partnerId && partOk !== 1) || (header.reasonId && rsnOk !== 1)) {
+      return reply.code(400).send({ error: 'Geçersiz referans — depo/ürün/birim/lokasyon/statü/palet/cari/neden bu firmaya ait değil' })
+    }
+
+    // Kullanıcı yetkisi: yalnız yetkili olduğu depo / operasyon tipi / tesis ile belge açabilir (super-admin bypass)
+    try {
+      await assertUserAuthorized(request, { warehouseId: header.warehouseId, operationTypeId: header.operationTypeId })
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      throw err
+    }
 
     // documentNo verilmezse operasyon tipinin sayacından otomatik üret
     let documentNo = providedNo
@@ -201,8 +246,10 @@ export async function documentRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    const body = (request.body ?? {}) as { breakPassword?: string; breakReasonCode?: string }
+    const userId = Number((request.user as { sub?: number | string })?.sub) || undefined
     try {
-      const done = await completeDocument(id)
+      const done = await completeDocument(id, { breakPassword: body.breakPassword, breakReasonCode: body.breakReasonCode, userId })
       // Onaylandı
       const onyId = await docStatusId(doc.companyId, DOC_STATUS.APPROVED)
       if (onyId) await prisma.tBLDOCUMENT.update({ where: { id }, data: { documentStatusId: onyId } })
@@ -243,6 +290,90 @@ export async function documentRoutes(app: FastifyInstance) {
       return rev
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
+      throw err
+    }
+  })
+
+  // Toplu İşlem — seçili belgelere yaşam-döngüsü aksiyonu (confirm/complete/cancel) topluca uygula
+  app.post('/bulk-action', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500), action: z.enum(['confirm', 'complete', 'cancel']) }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const userId = Number((request.user as { sub?: number | string })?.sub) || undefined
+    const { ids, action } = parsed.data
+    let ok = 0
+    const failed: { id: number; error: string }[] = []
+    for (const id of ids) {
+      const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId } })
+      if (!doc) { failed.push({ id, error: 'Bulunamadı' }); continue }
+      try {
+        if (action === 'confirm') {
+          if (doc.status !== 'DRAFT') throw new MovementError(`DRAFT değil (${doc.status})`)
+          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED', documentStatusId: await docStatusId(companyId, DOC_STATUS.PENDING_APPROVAL) } })
+        } else if (action === 'complete') {
+          await completeDocument(id, { userId })
+          const onyId = await docStatusId(companyId, DOC_STATUS.APPROVED)
+          if (onyId) await prisma.tBLDOCUMENT.update({ where: { id }, data: { documentStatusId: onyId } })
+        } else {
+          if (doc.status === 'COMPLETED' || doc.status === 'CANCELLED') throw new MovementError(`İptal edilemez (${doc.status})`)
+          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CANCELLED', documentStatusId: await docStatusId(companyId, DOC_STATUS.CANCELLED) } })
+        }
+        ok++
+      } catch (err) {
+        failed.push({ id, error: err instanceof MovementError ? err.message : 'Hata' })
+      }
+    }
+    return reply.send({ ok, failedCount: failed.length, failed })
+  })
+
+  // Belge Kopyala — kaynak belgenin başlık + satırlarını yeni DRAFT belgeye kopyalar (Belge ekranı: "belge kopyalamak")
+  app.post('/:id/copy', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const companyId = getCompanyId(request)
+    const sourceId = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(sourceId)) return reply.code(400).send({ error: 'Geçersiz id' })
+    const body = z.object({ documentNo: z.string().min(1).max(40).optional() }).safeParse(request.body ?? {})
+    if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
+
+    const source = await prisma.tBLDOCUMENT.findFirst({
+      where: { id: sourceId, companyId },
+      include: { operationType: { include: { sequence: true } }, lines: { orderBy: { lineNo: 'asc' } } },
+    })
+    if (!source) return reply.code(404).send({ error: 'Kaynak belge bulunamadı' })
+
+    let documentNo = body.data.documentNo
+    if (!documentNo) {
+      if (!source.operationType.sequence) return reply.code(400).send({ error: 'documentNo gerekli — operasyon tipinde sayaç yok' })
+      documentNo = (await nextSequence(companyId, source.operationType.sequence.code)).formatted
+    }
+
+    try {
+      const copy = await prisma.tBLDOCUMENT.create({
+        data: {
+          documentNo,
+          operationTypeId: source.operationTypeId,
+          warehouseId: source.warehouseId,
+          partnerId: source.partnerId,
+          reasonId: source.reasonId,
+          note: source.note,
+          companyId,
+          createdById: request.user.sub,
+          documentStatusId: await docStatusId(companyId, DOC_STATUS.WAITING),
+          lines: {
+            create: source.lines.map((l, i) => ({
+              lineNo: i + 1,
+              productId: l.productId, unitId: l.unitId, quantity: l.quantity, referenceQty: l.referenceQty,
+              sourceLocationId: l.sourceLocationId, targetLocationId: l.targetLocationId,
+              sourceStatusId: l.sourceStatusId, targetStatusId: l.targetStatusId,
+              batchNo: l.batchNo, serialNo: l.serialNo, palletId: l.palletId, note: l.note,
+              customerId: l.customerId, poNo: l.poNo, poLine: l.poLine,
+            })),
+          },
+        },
+        include: { lines: { orderBy: { lineNo: 'asc' } }, operationType: { select: { code: true, direction: true } } },
+      })
+      return reply.code(201).send({ ...copy, copiedFrom: source.documentNo })
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Bu belge numarası zaten var' })
       throw err
     }
   })

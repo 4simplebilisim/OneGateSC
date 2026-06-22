@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "TBLCOUNTPARAMETER" DROP COLUMN "isActive";
+

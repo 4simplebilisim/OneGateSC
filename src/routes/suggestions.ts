@@ -1,0 +1,65 @@
+import type { FastifyInstance } from 'fastify'
+import { prisma } from '../lib/prisma.js'
+import { getCompanyId } from '../lib/company.js'
+import { suggestPutawayLocations } from '../lib/routing.js'
+
+// Öneri Listesi — SALT GÖSTERİM (belge oluşturmaz):
+// var olan BİR belge seçilir → o belgenin satır ürünleri için "nereye girilecek"(Giriş) / "nereden alınacak"(Çıkış) önerisi bilgi amaçlı listelenir.
+export async function suggestionListRoutes(app: FastifyInstance) {
+  app.get('/', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const companyId = getCompanyId(request)
+    const q = request.query as { documentId?: string }
+    const documentId = Number(q.documentId)
+    if (!Number.isInteger(documentId) || documentId <= 0) return reply.code(400).send({ error: 'documentId gerekli' })
+
+    const doc = await prisma.tBLDOCUMENT.findFirst({
+      where: { id: documentId, companyId },
+      include: {
+        operationType: { select: { code: true, name: true, direction: true } },
+        lines: {
+          orderBy: { lineNo: 'asc' },
+          include: {
+            product: { select: { code: true, name: true } },
+            unit: { select: { code: true } },
+            sourceLocation: { select: { code: true } },
+            targetLocation: { select: { code: true } },
+          },
+        },
+      },
+    })
+    if (!doc) return reply.code(404).send({ error: 'Belge bulunamadı' })
+    const direction = doc.operationType.direction
+
+    const rows = []
+    for (const line of doc.lines) {
+      if (direction === 'OUTBOUND') {
+        // Çıkış: nereden alınacak — FEFO sıralı uygun stok (öneri = kaynak lokasyon)
+        const stocks = await prisma.tBLSTOCK.findMany({
+          where: { companyId, productId: line.productId, mainQty: { gt: 0 } },
+          include: { location: { select: { code: true } } }, orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }],
+        })
+        const available = stocks.reduce((s, x) => s + (Number(x.mainQty) - Number(x.reservedQty)), 0)
+        rows.push({
+          malzeme: line.product.code, aciklama: line.product.name ?? '',
+          kaynakLokasyon: stocks[0]?.location.code ?? '— (stok yok)',
+          hedefLokasyon: line.targetLocation?.code ?? 'Sevkiyat',
+          stokMiktari: String(available), birim: line.unit.code, miktar: line.quantity.toString(),
+        })
+      } else {
+        // Giriş/Transfer: nereye girilecek — yönlendirme kuralından önerilen hedef (öneri = hedef lokasyon)
+        const sugg = await suggestPutawayLocations(companyId, line.productId)
+        const hedef = sugg[0]
+        const stok = hedef
+          ? await prisma.tBLSTOCK.aggregate({ where: { companyId, productId: line.productId, locationId: hedef.id, mainQty: { gt: 0 } }, _sum: { mainQty: true } })
+          : null
+        rows.push({
+          malzeme: line.product.code, aciklama: line.product.name ?? '',
+          kaynakLokasyon: line.sourceLocation?.code ?? '—',
+          hedefLokasyon: hedef?.code ?? '— (kural yok)',
+          stokMiktari: stok?._sum.mainQty?.toString() ?? '0', birim: line.unit.code, miktar: line.quantity.toString(),
+        })
+      }
+    }
+    return { documentNo: doc.documentNo, operationType: doc.operationType.code, direction, rows }
+  })
+}

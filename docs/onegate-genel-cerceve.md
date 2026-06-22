@@ -1,5 +1,8 @@
 # OneGate WMS — Genel Çerçeve & Hazır Durum
 
+> ⚠️ **BAYAT (2026-06-11).** Sayılar güncel değil ("57 tablo / 146 endpoint" → bugün 120 model). Güncel tek
+> kaynak: [`SISTEM-HARITASI.md`](SISTEM-HARITASI.md). Bu dosya yalnız *yönetici özeti / olgunluk yüzdeleri* için tutuluyor.
+
 > Sürüm: 2026-06-11 · Kaynak: legacy "SB / PAN8RAMA" WMS Excel dökümü (459 tablo) → temiz yeniden tasarım
 > **57 domain tablo · 146 API endpoint · 38 UI ekran · 25 migration · 11 davranış kuralı enforce**
 

@@ -10,6 +10,9 @@ export interface StockKey {
   batchNo?: string | null
   serialNo?: string | null
   palletId?: number | null
+  customerId?: number | null
+  poNo?: string | null
+  poLine?: string | null
 }
 
 function normalize(key: StockKey) {
@@ -21,6 +24,9 @@ function normalize(key: StockKey) {
     batchNo: key.batchNo ?? null,
     serialNo: key.serialNo ?? null,
     palletId: key.palletId ?? null,
+    customerId: key.customerId ?? null,
+    poNo: key.poNo ?? null,
+    poLine: key.poLine ?? null,
   }
 }
 

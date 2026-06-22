@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, Descriptions, Space, Table, Tag, Badge, Spin } from 'antd'
+import { Alert, App, Button, Card, Descriptions, Input, Modal, Select, Space, Table, Tag, Badge, Spin } from 'antd'
 import { ArrowLeftOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -35,6 +35,12 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   const [record, setRecord] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
+  // Koşul kırma akışı: complete 409 "kırma gerekli" alınca şifre+neden modalı
+  const [breakReq, setBreakReq] = useState<{ action: string; busyKey?: string; err: string } | null>(null)
+  const [breakReasons, setBreakReasons] = useState<{ value: string; label: string }[]>([])
+  const [bpw, setBpw] = useState('')
+  const [brc, setBrc] = useState<string | undefined>()
+  const [breaking, setBreaking] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -47,6 +53,21 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   useEffect(load, [load])
 
+  const errOf = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+  const isBreakErr = (msg?: string) => !!msg && /kırma şifresi/i.test(msg)
+
+  const loadBreakReasons = () => {
+    if (breakReasons.length) return
+    Promise.all([
+      axiosInstance.get('/api/entry-condition-break-reasons').catch(() => ({ data: [] })),
+      axiosInstance.get('/api/exit-condition-break-reasons').catch(() => ({ data: [] })),
+    ]).then(([a, b]) => {
+      const arr = (r: { data: unknown }) => (Array.isArray(r.data) ? r.data : ((r.data as { data?: unknown[] })?.data ?? [])) as Record<string, unknown>[]
+      const list = [...arr(a), ...arr(b)].filter((x) => x.code)
+      setBreakReasons([...new Map(list.map((x) => [x.code as string, { value: x.code as string, label: x.code as string }])).values()])
+    })
+  }
+
   const runAction = async (action: string, body?: Record<string, unknown>, busyKey?: string) => {
     setBusy(busyKey ?? action)
     try {
@@ -54,9 +75,27 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
       message.success('İşlem tamamlandı')
       load()
     } catch (e) {
-      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'İşlem başarısız')
+      const msg = errOf(e) ?? 'İşlem başarısız'
+      if (isBreakErr(msg)) { loadBreakReasons(); setBreakReq({ action, busyKey, err: msg }) } // koşul kırma gerekli → modal
+      else message.error(msg)
     } finally {
       setBusy(null)
+    }
+  }
+
+  const submitBreak = async () => {
+    if (!breakReq) return
+    if (!bpw || !brc) { message.warning('Kırma şifresi ve nedeni gerekli'); return }
+    setBreaking(true)
+    try {
+      await axiosInstance.post(`/api/${resource}/${id}/${breakReq.action}`, { breakPassword: bpw, breakReasonCode: brc })
+      message.success('Koşul kırıldı — işlem tamamlandı')
+      setBreakReq(null); setBpw(''); setBrc(undefined)
+      load()
+    } catch (e) {
+      setBreakReq((p) => (p ? { ...p, err: errOf(e) ?? 'Kırma başarısız' } : p))
+    } finally {
+      setBreaking(false)
     }
   }
 
@@ -119,6 +158,22 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
           <Table dataSource={lines} rowKey="id" columns={lineCols} size="small" pagination={false} scroll={{ x: true }} />
         </Card>
       )}
+
+      <Modal
+        open={!!breakReq}
+        title="Koşul Kırma — Onay Gerekli"
+        okText="Onayla ve Tamamla"
+        cancelText="İptal"
+        confirmLoading={breaking}
+        onOk={submitBreak}
+        onCancel={() => { setBreakReq(null); setBpw(''); setBrc(undefined) }}
+      >
+        {breakReq?.err && <Alert type="warning" showIcon style={{ marginBottom: 14 }} title={breakReq.err} />}
+        <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+          <Input.Password placeholder="Kırma Şifresi" value={bpw} onChange={(e) => setBpw(e.target.value)} onPressEnter={submitBreak} autoFocus />
+          <Select style={{ width: '100%' }} placeholder="Kırma Nedeni" value={brc} onChange={setBrc} options={breakReasons} showSearch optionFilterProp="label" />
+        </Space>
+      </Modal>
     </div>
   )
 }

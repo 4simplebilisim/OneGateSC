@@ -356,7 +356,7 @@ async function main() {
   const koliUnit = await prisma.tBLPRODUCTUNIT.update({ where: { productId_unitId: { productId: product.id, unitId: box.id } }, data: { barcode: '8690000000012', batchTracking: true } })
   for (const bc of ['8690000000012', '8690000000029']) {
     const exists = await prisma.tBLPRODUCTUNITBARCODE.findFirst({ where: { productUnitId: koliUnit.id, barcode: bc } })
-    if (!exists) await prisma.tBLPRODUCTUNITBARCODE.create({ data: { productUnitId: koliUnit.id, barcode: bc } })
+    if (!exists) await prisma.tBLPRODUCTUNITBARCODE.create({ data: { companyId, productUnitId: koliUnit.id, barcode: bc } })
   }
 
   // ── Operasyon konfig dünyası: ek statüler + GR statü geçişi + op-palet ──
@@ -372,6 +372,40 @@ async function main() {
     const exGrPt = await prisma.tBLOPERATIONTYPEPALLETTYPE.findFirst({ where: { companyId, operationTypeId: grOp.id, palletTypeId: eurPallet.id } })
     if (!exGrPt) await prisma.tBLOPERATIONTYPEPALLETTYPE.create({ data: { companyId, operationTypeId: grOp.id, palletTypeId: eurPallet.id } })
   }
+
+  // ── Sayım operasyonu + parametre ekranları demo verisi (legacy StokBar; ekranlar boş kalmasın) ──
+  const sayimOp = await prisma.tBLOPERATIONTYPE.upsert({
+    where: { companyId_code: { companyId, code: 'SAYIM' } }, update: {},
+    create: { companyId, code: 'SAYIM', name: 'Sayım', direction: 'COUNT', affectsStock: false },
+  })
+  const sayimGiris = await prisma.tBLOPERATIONTYPE.upsert({
+    where: { companyId_code: { companyId, code: 'SAYIM-GIRIS' } }, update: {},
+    create: { companyId, code: 'SAYIM-GIRIS', name: 'Sayım - Giriş', direction: 'INBOUND', affectsStock: true },
+  })
+  const sayimCikis = await prisma.tBLOPERATIONTYPE.upsert({
+    where: { companyId_code: { companyId, code: 'SAYIM-CIKIS' } }, update: {},
+    create: { companyId, code: 'SAYIM-CIKIS', name: 'Sayım - Çıkış', direction: 'OUTBOUND', affectsStock: true },
+  })
+  // Sayım Parametresi (Kör Sayım + eşitleme/parçalı palet/tekrar-sayma) — legacy TBLSBSAYIMPARAMETRE
+  if (!(await prisma.tBLCOUNTPARAMETER.findFirst({ where: { companyId, operationTypeId: sayimOp.id } })))
+    await prisma.tBLCOUNTPARAMETER.create({ data: { companyId, operationTypeId: sayimOp.id, countType: 1, entryOperationTypeId: sayimGiris.id, exitOperationTypeId: sayimCikis.id, equalize: true, partialPallet: true, dontRecountPallet: true } })
+  // Sayım Kriter
+  if (!(await prisma.tBLCOUNTCRITERIA.findFirst({ where: { companyId, operationTypeId: sayimOp.id, fieldCode: 'LOKASYON' } })))
+    await prisma.tBLCOUNTCRITERIA.create({ data: { companyId, operationTypeId: sayimOp.id, fieldCode: 'LOKASYON', required: true } })
+
+  // Parametre ekranları (cari/operasyon-bazlı opsiyonel config) — birer demo kayıt (findFirst-create idempotent)
+  if (!(await prisma.tBLPARAMETER.findFirst({ where: { companyId, code: 'DEPO_KODU' } })))
+    await prisma.tBLPARAMETER.create({ data: { companyId, code: 'DEPO_KODU', name: 'Varsayılan Depo', value: 'WH01' } })
+  if (!(await prisma.tBLSTOCKCONTROLPARAMETER.findFirst({ where: { companyId } })))
+    await prisma.tBLSTOCKCONTROLPARAMETER.create({ data: { companyId, distributionType: 1, customerPriority: 1, shipmentPriority: 1, askUser: true } })
+  if (!(await prisma.tBLDOCUMENTPLANNINGPARAMETER.findFirst({ where: { companyId } })))
+    await prisma.tBLDOCUMENTPLANNINGPARAMETER.create({ data: { companyId, partCount: 1, updateMainQty: true, locationAssign: true } })
+  if (!(await prisma.tBLPICKORDERPARAMETER.findFirst({ where: { companyId } })))
+    await prisma.tBLPICKORDERPARAMETER.create({ data: { companyId } })
+  if (!(await prisma.tBLWORKORDERGENERALPARAMETER.findFirst({ where: { companyId } })))
+    await prisma.tBLWORKORDERGENERALPARAMETER.create({ data: { companyId, alarmDuration: 30, alarmUnit: 1, askEntryLocation: true } })
+  if (!(await prisma.tBLRACKFEEDPARAMETER.findFirst({ where: { companyId } })))
+    await prisma.tBLRACKFEEDPARAMETER.create({ data: { companyId, capacityPercent: 80, onStockEmpty: true } })
 
   console.log('✔ Seed completed')
   console.log(`  WMS tanım: sequence GR, 3 reason, 1 location-group, 1 operation-group`)

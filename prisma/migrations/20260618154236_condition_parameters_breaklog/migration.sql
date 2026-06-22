@@ -1,0 +1,90 @@
+
+-- CreateEnum
+CREATE TYPE "ConditionControlType" AS ENUM ('MANUAL', 'REQUIRE_BATCH', 'REQUIRE_SERIAL', 'REQUIRE_REASON');
+
+-- CreateTable
+CREATE TABLE "TBLENTRYCONDITIONPARAMETER" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "entryConditionTypeId" INTEGER NOT NULL,
+    "cariLinkType" "LinkScope",
+    "cariLinkId" INTEGER,
+    "materialLinkType" "LinkScope",
+    "materialLinkId" INTEGER,
+    "controlType" "ConditionControlType" NOT NULL DEFAULT 'MANUAL',
+    "conditionBreakAllowed" BOOLEAN NOT NULL DEFAULT true,
+    "exclude" BOOLEAN NOT NULL DEFAULT false,
+    "sortOrder" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLENTRYCONDITIONPARAMETER_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLEXITCONDITIONPARAMETER" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "exitConditionTypeId" INTEGER NOT NULL,
+    "cariLinkType" "LinkScope",
+    "cariLinkId" INTEGER,
+    "materialLinkType" "LinkScope",
+    "materialLinkId" INTEGER,
+    "controlType" "ConditionControlType" NOT NULL DEFAULT 'MANUAL',
+    "controlFieldId" INTEGER,
+    "toleranceValue" DECIMAL(18,4),
+    "percentValue" DECIMAL(9,4),
+    "dayCount" INTEGER,
+    "conditionBreakAllowed" BOOLEAN NOT NULL DEFAULT true,
+    "exclude" BOOLEAN NOT NULL DEFAULT false,
+    "sortOrder" INTEGER,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLEXITCONDITIONPARAMETER_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLCONDITIONBREAKLOG" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "documentId" INTEGER NOT NULL,
+    "conditionType" VARCHAR(10) NOT NULL,
+    "conditionParameterId" INTEGER,
+    "breakReasonCode" VARCHAR(20),
+    "userId" INTEGER,
+    "note" VARCHAR(255),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TBLCONDITIONBREAKLOG_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "TBLENTRYCONDITIONPARAMETER_companyId_idx" ON "TBLENTRYCONDITIONPARAMETER"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLENTRYCONDITIONPARAMETER_entryConditionTypeId_idx" ON "TBLENTRYCONDITIONPARAMETER"("entryConditionTypeId");
+
+-- CreateIndex
+CREATE INDEX "TBLEXITCONDITIONPARAMETER_companyId_idx" ON "TBLEXITCONDITIONPARAMETER"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLEXITCONDITIONPARAMETER_exitConditionTypeId_idx" ON "TBLEXITCONDITIONPARAMETER"("exitConditionTypeId");
+
+-- CreateIndex
+CREATE INDEX "TBLCONDITIONBREAKLOG_companyId_idx" ON "TBLCONDITIONBREAKLOG"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLCONDITIONBREAKLOG_documentId_idx" ON "TBLCONDITIONBREAKLOG"("documentId");
+
+-- AddForeignKey
+ALTER TABLE "TBLENTRYCONDITIONPARAMETER" ADD CONSTRAINT "TBLENTRYCONDITIONPARAMETER_entryConditionTypeId_fkey" FOREIGN KEY ("entryConditionTypeId") REFERENCES "TBLENTRYCONDITIONTYPE"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TBLEXITCONDITIONPARAMETER" ADD CONSTRAINT "TBLEXITCONDITIONPARAMETER_exitConditionTypeId_fkey" FOREIGN KEY ("exitConditionTypeId") REFERENCES "TBLEXITCONDITIONTYPE"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TBLCONDITIONBREAKLOG" ADD CONSTRAINT "TBLCONDITIONBREAKLOG_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "TBLDOCUMENT"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

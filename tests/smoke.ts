@@ -22,16 +22,27 @@ async function main() {
   check('health.status === ok', health.json().status === 'ok', health.body)
   check('health.db === up', health.json().db === 'up', health.body)
 
-  // --- Public list endpoints return arrays ---
+  // --- Auth: GET'ler artık kimlik doğrulaması ister (tenant okuma izolasyonu) ---
+  const adminLogin = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'admin', password: 'admin123' } })
+  check('POST /api/auth/login (admin) -> 200', adminLogin.statusCode === 200, adminLogin.statusCode)
+  const token = adminLogin.json().token as string
+  const auth = { authorization: `Bearer ${token}` }
+  const get = (url: string) => app.inject({ method: 'GET', url, headers: auth })
+
+  // Korumalı GET token'sız reddedilmeli (yeni davranış — eskiden public idi)
+  const guardGet = await app.inject({ method: 'GET', url: '/api/products' })
+  check('GET /api/products without token -> 401', guardGet.statusCode === 401, guardGet.statusCode)
+
+  // --- List endpoints return arrays (auth'lu) ---
   for (const url of ['/api/warehouses', '/api/units', '/api/locations', '/api/operation-types', '/api/partners', '/api/documents', '/api/inventory/rules', '/api/inventory/mrp', '/api/vehicles', '/api/shipments', '/api/stock-counts', '/api/quality-inspections', '/api/invoices', '/api/product-groups', '/api/sequences', '/api/reasons', '/api/location-groups', '/api/operation-groups', '/api/label-types', '/api/product-subgroups', '/api/pallets', '/api/entry-condition-types', '/api/exit-condition-types', '/api/routing-types', '/api/routing-rules', '/api/facilities', '/api/regions', '/api/partner-groups', '/api/product-units', '/api/statuses', '/api/pallet-types', '/api/operation-type-statuses', '/api/operation-type-locations', '/api/operation-type-reasons', '/api/operation-type-pallet-types', '/api/location-capacities', '/api/barcode-types', '/api/parameters']) {
-    const res = await app.inject({ method: 'GET', url })
+    const res = await get(url)
     check(`GET ${url} -> 200`, res.statusCode === 200, res.statusCode)
     check(`GET ${url} returns array`, Array.isArray(res.json()), res.body)
   }
 
   // --- Paginated list endpoints ({ data, total, page, ... }) ---
   for (const url of ['/api/products', '/api/stock', '/api/purchase-orders', '/api/sales-orders', '/api/work-orders']) {
-    const res = await app.inject({ method: 'GET', url })
+    const res = await get(url)
     check(`GET ${url} -> 200`, res.statusCode === 200, res.statusCode)
     const body = res.json()
     check(`GET ${url} paginated (data array + total)`, Array.isArray(body.data) && typeof body.total === 'number', res.body)
@@ -39,7 +50,7 @@ async function main() {
 
   // --- Reports + stock card ---
   for (const url of ['/api/reports/stock-summary', '/api/reports/open-orders', '/api/reports/invoice-aging', '/api/reports/mrp-summary', '/api/stock/card?productId=1', '/api/routing-rules/suggest?productId=1']) {
-    const res = await app.inject({ method: 'GET', url })
+    const res = await get(url)
     check(`GET ${url} -> 200`, res.statusCode === 200, res.statusCode)
   }
 

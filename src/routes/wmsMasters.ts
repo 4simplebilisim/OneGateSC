@@ -116,7 +116,10 @@ const facility = z.object({ code: z.string().min(1).max(20), name: z.string().mi
 export const facilityRoutes = masterRoutes(prisma.tBLFACILITY as unknown as MasterDelegate, facility, facility.partial().omit({ code: true }), 'Tesis kodu zaten var', 'Facility not found')
 const codeName60 = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(60), isActive: z.boolean().optional() })
 const codeName60Upd = codeName60.partial().omit({ code: true })
-export const regionRoutes = masterRoutes(prisma.tBLREGION as unknown as MasterDelegate, codeName60, codeName60Upd, 'Bölge kodu zaten var', 'Region not found')
+// Bölge: code+name + Tesis (facilityId) — legacy TBLMSDBOLGE.LNGDISTKOD
+const region = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(60), facilityId: z.number().int().positive().nullable().optional(), isActive: z.boolean().optional() })
+const regionUpd = region.partial().omit({ code: true })
+export const regionRoutes = masterRoutes(prisma.tBLREGION as unknown as MasterDelegate, region, regionUpd, 'Bölge kodu zaten var', 'Region not found')
 export const partnerGroupRoutes = masterRoutes(prisma.tBLPARTNERGROUP as unknown as MasterDelegate, codeName60, codeName60Upd, 'Cari grup kodu zaten var', 'Partner group not found')
 
 // Statü (legacy TBLSBSTATU) — operasyon statü geçişleri bunu kullanır

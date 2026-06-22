@@ -4,6 +4,7 @@ import { simpleCrud, type Delegate } from './documentTypes.js'
 
 const pInt = z.number().int().positive()
 const oInt = z.number().int()
+const linkScope = z.enum(['ALL', 'GROUP', 'SPECIFIC'])
 const d = (x: unknown) => x as unknown as Delegate
 
 // ── Giriş Koşulları ──
@@ -39,11 +40,29 @@ export const routingBreakPasswordRoutes = simpleCrud(d(prisma.tBLROUTINGBREAKPAS
 const routingBreakReason = z.object({ code: z.string().min(1).max(20), isActive: z.boolean().optional() })
 export const routingBreakReasonRoutes = simpleCrud(d(prisma.tBLROUTINGBREAKREASON), routingBreakReason, routingBreakReason.partial(), 'Not found')
 
-const routingTypeOp = z.object({ routingTypeId: pInt, operationTypeId: pInt, locationLinkType: oInt.optional(), locationId: oInt.optional(), taskPlanId: oInt.optional(), isActive: z.boolean().optional() })
+const routingTypeOp = z.object({ facilityId: pInt.optional(), routingTypeId: pInt, operationTypeId: pInt, locationLinkType: linkScope.optional(), locationId: pInt.optional(), taskPlanId: oInt.optional(), isActive: z.boolean().optional() })
 export const routingTypeOperationRoutes = simpleCrud(d(prisma.tBLROUTINGTYPEOPERATION), routingTypeOp, routingTypeOp.partial(), 'Not found')
 
 const routingProdLoc = z.object({ materialLinkType: oInt.optional(), additionalGroupOrder: oInt.optional(), materialLinkId: oInt.optional(), locationLinkType: oInt.optional(), locationLinkId: oInt.optional(), isActive: z.boolean().optional() })
 export const routingProductLocationRoutes = simpleCrud(d(prisma.tBLROUTINGPRODUCTLOCATION), routingProdLoc, routingProdLoc.partial(), 'Not found')
+
+// Yönlendirme Parametre — yönlendirme tipine bağlı (StokBar "Yönlendirme Parametre" alt-ekranı)
+const rpScope = z.enum(['ALL', 'GROUP', 'SPECIFIC'])
+const routingParam = z.object({
+  routingTypeId: pInt,
+  cariLinkType: rpScope.optional(), cariLinkId: pInt.optional(),
+  materialLinkType: rpScope.optional(), materialLinkId: pInt.optional(),
+  sortOrder: oInt.optional(),
+  controlFieldId: pInt.optional(),
+  messageType: z.enum(['WARNING', 'ERROR']).optional(),
+  conditionBreak: z.boolean().optional(),
+  controlMode: z.string().max(40).optional(),
+  spName: z.string().max(120).optional(),
+  controlTypeDescription: z.string().max(200).optional(),
+  incrementalSort: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+})
+export const routingParameterRoutes = simpleCrud(d(prisma.tBLROUTINGPARAMETER), routingParam, routingParam.partial(), 'Yönlendirme parametresi bulunamadı', 'routingTypeId')
 
 // ── Sayım ──
 const countApprovalGroup = z.object({ businessPartnerId: pInt.optional(), operationTypeId: pInt, userGroupId: pInt, sortOrder: oInt.optional(), mailTemplateId: oInt.optional(), mailGroupId: oInt.optional(), mailSp: z.string().max(200).optional(), isActive: z.boolean().optional() })
@@ -57,6 +76,6 @@ const countParameter = z.object({
   equalize: z.boolean().optional(), weightDiff: z.boolean().optional(), documentDetailCount: oInt.optional(),
   palletQtyPartialEntry: z.boolean().optional(), stacked: z.boolean().optional(), partialPallet: z.boolean().optional(), partialPalletWarning: z.boolean().optional(),
   stockMoveOnActiveCount: z.boolean().optional(), hideInnerPallets: z.boolean().optional(), hideMixedPallet: z.boolean().optional(), innerPalletCountCheck: z.boolean().optional(),
-  hideInnerPalletStock: z.boolean().optional(), countDays: oInt.optional(), dontRecountPallet: z.boolean().optional(), askLocationOnScan: z.boolean().optional(), isActive: z.boolean().optional(),
+  hideInnerPalletStock: z.boolean().optional(), countDays: oInt.optional(), dontRecountPallet: z.boolean().optional(), askLocationOnScan: z.boolean().optional(),
 })
 export const countParameterRoutes = simpleCrud(d(prisma.tBLCOUNTPARAMETER), countParameter, countParameter.partial(), 'Not found')

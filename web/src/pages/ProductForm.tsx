@@ -305,6 +305,25 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           </Col>
         </Row>
       </Card>
+      <Card className="og-section-card" size="small" title="Raf Ömrü & Ağırlık" style={{ marginTop: 14 }}>
+        <Row gutter={[20, 0]}>
+          <Col xs={24} sm={8}>
+            <div className="og-switchrow" style={{ marginTop: 30 }}>
+              <span className="og-switchrow__label">Raf Ömrü Takibi</span>
+              <Form.Item name="shelfLifeControl" valuePropName="checked" noStyle><Switch /></Form.Item>
+            </div>
+          </Col>
+          <Col xs={24} sm={8}><Form.Item name="shelfLifeDays" label="Raf Ömrü (gün)" tooltip="Girişte SKT = üretim/giriş tarihi + bu gün sayısı"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item></Col>
+          <Col xs={24} sm={8}>
+            <div className="og-switchrow" style={{ marginTop: 30 }}>
+              <span className="og-switchrow__label">Değişken Ağırlık (catch-weight)</span>
+              <Form.Item name="catchWeight" valuePropName="checked" noStyle><Switch /></Form.Item>
+            </div>
+          </Col>
+          <Col xs={24} sm={8}><Form.Item name="minWeight" label="Min. Ağırlık"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item name="maxWeight" label="Max. Ağırlık"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item></Col>
+        </Row>
+      </Card>
       <div className="og-formbar">
         <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={submitting}>{mode === 'create' ? 'Kaydet ve Devam Et' : 'Kaydet'}</Button>
         <Button onClick={() => navigate('/products')}>İptal</Button>

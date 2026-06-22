@@ -23,7 +23,7 @@ import {
 import {
   entryConditionBreakPasswordRoutes, entryConditionBreakReasonRoutes, entryConditionTypeOperationRoutes,
   exitConditionControlFieldRoutes, exitConditionBreakPasswordRoutes, exitConditionBreakReasonRoutes, exitConditionTypeOperationRoutes,
-  routingControlFieldRoutes, routingBreakPasswordRoutes, routingBreakReasonRoutes, routingTypeOperationRoutes, routingProductLocationRoutes,
+  routingControlFieldRoutes, routingBreakPasswordRoutes, routingBreakReasonRoutes, routingTypeOperationRoutes, routingProductLocationRoutes, routingParameterRoutes,
   countApprovalUserGroupRoutes, countCriteriaRoutes, countParameterRoutes,
 } from './routes/wmsConfig.js'
 import {
@@ -38,17 +38,32 @@ import { productTypeRoutes } from './routes/productTypes.js'
 import { productDetailTypeRoutes } from './routes/productDetailTypes.js'
 import { productSubstituteRoutes } from './routes/productSubstitutes.js'
 import { inventoryRuleRoutes } from './routes/inventoryRules.js'
+import {
+  partnerExtraGroupRoutes, partnerExtraFieldDefRoutes, partnerExtraGroupLinkRoutes,
+  partnerExtraFieldRoutes, partnerAcceptanceTimeRoutes, partnerOptimizationRoutes,
+} from './routes/partnerConfig.js'
+import { entryConditionParameterRoutes, exitConditionParameterRoutes, conditionBreakLogRoutes } from './routes/conditionConfig.js'
 import { operationTypeRoutes } from './routes/operationTypes.js'
 import { businessPartnerRoutes } from './routes/businessPartners.js'
-import { stockRoutes } from './routes/stock.js'
+import { stockRoutes, stockLedgerRoutes } from './routes/stock.js'
 import { documentRoutes } from './routes/documents.js'
+import { documentScopeRoutes } from './routes/documentScopes.js'
 import { purchaseOrderRoutes } from './routes/purchaseOrders.js'
 import { salesOrderRoutes } from './routes/salesOrders.js'
 import { inventoryRoutes } from './routes/inventory.js'
 import { userRoutes } from './routes/users.js'
+import { userAuthorizationRoutes } from './routes/userAuthorizations.js'
+import { companyRoutes } from './routes/companies.js'
 import { vehicleRoutes } from './routes/vehicles.js'
 import { shipmentRoutes } from './routes/shipments.js'
-import { stockCountRoutes } from './routes/stockCounts.js'
+import { stockCountRoutes, countDifferenceRoutes } from './routes/stockCounts.js'
+import { integrationLogRoutes } from './routes/integration.js'
+import { reportDefRoutes, reportCriteriaRoutes, reportFieldRoutes, reportRunRoutes } from './routes/reportBuilder.js'
+import { suggestionListRoutes } from './routes/suggestions.js'
+import { extraFieldRoutes, extraFieldOptionRoutes, operationTypeExtraFieldRoutes } from './routes/extraFields.js'
+import { documentAssignmentRoutes } from './routes/assignments.js'
+import { countAssignmentRoutes, controlCountRoutes, controlCountLineRoutes, palletNotificationRoutes, palletNotificationLineRoutes, palletHistoryRoutes } from './routes/countPalletScreens.js'
+import { labelTemplateRoutes, labelTemplateItemRoutes, labelTemplateQueryRoutes } from './routes/labelTemplate.js'
 import { qualityInspectionRoutes } from './routes/qualityInspections.js'
 import { invoiceRoutes } from './routes/invoices.js'
 import { reportRoutes } from './routes/reports.js'
@@ -115,9 +130,29 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   app.decorate('requireWrite', requireRole('ADMIN', 'OPERATOR'))
   app.decorate('requireAdmin', requireRole('ADMIN'))
 
+  // Global kimlik doğrulama: tüm /api/* (yalnız login + branding hariç) JWT ister.
+  // Okuma izolasyonu: GET'ler de artık doğrulanır → request.user dolu → getCompanyId tenant'a kilitler.
+  // (Eskiden GET'ler public idi: x-company-id header / DEFAULT_COMPANY_ID ile her tenant okunabiliyordu.)
+  const isPublicPath = (rawUrl: string): boolean => {
+    const path = rawUrl.split('?')[0] ?? rawUrl
+    if (!path.startsWith('/api/')) return true // /health, /docs, /openapi.json, /favicon, /OneGate-assets, /site.webmanifest
+    return path.startsWith('/api/auth/') || path === '/api/branding'
+  }
+  app.addHook('onRequest', async (request, reply) => {
+    if (request.method === 'OPTIONS') return
+    if (isPublicPath(request.url)) return
+    try {
+      await request.jwtVerify()
+    } catch {
+      return reply.code(401).send({ error: 'Unauthorized' })
+    }
+  })
+
   // Routes
   await app.register(healthRoutes)
   await app.register(userRoutes, { prefix: '/api/users' })
+  await app.register(userAuthorizationRoutes, { prefix: '/api/user-authorizations' })
+  await app.register(companyRoutes, { prefix: '/api/companies' })
   await app.register(brandingRoutes)
   await app.register(authRoutes, { prefix: '/api/auth' })
   await app.register(warehouseRoutes, { prefix: '/api/warehouses' })
@@ -133,14 +168,42 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(inventoryRuleRoutes, { prefix: '/api/inventory-rules' })
   await app.register(operationTypeRoutes, { prefix: '/api/operation-types' })
   await app.register(businessPartnerRoutes, { prefix: '/api/partners' })
+  await app.register(partnerExtraGroupRoutes, { prefix: '/api/partner-extra-groups' })
+  await app.register(partnerExtraFieldDefRoutes, { prefix: '/api/partner-extra-field-defs' })
+  await app.register(partnerExtraGroupLinkRoutes, { prefix: '/api/partner-extra-group-links' })
+  await app.register(partnerExtraFieldRoutes, { prefix: '/api/partner-extra-fields' })
+  await app.register(partnerAcceptanceTimeRoutes, { prefix: '/api/partner-acceptance-times' })
+  await app.register(partnerOptimizationRoutes, { prefix: '/api/partner-optimizations' })
   await app.register(stockRoutes, { prefix: '/api/stock' })
+  await app.register(stockLedgerRoutes, { prefix: '/api/stock-ledger' })
   await app.register(documentRoutes, { prefix: '/api/documents' })
+  await app.register(documentScopeRoutes, { prefix: '/api/document-line-scopes' })
   await app.register(purchaseOrderRoutes, { prefix: '/api/purchase-orders' })
   await app.register(salesOrderRoutes, { prefix: '/api/sales-orders' })
   await app.register(inventoryRoutes, { prefix: '/api/inventory' })
   await app.register(vehicleRoutes, { prefix: '/api/vehicles' })
   await app.register(shipmentRoutes, { prefix: '/api/shipments' })
   await app.register(stockCountRoutes, { prefix: '/api/stock-counts' })
+  await app.register(countDifferenceRoutes, { prefix: '/api/count-differences' })
+  await app.register(integrationLogRoutes, { prefix: '/api/integration-logs' })
+  await app.register(reportDefRoutes, { prefix: '/api/report-defs' })
+  await app.register(reportCriteriaRoutes, { prefix: '/api/report-criteria' })
+  await app.register(reportFieldRoutes, { prefix: '/api/report-fields' })
+  await app.register(reportRunRoutes, { prefix: '/api/report-run' })
+  await app.register(suggestionListRoutes, { prefix: '/api/suggest-list' })
+  await app.register(extraFieldRoutes, { prefix: '/api/extra-fields' })
+  await app.register(extraFieldOptionRoutes, { prefix: '/api/extra-field-options' })
+  await app.register(operationTypeExtraFieldRoutes, { prefix: '/api/operation-type-extra-fields' })
+  await app.register(documentAssignmentRoutes, { prefix: '/api/document-assignments' })
+  await app.register(countAssignmentRoutes, { prefix: '/api/count-assignments' })
+  await app.register(controlCountRoutes, { prefix: '/api/control-counts' })
+  await app.register(controlCountLineRoutes, { prefix: '/api/control-count-lines' })
+  await app.register(palletNotificationRoutes, { prefix: '/api/pallet-notifications' })
+  await app.register(palletNotificationLineRoutes, { prefix: '/api/pallet-notification-lines' })
+  await app.register(palletHistoryRoutes, { prefix: '/api/pallet-history' })
+  await app.register(labelTemplateRoutes, { prefix: '/api/label-templates' })
+  await app.register(labelTemplateItemRoutes, { prefix: '/api/label-template-items' })
+  await app.register(labelTemplateQueryRoutes, { prefix: '/api/label-template-queries' })
   await app.register(qualityInspectionRoutes, { prefix: '/api/quality-inspections' })
   await app.register(invoiceRoutes, { prefix: '/api/invoices' })
   await app.register(reportRoutes, { prefix: '/api/reports' })
@@ -194,11 +257,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(exitConditionBreakPasswordRoutes, { prefix: '/api/exit-condition-break-passwords' })
   await app.register(exitConditionBreakReasonRoutes, { prefix: '/api/exit-condition-break-reasons' })
   await app.register(exitConditionTypeOperationRoutes, { prefix: '/api/exit-condition-type-operations' })
+  await app.register(entryConditionParameterRoutes, { prefix: '/api/entry-condition-parameters' })
+  await app.register(exitConditionParameterRoutes, { prefix: '/api/exit-condition-parameters' })
+  await app.register(conditionBreakLogRoutes, { prefix: '/api/condition-break-logs' })
   await app.register(routingControlFieldRoutes, { prefix: '/api/routing-control-fields' })
   await app.register(routingBreakPasswordRoutes, { prefix: '/api/routing-break-passwords' })
   await app.register(routingBreakReasonRoutes, { prefix: '/api/routing-break-reasons' })
   await app.register(routingTypeOperationRoutes, { prefix: '/api/routing-type-operations' })
   await app.register(routingProductLocationRoutes, { prefix: '/api/routing-product-locations' })
+  await app.register(routingParameterRoutes, { prefix: '/api/routing-parameters' })
   await app.register(countApprovalUserGroupRoutes, { prefix: '/api/count-approval-user-groups' })
   await app.register(countCriteriaRoutes, { prefix: '/api/count-criteria' })
   await app.register(countParameterRoutes, { prefix: '/api/count-parameters' })

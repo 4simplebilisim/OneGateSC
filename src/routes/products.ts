@@ -15,6 +15,11 @@ const createSchema = z.object({
   productTypeId: z.number().int().positive().optional(),
   detailTypeId: z.number().int().positive().optional(),
   manufacturerCode: z.string().max(60).optional(),
+  shelfLifeControl: z.boolean().optional(),
+  shelfLifeDays: z.number().int().nonnegative().nullable().optional(),
+  catchWeight: z.boolean().optional(),
+  minWeight: z.number().nonnegative().nullable().optional(),
+  maxWeight: z.number().nonnegative().nullable().optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -27,6 +32,11 @@ const updateSchema = z.object({
   productTypeId: z.number().int().positive().nullable().optional(),
   detailTypeId: z.number().int().positive().nullable().optional(),
   manufacturerCode: z.string().max(60).nullable().optional(),
+  shelfLifeControl: z.boolean().optional(),
+  shelfLifeDays: z.number().int().nonnegative().nullable().optional(),
+  catchWeight: z.boolean().optional(),
+  minWeight: z.number().nonnegative().nullable().optional(),
+  maxWeight: z.number().nonnegative().nullable().optional(),
   isActive: z.boolean().optional(),
 })
 

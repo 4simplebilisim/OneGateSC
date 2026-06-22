@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { App, Alert, Button, Card, Col, Form, Input, InputNumber, Row, Select, Switch, Tabs, Space } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
@@ -139,6 +139,8 @@ type Opt = { value: number; label: string }
 
 export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const { id } = useParams()
+  const [search] = useSearchParams()
+  const copyFrom = search.get('copyFrom')
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm()
@@ -157,8 +159,16 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   useEffect(() => {
     if (mode === 'edit' && id) axiosInstance.get(`/api/operation-types/${id}`).then((r) => form.setFieldsValue(r.data))
+    else if (mode === 'create' && copyFrom) {
+      // Kopyala: tanım alanlarını çek, kimlik/zaman/kod alanlarını at (bağlantı sekmeleri kopyalanmaz — kaydet sonrası eklenir)
+      axiosInstance.get(`/api/operation-types/${copyFrom}`).then((r) => {
+        const { id: _id, code: _code, createdAt: _c, updatedAt: _u, companyId: _co, createdById: _cb, ...rest } = r.data
+        // null alanları ele — backend zod .optional() null kabul etmez
+        form.setFieldsValue(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null)))
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id])
+  }, [mode, id, copyFrom])
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
@@ -254,8 +264,8 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   return (
     <div className="og-page" style={{ maxWidth: 1040 }}>
       <PageHeader
-        title={`Operasyon Tipi — ${mode === 'create' ? 'Yeni' : 'Düzenle'}`}
-        subtitle="Operasyon tanımı işin kalbi — tek ekranda tanım + statü/lokasyon/neden/palet tipi"
+        title={`Operasyon Tipi — ${mode === 'create' ? (copyFrom ? 'Kopyala' : 'Yeni') : 'Düzenle'}`}
+        subtitle={copyFrom ? `#${copyFrom} operasyonundan kopyalandı — yeni bir kod girip kaydedin (bağlantılar kopyalanmaz)` : 'Operasyon tanımı işin kalbi — tek ekranda tanım + statü/lokasyon/neden/palet tipi'}
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/operation-types')}>Liste</Button>}
       />
       <Tabs activeKey={tab} onChange={setTab} items={items} />

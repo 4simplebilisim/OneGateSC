@@ -40,6 +40,7 @@ export const DETAIL_ACTIONS: Record<string, DetailAction[]> = {
   'stock-counts': [
     { action: 'complete', label: 'Tamamla (stok düzelt)', when: ['DRAFT', 'COUNTING'] },
     { action: 'cancel', label: 'İptal', when: ['DRAFT', 'COUNTING'], danger: true },
+    { action: 'reverse-equalize', label: 'Sayım Onayı İptal (eşitlemeyi geri al)', when: ['COMPLETED'], danger: true },
   ],
   invoices: [
     { action: 'issue', label: 'Kes', when: ['DRAFT'] },

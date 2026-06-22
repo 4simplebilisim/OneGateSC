@@ -16,7 +16,7 @@ const opGroupLink = z.object({ operationTypeId: pInt, facilityId: pInt.optional(
 export const operationGroupLinkRoutes = simpleCrud(prisma.tBLOPERATIONGROUPLINK as unknown as Delegate, opGroupLink, opGroupLink.partial(), 'Operation group link not found', 'operationTypeId')
 
 // Operasyon Tipi Tolerans
-const opTolerance = z.object({ operationTypeId: pInt.optional(), facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), ignoreSplit: z.boolean().optional(), isActive: z.boolean().optional() })
+const opTolerance = z.object({ operationTypeId: pInt.optional(), facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), ignoreSplit: z.boolean().optional(), tolerancePercent: z.number().optional(), toleranceQty: z.number().optional(), isActive: z.boolean().optional() })
 export const operationToleranceRoutes = simpleCrud(prisma.tBLOPERATIONTYPETOLERANCE as unknown as Delegate, opTolerance, opTolerance.partial(), 'Operation tolerance not found', 'operationTypeId')
 
 // Operasyon Tipi Yasaklı Ürün

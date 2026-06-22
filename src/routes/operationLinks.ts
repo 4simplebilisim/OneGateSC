@@ -23,6 +23,14 @@ function opLinkRoutes(delegate: LinkDelegate, createSchema: ZodTypeAny, updateSc
       })
     })
 
+    app.get('/:id', async (request, reply) => {
+      const id = Number((request.params as { id: string }).id)
+      if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+      const row = await delegate.findFirst({ where: { id, companyId: getCompanyId(request) } })
+      if (!row) return reply.code(404).send({ error: notFound })
+      return row
+    })
+
     app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
       const parsed = createSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })

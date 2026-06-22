@@ -1,5 +1,8 @@
 # OneGate — Veri Modeli Haritası & Boşluk Kontrolü
 
+> ⚠️ **BAYAT (2026-06-09, 32 tablo).** Bugün 120 model var → güncel envanter [`SISTEM-HARITASI.md`](SISTEM-HARITASI.md),
+> alan-alan referans [`VERI-MODELI.md`](VERI-MODELI.md). **Ama §6 boşluk analizi (maliyet/cari hesap/ledger) HÂLÂ GEÇERLİ.**
+
 > 2026-06-09 · 32 tablo · 5 şema · 53 gerçek FK + cross-schema gevşek bağlar
 > **Bağ tipleri:** `──▶` gerçek FK (intra-schema) · `┄┄▶` gevşek bağ (cross-schema, id ile, FK yok)
 

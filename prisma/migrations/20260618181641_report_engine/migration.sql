@@ -1,0 +1,71 @@
+
+-- CreateTable
+CREATE TABLE "TBLREPORTDEF" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "code" VARCHAR(40) NOT NULL,
+    "name" VARCHAR(120) NOT NULL,
+    "sourceKey" VARCHAR(40) NOT NULL,
+    "category" VARCHAR(60),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "TBLREPORTDEF_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLREPORTCRITERIA" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "reportId" INTEGER NOT NULL,
+    "fieldCode" VARCHAR(40) NOT NULL,
+    "label" VARCHAR(80) NOT NULL,
+    "type" VARCHAR(20) NOT NULL,
+    "refResource" VARCHAR(60),
+    "options" VARCHAR(500),
+    "required" BOOLEAN NOT NULL DEFAULT false,
+    "sortOrder" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TBLREPORTCRITERIA_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TBLREPORTFIELD" (
+    "id" SERIAL NOT NULL,
+    "companyId" INTEGER NOT NULL,
+    "reportId" INTEGER NOT NULL,
+    "fieldCode" VARCHAR(40) NOT NULL,
+    "label" VARCHAR(80) NOT NULL,
+    "align" VARCHAR(10),
+    "sortOrder" INTEGER,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "TBLREPORTFIELD_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE INDEX "TBLREPORTDEF_companyId_idx" ON "TBLREPORTDEF"("companyId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "TBLREPORTDEF_companyId_code_key" ON "TBLREPORTDEF"("companyId", "code");
+
+-- CreateIndex
+CREATE INDEX "TBLREPORTCRITERIA_companyId_idx" ON "TBLREPORTCRITERIA"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLREPORTCRITERIA_reportId_idx" ON "TBLREPORTCRITERIA"("reportId");
+
+-- CreateIndex
+CREATE INDEX "TBLREPORTFIELD_companyId_idx" ON "TBLREPORTFIELD"("companyId");
+
+-- CreateIndex
+CREATE INDEX "TBLREPORTFIELD_reportId_idx" ON "TBLREPORTFIELD"("reportId");
+
+-- AddForeignKey
+ALTER TABLE "TBLREPORTCRITERIA" ADD CONSTRAINT "TBLREPORTCRITERIA_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "TBLREPORTDEF"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TBLREPORTFIELD" ADD CONSTRAINT "TBLREPORTFIELD_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "TBLREPORTDEF"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+

@@ -13,6 +13,24 @@ axiosInstance.interceptors.request.use((config) => {
   return config
 })
 
+// 401 (geçersiz/eksik token) → oturumu temizle + login'e dön.
+// Tüm GET'ler artık auth'lu; özel ekranlar axiosInstance'ı doğrudan kullandığından
+// Refine onError'a güvenemeyiz — global ağ: geçersiz token'da app kilitlenmesin, login'e gitsin.
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status
+    const url: string = error?.config?.url ?? ''
+    if (status === 401 && !url.includes('/api/auth/')) {
+      localStorage.removeItem('og_token')
+      localStorage.removeItem('og_user')
+      localStorage.removeItem('og_company')
+      if (!window.location.pathname.startsWith('/login')) window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  },
+)
+
 // OneGate listeleri: dizi VEYA {data,total} → tek şekle indir
 // (axios data 'any' olduğu için data:any[] — Refine'ın generic TData[] beklentisine uyar)
 const normalize = (d: any): { data: any[]; total: number } => {

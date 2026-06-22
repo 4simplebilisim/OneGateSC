@@ -1,0 +1,51 @@
+import type { FastifyRequest } from 'fastify'
+import { prisma } from './prisma.js'
+
+/**
+ * Kullanıcı yetki enforcement: bir kullanıcı yalnız yetkili olduğu tesis/depo/operasyon tipini kullanabilir.
+ * Model = kısıtlama-listesi: bir scope tipinde HİÇ kayıt yoksa o boyut serbest; kayıt varsa yalnız listedekiler.
+ * super-admin tüm erişime sahiptir (bypass). request.user yoksa (teorik) bypass.
+ */
+export class AuthorizationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'AuthorizationError'
+  }
+}
+
+type CheckScopes = { warehouseId?: number | null; operationTypeId?: number | null }
+
+export async function assertUserAuthorized(request: FastifyRequest, scopes: CheckScopes): Promise<void> {
+  const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
+  if (!user || user.isSuperAdmin) return
+  const userId = user.sub
+  if (!userId) return
+
+  const auths = await prisma.tBLUSERAUTHORIZATION.findMany({
+    where: { userId, isActive: true },
+    select: { scopeType: true, referenceId: true },
+  })
+  if (auths.length === 0) return // hiç yetki kaydı yok → kısıtsız
+
+  const allowedOf = (type: 'FACILITY' | 'WAREHOUSE' | 'OPERATION_TYPE') =>
+    auths.filter((a) => a.scopeType === type).map((a) => a.referenceId)
+
+  const whAllowed = allowedOf('WAREHOUSE')
+  if (scopes.warehouseId != null && whAllowed.length > 0 && !whAllowed.includes(scopes.warehouseId)) {
+    throw new AuthorizationError('Bu depo için yetkiniz yok')
+  }
+
+  const opAllowed = allowedOf('OPERATION_TYPE')
+  if (scopes.operationTypeId != null && opAllowed.length > 0 && !opAllowed.includes(scopes.operationTypeId)) {
+    throw new AuthorizationError('Bu operasyon tipi için yetkiniz yok')
+  }
+
+  // Tesis: belgede doğrudan yok → deponun tesisi üzerinden kontrol edilir
+  const facAllowed = allowedOf('FACILITY')
+  if (scopes.warehouseId != null && facAllowed.length > 0) {
+    const wh = await prisma.tBLWAREHOUSE.findUnique({ where: { id: scopes.warehouseId }, select: { facilityId: true } })
+    if (wh?.facilityId != null && !facAllowed.includes(wh.facilityId)) {
+      throw new AuthorizationError('Bu tesis için yetkiniz yok')
+    }
+  }
+}
