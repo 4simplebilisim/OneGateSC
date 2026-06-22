@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, Form, Input, Select, Switch } from 'antd'
+import { App, Button, Card, DatePicker, Form, Input, Select, Spin, Switch } from 'antd'
+import dayjs from 'dayjs'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -19,6 +20,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const { message } = App.useApp()
   const [form] = Form.useForm()
   const [companies, setCompanies] = useState<Company[]>([])
+  const [groups, setGroups] = useState<{ id: number; code: string; name: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(mode === 'edit')
 
@@ -28,6 +30,9 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       setCompanies(list)
       if (mode === 'create' && list.length === 1) form.setFieldValue('companyId', list[0].id)
     }).catch(() => { /* yetki yoksa boş */ })
+    axiosInstance.get('/api/user-groups').then((r) => {
+      setGroups((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])
+    }).catch(() => { /* boş */ })
   }, [mode, form])
 
   useEffect(() => {
@@ -38,12 +43,25 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         username: u.username, email: u.email, fullName: u.fullName,
         companyId: u.companyId, isActive: u.isActive,
         roles: (u.userRoles ?? []).map((ur: { role: { code: string } }) => ur.role.code),
+        groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
+        userType: u.userType ?? undefined, isApproved: u.isApproved,
+        phone: u.phone ?? undefined, alias: u.alias ?? undefined,
+        validUntil: u.validUntil ? dayjs(u.validUntil) : undefined,
+        passwordNeverExpires: u.passwordNeverExpires,
+        mustChangePassword: u.mustChangePassword,
+        cannotChangePassword: u.cannotChangePassword,
       })
     }).catch((e) => message.error(e?.response?.data?.error ?? 'Kullanıcı yüklenemedi')).finally(() => setLoading(false))
   }, [mode, id, form, message])
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSaving(true)
+    // DatePicker dayjs nesnesi döner → backend'e 'YYYY-MM-DD' string gönder
+    if (values.validUntil && dayjs.isDayjs(values.validUntil)) {
+      values.validUntil = (values.validUntil as dayjs.Dayjs).format('YYYY-MM-DD')
+    } else {
+      delete values.validUntil
+    }
     try {
       if (mode === 'create') {
         await axiosInstance.post('/api/users', values)
@@ -67,8 +85,9 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         subtitle="Kullanıcı bilgileri, firma ve roller"
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/users')}>Liste</Button>}
       />
-      <Card className="og-section-card" size="small" loading={loading}>
-        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, roles: ['OPERATOR'] }}>
+      <Card className="og-section-card" size="small">
+        <Spin spinning={loading}>
+        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, roles: ['OPERATOR'], isApproved: true, passwordNeverExpires: true }}>
           <Form.Item name="username" label="Kullanıcı Adı" rules={[{ required: mode === 'create', message: 'Zorunlu' }]}>
             <Input disabled={mode === 'edit'} placeholder="kullanici01" />
           </Form.Item>
@@ -89,6 +108,35 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Form.Item name="roles" label="Roller" rules={[{ required: true, message: 'En az bir rol' }]}>
             <Select mode="multiple" placeholder="Rol seçin" options={ROLE_OPTS} />
           </Form.Item>
+          <Form.Item name="groups" label="Kullanıcı Grupları (yetki miras alınır)">
+            <Select mode="multiple" placeholder="Grup seçin — gruptan yetki miras alınır" optionFilterProp="label" showSearch allowClear
+              options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} />
+          </Form.Item>
+          <Form.Item name="userType" label="Tip">
+            <Select allowClear placeholder="Tip seçin"
+              options={[{ value: 'CENTRAL', label: 'Merkez' }, { value: 'BRANCH', label: 'Şube' }]} />
+          </Form.Item>
+          <Form.Item name="phone" label="Cep Tel">
+            <Input placeholder="05xx xxx xx xx" />
+          </Form.Item>
+          <Form.Item name="alias" label="Alias">
+            <Input placeholder="Kısa ad / takma ad" />
+          </Form.Item>
+          <Form.Item name="validUntil" label="Geçerlilik Tarihi">
+            <DatePicker format="DD.MM.YYYY" placeholder="GG.AA.YYYY" style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="isApproved" label="Onay" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="passwordNeverExpires" label="Şifre her zaman geçerli" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="mustChangePassword" label="Sonraki oturumda şifre değiştir" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="cannotChangePassword" label="Şifreyi değiştiremez" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <Form.Item name="isActive" label="Aktif" valuePropName="checked">
             <Switch />
           </Form.Item>
@@ -97,6 +145,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             <Button onClick={() => navigate('/users')}>İptal</Button>
           </div>
         </Form>
+        </Spin>
       </Card>
     </div>
   )

@@ -92,7 +92,7 @@ export async function shipmentRoutes(app: FastifyInstance) {
           companyId: getCompanyId(request),
           createdById: request.user.sub,
           plannedDate: plannedDate ? new Date(plannedDate) : undefined,
-          stops: { create: stops.map((s, i) => ({ sequence: i + 1, ...s })) },
+          stops: { create: stops.map((s, i) => ({ sequence: i + 1, companyId: getCompanyId(request), ...s })) },
         },
         include: { stops: { orderBy: { sequence: 'asc' } } },
       })

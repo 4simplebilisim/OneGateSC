@@ -89,7 +89,7 @@ interface MoveCtx {
  * Yoksa ve delta>0 ise yeni satır açar; delta<0 ve satır yoksa/yetersizse hata.
  * Her başarılı değişim hareket defterine (ledger) işaretli qtyDelta ile yazılır.
  */
-async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx) {
+async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null) {
   const existing = await tx.tBLSTOCK.findFirst({ where: key })
 
   if (existing) {
@@ -109,7 +109,7 @@ async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.
         `Stok bulunamadı (lokasyon ${key.locationId}, ürün ${key.productId}, statü ${key.statusId}) — çıkış yapılamaz`,
       )
     }
-    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta } })
+    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta, ...(expiryDate ? { expiryDate } : {}) } })
   }
 
   // Hareket defteri (legacy TBLSBLOGBELGE) — append-only, stok değişimiyle aynı transaction
@@ -264,7 +264,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     if (doc.operationType.affectsStock) {
       for (const line of doc.lines) {
         // Pasif ürün: operasyon izin vermiyorsa (passiveProductUse=false) pasif ürün hareket edemez
-        const product = await tx.tBLPRODUCT.findUnique({ where: { id: line.productId }, select: { isActive: true, code: true, productGroupId: true } })
+        const product = await tx.tBLPRODUCT.findUnique({ where: { id: line.productId }, select: { isActive: true, code: true, productGroupId: true, shelfLifeDays: true } })
         if (product && !product.isActive && !op.passiveProductUse) {
           throw new MovementError(`Satır ${line.lineNo}: pasif ürün (${product.code}) — bu operasyonda kullanılamaz`)
         }
@@ -488,12 +488,19 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
             throw new MovementError(`Satır ${line.lineNo}: hedef lokasyon ve statü gerekli (${dir})`)
           }
           await enforceCapacity(tx, doc.companyId, line.targetLocationId, line.productId, qty, line.lineNo)
+          // Raf ömrü (opsiyonel): yalnız mal kabulde (INBOUND) ürünün raf ömrü gün sayısı tanımlıysa
+          // SKT = bugün + gün. Transfer/INTERNAL'de kaynaktaki SKT korunur (yeniden hesaplanmaz).
+          const inboundExpiry =
+            dir === 'INBOUND' && product?.shelfLifeDays
+              ? new Date(Date.now() + product.shelfLifeDays * 86400000)
+              : undefined
           await adjustStock(
             tx,
             { ...common, locationId: line.targetLocationId, statusId: line.targetStatusId },
             line.unitId,
             qty,
             moveCtx,
+            inboundExpiry,
           )
         }
       }

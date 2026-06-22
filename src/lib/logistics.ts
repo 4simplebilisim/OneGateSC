@@ -65,7 +65,7 @@ export async function createShipmentFromSalesOrder(
         plannedDate: opts.plannedDate,
         createdById: userId,
         status: 'PLANNED',
-        stops: { create: [{ sequence: 1, partnerId: order.customerId, salesOrderId: order.id }] },
+        stops: { create: [{ sequence: 1, companyId, partnerId: order.customerId, salesOrderId: order.id }] },
       },
       include: { stops: { orderBy: { sequence: 'asc' } } },
     })

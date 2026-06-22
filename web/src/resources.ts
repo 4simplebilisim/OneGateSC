@@ -172,8 +172,13 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'report-criteria', label: 'Rapor Kriter', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-fields', label: 'Rapor Saha', section: 'Uyarlamalar', group: 'Rapor' },
 
-  // ── Sistem (kullanıcı yönetimi + yetkiler) — ADMIN ──
+  // ── El Terminali (Android) dinamik menü ──
+  { name: 'handheld-menu-groups', label: 'El Terminali Menü', section: 'Uyarlamalar', group: 'El Terminali' },
+
+  // ── Sistem (firma + kullanıcı yönetimi + yetkiler) — ADMIN/super-admin ──
+  { name: 'companies', label: 'Firma', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'users', label: 'Kullanıcılar', section: 'Uyarlamalar', group: 'Sistem' },
+  { name: 'user-groups', label: 'Kullanıcı Grup', section: 'Uyarlamalar', group: 'Sistem' },
 
   // ── Raporlar — metadata-driven rapor merkezi (Başlık/Kriter/Saha'dan dinamik) ──
   { name: 'report-center', label: 'Raporlar', section: 'Raporlar', group: '' },

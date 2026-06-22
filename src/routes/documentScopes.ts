@@ -54,7 +54,7 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     const g = await draftLineGuard(companyId, parsed.data.documentLineId)
     if (g) return reply.code(g.code).send({ error: g.error })
     const last = await prisma.tBLDOCUMENTLINESCOPE.findFirst({ where: { documentLineId: parsed.data.documentLineId }, orderBy: { scopeNo: 'desc' }, select: { scopeNo: true } })
-    const created = await prisma.tBLDOCUMENTLINESCOPE.create({ data: { ...parsed.data, scopeNo: (last?.scopeNo ?? 0) + 1 } })
+    const created = await prisma.tBLDOCUMENTLINESCOPE.create({ data: { ...parsed.data, companyId, scopeNo: (last?.scopeNo ?? 0) + 1 } })
     return reply.code(201).send(created)
   })
 

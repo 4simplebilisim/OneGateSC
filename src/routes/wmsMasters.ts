@@ -122,9 +122,79 @@ const regionUpd = region.partial().omit({ code: true })
 export const regionRoutes = masterRoutes(prisma.tBLREGION as unknown as MasterDelegate, region, regionUpd, 'Bölge kodu zaten var', 'Region not found')
 export const partnerGroupRoutes = masterRoutes(prisma.tBLPARTNERGROUP as unknown as MasterDelegate, codeName60, codeName60Upd, 'Cari grup kodu zaten var', 'Partner group not found')
 
-// Statü (legacy TBLSBSTATU) — operasyon statü geçişleri bunu kullanır
-const status = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(100), isActive: z.boolean().optional() })
-export const statusRoutes = masterRoutes(prisma.tBLSTATUS as unknown as MasterDelegate, status, status.partial().omit({ code: true }), 'Statü kodu zaten var', 'Status not found')
+// Statü (legacy TBLSBSTATU) — operasyon statü geçişleri bunu kullanır.
+// OneGate eklentisi: statü TAM OLARAK tek TESİSE (facilityId) aittir + firma (tenant=companyId) taşır.
+// Tenant ≠ tesis: companyId=kiracı (LNGTENANTID), facilityId=tesis (LNGDISTKOD). Legacy'de tesis YOK.
+const statusCreate = z.object({
+  code: z.string().min(1).max(20),
+  name: z.string().min(1).max(100),
+  isActive: z.boolean().optional(),
+  facilityId: z.number().int().positive(),
+})
+const statusUpdate = z.object({
+  name: z.string().min(1).max(100).optional(),
+  isActive: z.boolean().optional(),
+  facilityId: z.number().int().positive().optional(),
+})
+
+// Tesis bu firmaya (tenant) ait mi? (cross-tenant koruması)
+async function facilityInTenant(companyId: number, facilityId: number): Promise<boolean> {
+  return (await prisma.tBLFACILITY.count({ where: { companyId, id: facilityId } })) > 0
+}
+
+export async function statusRoutes(app: FastifyInstance) {
+  app.get('/', async (request) =>
+    prisma.tBLSTATUS.findMany({ where: { companyId: getCompanyId(request) }, orderBy: { code: 'asc' } }),
+  )
+
+  app.get('/:id', async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const row = await prisma.tBLSTATUS.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    if (!row) return reply.code(404).send({ error: 'Status not found' })
+    return row
+  })
+
+  app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = statusCreate.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    if (!(await facilityInTenant(companyId, parsed.data.facilityId))) return reply.code(400).send({ error: 'Geçersiz tesis (bu firmaya ait değil)' })
+    try {
+      const row = await prisma.tBLSTATUS.create({ data: { ...parsed.data, companyId } })
+      return reply.code(201).send(row)
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Statü kodu zaten var' })
+      throw err
+    }
+  })
+
+  app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const parsed = statusUpdate.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const existing = await prisma.tBLSTATUS.findFirst({ where: { id, companyId } })
+    if (!existing) return reply.code(404).send({ error: 'Status not found' })
+    if (parsed.data.facilityId != null && !(await facilityInTenant(companyId, parsed.data.facilityId)))
+      return reply.code(400).send({ error: 'Geçersiz tesis (bu firmaya ait değil)' })
+    return prisma.tBLSTATUS.update({ where: { id }, data: parsed.data })
+  })
+
+  app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    try {
+      const res = await prisma.tBLSTATUS.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+      if (res.count === 0) return reply.code(404).send({ error: 'Status not found' })
+      return { deleted: res.count }
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2003') return reply.code(409).send({ error: 'Kayıt kullanımda — silinemez' })
+      throw err
+    }
+  })
+}
 
 // Palet tipi (legacy TBLSBPALETTIPI) — prefix(code) + sayaç + uzunluk + tip(tek ürün/karma) + palet içi palet + transfer bayrakları
 const palletType = z.object({

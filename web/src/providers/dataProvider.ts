@@ -8,8 +8,10 @@ export const axiosInstance = axios.create({ baseURL: API_URL })
 axiosInstance.interceptors.request.use((config) => {
   const token = localStorage.getItem('og_token')
   if (token) config.headers.Authorization = `Bearer ${token}`
+  // İsteğe özel x-company-id verilmişse (ör. super-admin ürünü belirli firmaya kaydederken) ona dokunma;
+  // yoksa global seçili firmayı (og_company) uygula.
   const companyId = localStorage.getItem('og_company')
-  if (companyId) config.headers['x-company-id'] = companyId
+  if (companyId && !config.headers['x-company-id']) config.headers['x-company-id'] = companyId
   return config
 })
 

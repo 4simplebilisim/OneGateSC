@@ -104,6 +104,34 @@ export const LABEL_ITEM_TYPE_OPTS = [
 ]
 
 export const FORM_CONFIG: Record<string, FieldDef[]> = {
+  // ── Sistem ──
+  companies: [
+    { name: 'code', label: 'Firma Kodu', type: 'text', required: true },
+    { name: 'name', label: 'Firma Adı', type: 'text', required: true },
+    { name: 'taxNumber', label: 'Vergi No', type: 'text' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'user-groups': [
+    { name: 'code', label: 'Grup Kodu', type: 'text', required: true },
+    { name: 'name', label: 'Grup Adı', type: 'text', required: true },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  // El Terminali dinamik menü (grup + item→operasyon kodu)
+  'handheld-menu-groups': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'name', label: 'Grup Adı', type: 'text', required: true },
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
+  'handheld-menu-items': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'name', label: 'Menü Adı', type: 'text', required: true },
+    { name: 'screenType', label: 'Ekran', type: 'select', required: true, options: [{ value: 'RECEIPT', label: 'Mal Kabul' }, { value: 'PICK', label: 'Toplama' }, { value: 'COUNT', label: 'Sayım' }, { value: 'STOCK', label: 'Stok Sorgu' }] },
+    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', refResource: 'operation-types' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+  ],
   // ── Ek Saha (Dinamik+Statik birleşik) — StokBar Ek Saha Tanımlama ekranı. Tesis=firma=companyId (örtük). ──
   'extra-fields': [
     { name: 'fieldKind', label: 'Tip (Dinamik/Statik)', type: 'select', required: true, options: EXTRA_FIELD_KIND_OPTS },
@@ -680,7 +708,7 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'referenceKey', label: 'Referans Anahtar', type: 'text' },
     { name: 'message', label: 'Mesaj', type: 'text' },
   ],
-  statuses: codeName(),
+  statuses: [...codeName(), { name: 'facilityId', label: 'Tesis', type: 'ref', required: true, refResource: 'facilities' }],
   'pallet-types': [
     { name: 'code', label: 'Palet No Öneki (Kod)', type: 'text', required: true },
     { name: 'name', label: 'Tanım', type: 'text', required: true },

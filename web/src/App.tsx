@@ -94,6 +94,8 @@ export default function App() {
           <Route path="users/new" element={<UserForm mode="create" />} />
           <Route path="users/:id/edit" element={<UserForm mode="edit" />} />
           <Route path="users/:id/authorizations" element={<UserAuthorizations />} />
+          <Route path="user-groups/:id/authorizations" element={<UserAuthorizations subject="group" />} />
+          <Route path="handheld-menu-groups/:id/items" element={<OwnerLines resource="handheld-menu-items" ownerField="groupId" ownerResource="handheld-menu-groups" backTo="/handheld-menu-groups" title="El Terminali Menüleri" subtitle="Gruba bağlı menü item'ları — her biri bir operasyon koduna ve mobil ekrana bağlı" />} />
 
           <Route path="locations/bulk" element={<LocationBulkGenerate />} />
           <Route path="label-types/:id/design" element={<LabelDesigner />} />

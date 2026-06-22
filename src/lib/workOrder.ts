@@ -77,6 +77,7 @@ export async function completeWorkOrder(id: number, userId: number, now: Date) {
         lines: {
           create: moveLines.map((l, i) => ({
             lineNo: i + 1,
+            companyId: wo.companyId,
             productId: l.productId,
             unitId: l.unitId,
             quantity: l.collectedQty,

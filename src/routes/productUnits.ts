@@ -58,12 +58,15 @@ export async function productUnitRoutes(app: FastifyInstance) {
     if (!product) return reply.code(400).send({ error: 'Geçersiz ürün' })
     try {
       const pu = await prisma.$transaction(async (tx) => {
-        if (parsed.data.isBaseUnit) {
-          // Önceki ana birimi kaldır
+        // Her ürün KESİN tek bir ana birim taşımalı: ilk eklenen birim otomatik ana birim olur.
+        const existingCount = await tx.tBLPRODUCTUNIT.count({ where: { productId: parsed.data.productId } })
+        const makeBase = parsed.data.isBaseUnit || existingCount === 0
+        if (makeBase) {
+          // Önceki ana birimi kaldır (aynı anda iki ana birim olamaz)
           await tx.tBLPRODUCTUNIT.updateMany({ where: { productId: parsed.data.productId, isBaseUnit: true }, data: { isBaseUnit: false } })
         }
-        const created = await tx.tBLPRODUCTUNIT.create({ data: parsed.data, include: unitInclude })
-        if (parsed.data.isBaseUnit) {
+        const created = await tx.tBLPRODUCTUNIT.create({ data: { ...parsed.data, companyId, isBaseUnit: makeBase }, include: unitInclude })
+        if (makeBase) {
           await tx.tBLPRODUCT.update({ where: { id: parsed.data.productId }, data: { unitId: parsed.data.unitId } })
         }
         return created
@@ -85,6 +88,10 @@ export async function productUnitRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const existing = await prisma.tBLPRODUCTUNIT.findFirst({ where: { id, product: { companyId } } })
     if (!existing) return reply.code(404).send({ error: 'Product unit not found' })
+    // Ana birim doğrudan kaldırılamaz — başka bir birimi ana yaparak değiştirilir (kesin bir ana birim korunur).
+    if (parsed.data.isBaseUnit === false && existing.isBaseUnit) {
+      return reply.code(400).send({ error: 'Ana birim doğrudan kaldırılamaz — başka bir birimi ana yaparak değiştirin.' })
+    }
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.isBaseUnit) {
         // Önceki ana birimi kaldır (kendisi hariç)
@@ -104,10 +111,15 @@ export async function productUnitRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const existing = await prisma.tBLPRODUCTUNIT.findFirst({ where: { id, product: { companyId: getCompanyId(request) } } })
     if (!existing) return reply.code(404).send({ error: 'Product unit not found' })
+    // Başka birim varken ana birim silinemez — önce başka birimi ana yapın (kesin bir ana birim korunur).
+    if (existing.isBaseUnit) {
+      const others = await prisma.tBLPRODUCTUNIT.count({ where: { productId: existing.productId, id: { not: id } } })
+      if (others > 0) return reply.code(400).send({ error: 'Ana birim silinemez — önce başka bir birimi ana yapın.' })
+    }
     await prisma.$transaction(async (tx) => {
       await tx.tBLPRODUCTUNIT.delete({ where: { id } })
       if (existing.isBaseUnit) {
-        // Ana birim silindi → TBLPRODUCT.unitId temizle
+        // Son birim (ana birim) silindi → TBLPRODUCT.unitId temizle (üründe artık birim yok)
         await tx.tBLPRODUCT.update({ where: { id: existing.productId }, data: { unitId: null } })
       }
     })

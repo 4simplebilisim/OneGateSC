@@ -106,9 +106,21 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const regions = useOpts('regions')
   const partnerGroups = useOpts('partner-groups')
   const partners = useOpts('partners')
+  const facilities = useOpts('facilities')
+
+  // Firma (tenant) — müşteri hangi firmaya ait
+  const [companies, setCompanies] = useState<{ id: number; code: string; name: string }[]>([])
+  const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+  useEffect(() => {
+    axiosInstance.get('/api/companies').then((r) => setCompanies((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])).catch(() => { /* boş */ })
+  }, [])
+  const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
 
   useEffect(() => {
-    if (mode === 'edit' && id) axiosInstance.get(`/api/partners/${id}`).then((r) => form.setFieldsValue(r.data))
+    if (mode === 'edit' && id) axiosInstance.get(`/api/partners/${id}`).then((r) => {
+      form.setFieldsValue({ ...r.data, facilities: (r.data.facilities ?? []).map((f: { facilityId: number }) => f.facilityId) })
+      if (r.data.companyId) setCompanyId(r.data.companyId)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id])
 
@@ -185,6 +197,8 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Col xs={24} sm={8}><Form.Item name="regionId" label="Bölge"><Select options={regions} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="partnerGroupId" label="Grup"><Select options={partnerGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="parentId" label="Zincir / Üst Cari"><Select options={partners.filter((p) => String(p.value) !== id)} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item label="Firma (tenant)"><Input value={firmLabel} disabled /></Form.Item></Col>
+          <Col xs={24} sm={16}><Form.Item name="facilities" label="Kullanılabilir Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa müşteri tüm tesislerde işlem yapabilir" /></Form.Item></Col>
           {txt('taxOffice', 'Vergi Dairesi')}
           {txt('taxNumber', 'Vergi Numarası')}
           {txt('nationalId', 'TC Kimlik No')}

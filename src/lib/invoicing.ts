@@ -58,6 +58,7 @@ async function buildInvoice(
         lines: {
           create: order.lines.map((l, i) => ({
             lineNo: i + 1,
+            companyId,
             productId: l.productId,
             unitId: l.unitId,
             quantity: l.quantity,

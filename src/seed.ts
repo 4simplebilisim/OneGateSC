@@ -38,7 +38,14 @@ async function main() {
   const pcs = await prisma.tBLUNIT.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'PCS' } } })
   const box = await prisma.tBLUNIT.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'BOX' } } })
 
-  // --- Statuses (stok statüsü, tablo-driven) ---
+  // --- Tesis (facility) — statüler TEK tesise bağlı olduğundan statülerden ÖNCE oluşturulmalı ---
+  const facility = await prisma.tBLFACILITY.upsert({
+    where: { companyId_code: { companyId, code: 'TESIS-1' } },
+    update: {},
+    create: { companyId, code: 'TESIS-1', name: 'Merkez Tesis', city: 'İstanbul' },
+  })
+
+  // --- Statuses (stok statüsü, tablo-driven) — her statü tek tesise (facility) aittir ---
   const statuses = [
     { code: 'AVAILABLE', name: 'Kullanılabilir' },
     { code: 'QUARANTINE', name: 'Karantina' },
@@ -49,7 +56,7 @@ async function main() {
     await prisma.tBLSTATUS.upsert({
       where: { companyId_code: { companyId, code: s.code } },
       update: {},
-      create: { companyId, ...s },
+      create: { companyId, facilityId: facility.id, ...s },
     })
   }
   const available = await prisma.tBLSTATUS.findUniqueOrThrow({
@@ -99,7 +106,7 @@ async function main() {
       passwordHash,
       fullName: 'System Administrator',
       isSuperAdmin: true,
-      userRoles: { create: { roleId: adminRole.id } },
+      userRoles: { create: { roleId: adminRole.id, companyId } },
     },
   })
 
@@ -115,7 +122,7 @@ async function main() {
       passwordHash: await bcrypt.hash('operator123', 10),
       fullName: 'Depo Operatörü',
       isSuperAdmin: false,
-      userRoles: { create: { roleId: operatorRole.id } },
+      userRoles: { create: { roleId: operatorRole.id, companyId } },
     },
   })
 
@@ -131,7 +138,7 @@ async function main() {
       passwordHash: await bcrypt.hash('viewer123', 10),
       fullName: 'Salt Okunur Kullanıcı',
       isSuperAdmin: false,
-      userRoles: { create: { roleId: viewerRole.id } },
+      userRoles: { create: { roleId: viewerRole.id, companyId } },
     },
   })
 
@@ -223,12 +230,12 @@ async function main() {
   await prisma.tBLPRODUCTUNIT.upsert({
     where: { productId_unitId: { productId: product.id, unitId: pcs.id } },
     update: {},
-    create: { productId: product.id, unitId: pcs.id, isBaseUnit: true, multiplier: 1, divisor: 1, batchTracking: true },
+    create: { companyId, productId: product.id, unitId: pcs.id, isBaseUnit: true, multiplier: 1, divisor: 1, batchTracking: true },
   })
   await prisma.tBLPRODUCTUNIT.upsert({
     where: { productId_unitId: { productId: product.id, unitId: box.id } },
     update: {},
-    create: { productId: product.id, unitId: box.id, multiplier: 12, divisor: 1, isSalesUnit: true },
+    create: { companyId, productId: product.id, unitId: box.id, multiplier: 12, divisor: 1, isSalesUnit: true },
   })
 
   // --- Stock (örnek: 100 PCS @ R01-01, AVAILABLE, palet P0001) ---
@@ -333,11 +340,7 @@ async function main() {
   })
 
   // ── Demo tanım kırılımları: tesis · bölge · cari grup · zincir · ürün-birim+barkod ──
-  const facility = await prisma.tBLFACILITY.upsert({
-    where: { companyId_code: { companyId, code: 'TESIS-1' } },
-    update: {},
-    create: { companyId, code: 'TESIS-1', name: 'Merkez Tesis', city: 'İstanbul' },
-  })
+  // tesis yukarıda (statülerden önce) oluşturuldu — depoyu o tesise bağla
   await prisma.tBLWAREHOUSE.update({ where: { companyId_code: { companyId, code: 'WH01' } }, data: { facilityId: facility.id } })
 
   const region = await prisma.tBLREGION.upsert({ where: { companyId_code: { companyId, code: 'MARMARA' } }, update: {}, create: { companyId, code: 'MARMARA', name: 'Marmara Bölgesi' } })
@@ -360,8 +363,8 @@ async function main() {
   }
 
   // ── Operasyon konfig dünyası: ek statüler + GR statü geçişi + op-palet ──
-  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'QUARANTINE' } }, update: {}, create: { companyId, code: 'QUARANTINE', name: 'Karantina' } })
-  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'REJECTED' } }, update: {}, create: { companyId, code: 'REJECTED', name: 'Red' } })
+  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'QUARANTINE' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'QUARANTINE', name: 'Karantina' } })
+  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'REJECTED' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'REJECTED', name: 'Red' } })
   const grOp = await prisma.tBLOPERATIONTYPE.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'GR' } } })
   // GR (mal kabul) → hedef statü AVAILABLE (mal kabulde statü buradan türetilir)
   const exGrSt = await prisma.tBLOPERATIONTYPESTATUS.findFirst({ where: { companyId, operationTypeId: grOp.id, targetStatusId: available.id } })

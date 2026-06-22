@@ -114,7 +114,7 @@ export async function createPurchaseOrderFromMrp(
       status: 'DRAFT',
       note: 'MRP otomatik önerisi',
       ...totals,
-      lines: { create: lines },
+      lines: { create: lines.map((l) => ({ ...l, companyId })) },
     },
     include: { lines: true },
   })

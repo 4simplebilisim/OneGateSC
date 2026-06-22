@@ -259,9 +259,24 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const productSubGroups = useOpts('product-subgroups')
   const productTypes = useOpts('product-types')
   const productDetailTypes = useOpts('product-detail-types')
+  const facilities = useOpts('facilities')
+
+  // Firma (tenant) — ürün hangi firmaya ait: edit'te üründen, create'te seçili firmadan (og_company)
+  // Super-admin yeni üründe firmayı KARTTAN seçebilir; normal admin tek firmasına kilitli (salt-okunur).
+  const isSuper = (() => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } })()
+  const [companies, setCompanies] = useState<{ id: number; code: string; name: string }[]>([])
+  const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+  useEffect(() => {
+    axiosInstance.get('/api/companies').then((r) => setCompanies((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])).catch(() => { /* boş */ })
+  }, [])
+  const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
 
   useEffect(() => {
-    if (mode === 'edit' && id) axiosInstance.get(`/api/products/${id}`).then((r) => form.setFieldsValue(r.data))
+    if (mode === 'edit' && id) axiosInstance.get(`/api/products/${id}`).then((r) => {
+      // facilities: [{facilityId}] → çoklu-seçim için id dizisi
+      form.setFieldsValue({ ...r.data, facilities: (r.data.facilities ?? []).map((f: { facilityId: number }) => f.facilityId) })
+      if (r.data.companyId) setCompanyId(r.data.companyId)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id])
 
@@ -269,7 +284,12 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     setSubmitting(true)
     try {
       if (mode === 'create') {
-        const r = await axiosInstance.post('/api/products', values)
+        // Super-admin kartta firma seçtiyse o firmaya kaydet (x-company-id override).
+        const cfg = isSuper && companyId ? { headers: { 'x-company-id': String(companyId) } } : undefined
+        const r = await axiosInstance.post('/api/products', values, cfg)
+        // Düzenle ekranı + alt sekmeler (ölçü birimi/ek grup) global og_company üstünden çalışır;
+        // seçilen firmaya hizala ki ürünün devamı doğru tenant'ta yönetilsin.
+        if (isSuper && companyId) localStorage.setItem('og_company', String(companyId))
         message.success('Ürün kaydedildi — şimdi ölçü birimleri ve ek gruplar eklenebilir')
         navigate(`/products/${r.data.id}/edit`)
       } else {
@@ -296,7 +316,12 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Col xs={24} sm={8}><Form.Item name="productSubGroupId" label="Ürün Alt-Grubu"><Select options={productSubGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productTypeId" label="Ürün Tipi"><Select options={productTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="detailTypeId" label="Detay Tipi"><Select options={productDetailTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
-          <Col xs={24} sm={8}><Form.Item name="manufacturerCode" label="Üretici Kodu"><Input maxLength={60} /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item label="Firma (tenant)" tooltip={isSuper && mode === 'create' ? 'Ürünün kaydedileceği firmayı seçin' : 'Ürünün ait olduğu firma'}>
+            {isSuper && mode === 'create'
+              ? <Select value={companyId ?? undefined} onChange={(v) => setCompanyId(v)} options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} showSearch optionFilterProp="label" placeholder="Firma seçiniz" />
+              : <Input value={firmLabel} disabled />}
+          </Form.Item></Col>
+          <Col xs={24} sm={16}><Form.Item name="facilities" label="Kullanılabilir Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa ürün tüm tesislerde kullanılabilir" /></Form.Item></Col>
           <Col xs={24} sm={8}>
             <div className="og-switchrow" style={{ marginTop: 30 }}>
               <span className="og-switchrow__label">Aktif</span>
@@ -307,13 +332,7 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       </Card>
       <Card className="og-section-card" size="small" title="Raf Ömrü & Ağırlık" style={{ marginTop: 14 }}>
         <Row gutter={[20, 0]}>
-          <Col xs={24} sm={8}>
-            <div className="og-switchrow" style={{ marginTop: 30 }}>
-              <span className="og-switchrow__label">Raf Ömrü Takibi</span>
-              <Form.Item name="shelfLifeControl" valuePropName="checked" noStyle><Switch /></Form.Item>
-            </div>
-          </Col>
-          <Col xs={24} sm={8}><Form.Item name="shelfLifeDays" label="Raf Ömrü (gün)" tooltip="Girişte SKT = üretim/giriş tarihi + bu gün sayısı"><InputNumber style={{ width: '100%' }} min={0} /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item name="shelfLifeDays" label="Raf Ömrü (gün)" tooltip="Opsiyonel. Girilirse mal kabulde SKT = giriş tarihi + bu gün sayısı; boş bırakılırsa raf ömrü takip edilmez."><InputNumber style={{ width: '100%' }} min={0} placeholder="Opsiyonel" /></Form.Item></Col>
           <Col xs={24} sm={8}>
             <div className="og-switchrow" style={{ marginTop: 30 }}>
               <span className="og-switchrow__label">Değişken Ağırlık (catch-weight)</span>

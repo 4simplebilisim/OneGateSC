@@ -50,6 +50,7 @@ const createSchema = z.object({
   email: z.string().email().max(150).optional(),
   city: z.string().max(60).optional(),
   address: z.string().max(255).optional(),
+  facilities: z.array(z.number().int().positive()).optional(), // kullanılabilir tesisler (boş = tüm tesisler)
   isActive: z.boolean().optional(),
 }).merge(extraShape)
 
@@ -64,8 +65,16 @@ const updateSchema = z.object({
   email: z.string().email().max(150).nullable().optional(),
   city: z.string().max(60).nullable().optional(),
   address: z.string().max(255).nullable().optional(),
+  facilities: z.array(z.number().int().positive()).optional(),
   isActive: z.boolean().optional(),
 }).merge(extraShape)
+
+// Sadece bu firmaya ait tesis id'leri (cross-tenant koruması)
+async function validFacilityIds(companyId: number, facilities: number[] | undefined): Promise<number[]> {
+  if (!facilities?.length) return []
+  const rows = await prisma.tBLFACILITY.findMany({ where: { companyId, id: { in: facilities } }, select: { id: true } })
+  return rows.map((r) => r.id)
+}
 
 export async function businessPartnerRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -85,7 +94,7 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const partner = await prisma.tBLBUSINESSPARTNER.findUnique({ where: { id } })
+    const partner = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, companyId: getCompanyId(request) }, include: { facilities: { select: { facilityId: true } } } })
     if (!partner) return reply.code(404).send({ error: 'Partner not found' })
     return partner
   })
@@ -95,9 +104,12 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     }
+    const companyId = getCompanyId(request)
+    const { facilities, ...rest } = parsed.data
+    const facIds = await validFacilityIds(companyId, facilities)
     try {
       const partner = await prisma.tBLBUSINESSPARTNER.create({
-        data: { ...parsed.data, companyId: getCompanyId(request) },
+        data: { ...rest, companyId, facilities: { create: facIds.map((fid) => ({ companyId, facilityId: fid })) } },
       })
       return reply.code(201).send(partner)
     } catch (err) {
@@ -113,8 +125,15 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const existing = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const companyId = getCompanyId(request)
+    const existing = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, companyId } })
     if (!existing) return reply.code(404).send({ error: 'Partner not found' })
-    return prisma.tBLBUSINESSPARTNER.update({ where: { id }, data: parsed.data })
+    const { facilities, ...rest } = parsed.data
+    const data: Record<string, unknown> = { ...rest }
+    if (facilities) {
+      const facIds = await validFacilityIds(companyId, facilities)
+      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId, facilityId: fid })) }
+    }
+    return prisma.tBLBUSINESSPARTNER.update({ where: { id }, data, include: { facilities: { select: { facilityId: true } } } })
   })
 }
