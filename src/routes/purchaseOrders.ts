@@ -108,7 +108,7 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
           createdById: request.user.sub,
           expectedDate: expectedDate ? new Date(expectedDate) : undefined,
           ...totals,
-          lines: { create: orderLines },
+          lines: { create: orderLines.map((l) => ({ ...l, companyId })) },
         },
         include: { lines: { orderBy: { lineNo: 'asc' } } },
       })
@@ -145,7 +145,7 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
       Object.assign(data, computeOrderTotals(orderLines))
       return prisma.$transaction(async (tx) => {
         await tx.tBLPURCHASEORDERLINE.deleteMany({ where: { orderId: id } })
-        return tx.tBLPURCHASEORDER.update({ where: { id }, data: { ...data, lines: { create: orderLines } }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+        return tx.tBLPURCHASEORDER.update({ where: { id }, data: { ...data, lines: { create: orderLines.map((l) => ({ ...l, companyId: order.companyId })) } }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
       })
     }
     return prisma.tBLPURCHASEORDER.update({ where: { id }, data, include: { lines: { orderBy: { lineNo: 'asc' } } } })

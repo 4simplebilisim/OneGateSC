@@ -11,7 +11,16 @@ const createSchema = z.object({
   fullName: z.string().min(1).max(150),
   companyId: z.number().int().positive().optional(), // yalnız super-admin başka firmaya kullanıcı açabilir
   roles: z.array(z.string()).optional(),
+  groups: z.array(z.number().int().positive()).optional(), // üye olduğu kullanıcı grupları
   isActive: z.boolean().optional(),
+  userType: z.enum(['CENTRAL', 'BRANCH']).optional(),
+  isApproved: z.boolean().optional(),
+  phone: z.string().max(30).optional(),
+  validUntil: z.string().optional(), // ISO tarih, doğrudan Prisma'ya geçer
+  alias: z.string().max(60).optional(),
+  passwordNeverExpires: z.boolean().optional(),
+  mustChangePassword: z.boolean().optional(),
+  cannotChangePassword: z.boolean().optional(),
 })
 
 const updateSchema = z.object({
@@ -20,13 +29,29 @@ const updateSchema = z.object({
   password: z.string().min(6).max(100).optional(), // verilirse şifre sıfırlanır
   companyId: z.number().int().positive().optional(),
   roles: z.array(z.string()).optional(),
+  groups: z.array(z.number().int().positive()).optional(),
   isActive: z.boolean().optional(),
+  userType: z.enum(['CENTRAL', 'BRANCH']).optional(),
+  isApproved: z.boolean().optional(),
+  phone: z.string().max(30).optional(),
+  validUntil: z.string().optional(), // ISO tarih, doğrudan Prisma'ya geçer
+  alias: z.string().max(60).optional(),
+  passwordNeverExpires: z.boolean().optional(),
+  mustChangePassword: z.boolean().optional(),
+  cannotChangePassword: z.boolean().optional(),
 })
 
 // İstenen companyId'yi çöz: super-admin body'deki firmayı seçebilir; normal admin kendi firmasına kilitli.
 function resolveTargetCompany(request: { user?: { isSuperAdmin?: boolean } }, bodyCompanyId: number | undefined, ownCompanyId: number): number {
   if (request.user?.isSuperAdmin && bodyCompanyId) return bodyCompanyId
   return ownCompanyId
+}
+
+// Sadece bu firmaya ait grup id'lerini döndür (cross-tenant koruması)
+async function validGroupIds(companyId: number, groups: number[] | undefined): Promise<number[]> {
+  if (!groups?.length) return []
+  const rows = await prisma.tBLUSERGROUP.findMany({ where: { companyId, id: { in: groups } }, select: { id: true } })
+  return rows.map((r) => r.id)
 }
 
 // passwordHash ASLA dönülmez
@@ -40,7 +65,16 @@ const userSelect = {
   isSuperAdmin: true,
   lastLoginAt: true,
   createdAt: true,
+  userType: true,
+  isApproved: true,
+  phone: true,
+  validUntil: true,
+  alias: true,
+  passwordNeverExpires: true,
+  mustChangePassword: true,
+  cannotChangePassword: true,
   userRoles: { select: { role: { select: { code: true, name: true } } } },
+  groupMemberships: { select: { groupId: true } },
 } as const
 
 export async function userRoutes(app: FastifyInstance) {
@@ -65,15 +99,17 @@ export async function userRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
 
-    const { password, roles: roleCodes, companyId: bodyCompanyId, ...rest } = parsed.data
+    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, ...rest } = parsed.data
     const companyId = resolveTargetCompany(request, bodyCompanyId, getCompanyId(request))
     const roles = await prisma.tBLROLE.findMany({ where: { code: { in: roleCodes ?? ['VIEWER'] } } })
     if (roles.length === 0) return reply.code(400).send({ error: 'Geçerli rol bulunamadı' })
     const passwordHash = await bcrypt.hash(password, 10)
+    const gids = await validGroupIds(companyId, groups)
+    const validUntilDate = validUntil ? new Date(validUntil) : undefined // boş string → DATE'e geçirme
 
     try {
       const user = await prisma.tBLUSER.create({
-        data: { ...rest, companyId, passwordHash, userRoles: { create: roles.map((r) => ({ roleId: r.id })) } },
+        data: { ...rest, validUntil: validUntilDate, companyId, passwordHash, userRoles: { create: roles.map((r) => ({ roleId: r.id, companyId })) }, groupMemberships: { create: gids.map((g) => ({ groupId: g, companyId })) } },
         select: userSelect,
       })
       return reply.code(201).send(user)
@@ -95,14 +131,21 @@ export async function userRoutes(app: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: 'User not found' })
     if (existing.isSuperAdmin) return reply.code(403).send({ error: 'Super-admin kullanıcı düzenlenemez' })
 
-    const { password, roles: roleCodes, companyId: bodyCompanyId, ...rest } = parsed.data
+    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, ...rest } = parsed.data
     const data: Record<string, unknown> = { ...rest }
+    if (validUntil !== undefined) data.validUntil = validUntil ? new Date(validUntil) : null // boş string → null
     if (bodyCompanyId !== undefined) data.companyId = resolveTargetCompany(request, bodyCompanyId, ownCompanyId)
     if (password) data.passwordHash = await bcrypt.hash(password, 10)
+    // üyelik junction'larının companyId'si kullanıcının (güncelleniyorsa yeni, yoksa mevcut) firmasıyla aynı
+    const memberCompanyId = 'companyId' in data ? (data.companyId as number | null) : existing.companyId
     if (roleCodes) {
       const roles = await prisma.tBLROLE.findMany({ where: { code: { in: roleCodes } } })
       if (roles.length === 0) return reply.code(400).send({ error: 'Geçerli rol bulunamadı' })
-      data.userRoles = { deleteMany: {}, create: roles.map((r) => ({ roleId: r.id })) }
+      data.userRoles = { deleteMany: {}, create: roles.map((r) => ({ roleId: r.id, companyId: memberCompanyId })) }
+    }
+    if (groups) {
+      const gids = await validGroupIds(existing.companyId ?? ownCompanyId, groups)
+      data.groupMemberships = { deleteMany: {}, create: gids.map((g) => ({ groupId: g, companyId: memberCompanyId })) }
     }
     try {
       const user = await prisma.tBLUSER.update({ where: { id }, data, select: userSelect })

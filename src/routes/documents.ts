@@ -144,6 +144,43 @@ export async function documentRoutes(app: FastifyInstance) {
       throw err
     }
 
+    // Ürün-tesis kısıtı: deponun tesisi, satırdaki ürünün izinli tesisleri içinde olmalı (ürünün kaydı yoksa serbest)
+    const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: header.warehouseId, companyId }, select: { facilityId: true } })
+    if (wh?.facilityId != null) {
+      const productIds = [...new Set(lines.map((l) => l.productId))]
+      const restrictions = await prisma.tBLPRODUCTFACILITY.findMany({ where: { companyId, productId: { in: productIds } }, select: { productId: true, facilityId: true } })
+      const byProduct = new Map<number, Set<number>>()
+      for (const r of restrictions) {
+        if (!byProduct.has(r.productId)) byProduct.set(r.productId, new Set())
+        byProduct.get(r.productId)!.add(r.facilityId)
+      }
+      for (const pid of productIds) {
+        const allowed = byProduct.get(pid)
+        if (allowed && allowed.size > 0 && !allowed.has(wh.facilityId)) {
+          return reply.code(400).send({ error: `Ürün (id ${pid}) bu deponun tesisinde kullanılamaz — ürün-tesis kısıtı` })
+        }
+      }
+      // Müşteri-tesis kısıtı: belgenin cari'si bu deponun tesisinde işlem yapabilmeli (kayıt yoksa serbest)
+      if (header.partnerId) {
+        const partnerFacs = await prisma.tBLPARTNERFACILITY.findMany({ where: { companyId, partnerId: header.partnerId }, select: { facilityId: true } })
+        if (partnerFacs.length > 0 && !partnerFacs.some((f) => f.facilityId === wh.facilityId)) {
+          return reply.code(400).send({ error: 'Müşteri bu deponun tesisinde işlem yapamaz — müşteri-tesis kısıtı' })
+        }
+      }
+      // Statü-tesis kısıtı: satırlarda kullanılan her statü (kaynak/hedef) bu deponun tesisine AİT olmalı.
+      // Statü TAM OLARAK tek tesise bağlı; deponun tesisiyle eşleşmiyorsa o depoda kullanılamaz.
+      const statusIds = [...new Set(lines.flatMap((l) => [l.sourceStatusId, l.targetStatusId]).filter((x): x is number => !!x))]
+      if (statusIds.length > 0) {
+        const sts = await prisma.tBLSTATUS.findMany({ where: { companyId, id: { in: statusIds } }, select: { id: true, facilityId: true } })
+        const byStatus = new Map(sts.map((s) => [s.id, s.facilityId]))
+        for (const sid of statusIds) {
+          if (byStatus.get(sid) !== wh.facilityId) {
+            return reply.code(400).send({ error: `Statü (id ${sid}) bu deponun tesisinde kullanılamaz — statü-tesis kısıtı` })
+          }
+        }
+      }
+    }
+
     // documentNo verilmezse operasyon tipinin sayacından otomatik üret
     let documentNo = providedNo
     if (!documentNo) {
@@ -195,7 +232,7 @@ export async function documentRoutes(app: FastifyInstance) {
           createdById: request.user.sub,
           documentStatusId: await docStatusId(companyId, DOC_STATUS.WAITING), // Bekliyor
           documentDate: documentDate ? new Date(documentDate) : undefined,
-          lines: { create: processedLines.map((line, index) => ({ lineNo: index + 1, ...line })) },
+          lines: { create: processedLines.map((line, index) => ({ lineNo: index + 1, companyId, ...line })) },
         },
         include: { lines: { orderBy: { lineNo: 'asc' } }, documentStatus: true },
       })
@@ -361,6 +398,7 @@ export async function documentRoutes(app: FastifyInstance) {
           lines: {
             create: source.lines.map((l, i) => ({
               lineNo: i + 1,
+              companyId,
               productId: l.productId, unitId: l.unitId, quantity: l.quantity, referenceQty: l.referenceQty,
               sourceLocationId: l.sourceLocationId, targetLocationId: l.targetLocationId,
               sourceStatusId: l.sourceStatusId, targetStatusId: l.targetStatusId,

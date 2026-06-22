@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented } from 'antd'
 import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined } from '@ant-design/icons'
+import { hiddenColumns } from '../columnAuth'
+import { screenRight } from '../screenRight'
 import { useNavigate } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -31,7 +33,7 @@ const DELETE_OK = new Set([
   'languages', 'screen-report-links', 'stock-control-parameters', 'document-planning-parameters',
   'pick-order-parameters', 'dashboard-reports', 'warehouse-vehicles', 'work-order-general-parameters',
   'work-order-reasons', 'work-order-reference-operations', 'rack-feed-parameters', 'menu-groups',
-  'users',
+  'users', 'companies', 'user-groups', 'handheld-menu-groups', 'handheld-menu-items',
 ])
 
 const PRETTY: Record<string, string> = {
@@ -174,15 +176,17 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   }, [load])
 
   const CREATE_PAGES = ['documents', 'operation-types', 'stock-counts', 'work-orders', 'pallets', 'shipments', 'users']
+  // Kullanıcı ekran hakkı (aksiyon matrisi): Yeni→add, Düzenle→edit, Sil→delete, İzle→view (admin/super-admin bypass)
+  const rAdd = screenRight(resource, 'add'), rEdit = screenRight(resource, 'edit'), rDelete = screenRight(resource, 'delete'), rView = screenRight(resource, 'view')
   // observe (Gözlem) modu: salt-okunur — Yeni/Düzenle/Kopyala/Sil gizli, sadece İzle
-  const canCreate = !observe && (hasForm(resource) || hasTxnCreate(resource) || CREATE_PAGES.includes(resource)) && canWrite()
-  const canEdit = !observe && (hasForm(resource) || resource === 'operation-types' || resource === 'users') && resource !== 'integration-logs' && canWrite()
+  const canCreate = !observe && rAdd && (hasForm(resource) || hasTxnCreate(resource) || CREATE_PAGES.includes(resource)) && canWrite()
+  const canEdit = !observe && rEdit && (hasForm(resource) || resource === 'operation-types' || resource === 'users') && resource !== 'integration-logs' && canWrite()
   // Kopyala: form prefill ile yeni kayıt (kod boş bırakılır) — generic form'lu tüm tanımlar + operasyon tipi
-  const canCopy = !observe && (hasForm(resource) || resource === 'operation-types') && canWrite()
+  const canCopy = !observe && rAdd && (hasForm(resource) || resource === 'operation-types') && canWrite()
   // Belge Kopyala: belge ekranında seçili belgeyi yeni DRAFT'a kopyalar
-  const canDocCopy = !observe && isDocuments && canWrite()
-  const canShow = hasDetail(resource)
-  const canDelete = !observe && DELETE_OK.has(resource) && canWrite()
+  const canDocCopy = !observe && rAdd && isDocuments && canWrite()
+  const canShow = hasDetail(resource) && rView
+  const canDelete = !observe && rDelete && DELETE_OK.has(resource) && canWrite()
 
   const remove = () => {
     if (!selected) return
@@ -232,7 +236,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   const hidden = ['createdAt', 'updatedAt', 'companyId', 'createdById', 'passwordHash',
     ...(hasStatusObj ? ['statusId'] : []), ...(hasDocStatus ? ['documentStatusId', 'status'] : []),
     // Sayım Parametreleri: Transfer Operasyon StokBar ekranında yok → legacy kolonu dursa da listede gizli
-    ...(resource === 'count-parameters' ? ['transferOperationTypeId'] : [])]
+    ...(resource === 'count-parameters' ? ['transferOperationTypeId'] : []),
+    ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
   const columns = [
     ...Object.keys(sample)
       .filter((k) => sample[k] === null || typeof sample[k] !== 'object')
@@ -315,7 +320,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             {resource === 'label-templates' && <Button size="small" type="text" icon={<UnorderedListOutlined />} disabled={!selected} onClick={() => navigate(`/label-templates/${selected}/items`)}>Item</Button>}
             {resource === 'label-templates' && <Button size="small" type="text" icon={<UnorderedListOutlined />} disabled={!selected} onClick={() => navigate(`/label-templates/${selected}/queries`)}>Sorgu</Button>}
             {resource === 'label-templates' && <Button size="small" type="text" icon={<PrinterOutlined />} disabled={!selected} onClick={() => navigate(`/label-templates/${selected}/print`)}>Bas</Button>}
-            {resource === 'users' && <Button size="small" type="text" icon={<SafetyOutlined />} disabled={!selected} onClick={() => navigate(`/users/${selected}/authorizations`)}>Yetkiler</Button>}
+            {(resource === 'users' || resource === 'user-groups') && <Button size="small" type="text" icon={<SafetyOutlined />} disabled={!selected} onClick={() => navigate(`/${resource}/${selected}/authorizations`)}>Yetkiler</Button>}
+            {resource === 'handheld-menu-groups' && <Button size="small" type="text" icon={<UnorderedListOutlined />} disabled={!selected} onClick={() => navigate(`/handheld-menu-groups/${selected}/items`)}>Menüler</Button>}
             {resource === 'label-types' && <Button size="small" type="text" icon={<LayoutOutlined />} disabled={!selected} onClick={() => navigate(`/label-types/${selected}/design`)}>Tasarla</Button>}
             {resource === 'locations' && canWrite() && <Button size="small" type="text" icon={<AppstoreAddOutlined />} onClick={() => navigate('/locations/bulk')}>Toplu Üret</Button>}
             {resource === 'printers' && canWrite() && <PrinterDiscover onAdded={load} />}

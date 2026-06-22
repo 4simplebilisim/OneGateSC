@@ -42,6 +42,7 @@ export async function decideInspection(id: number, pass: boolean, userId: number
           create: [
             {
               lineNo: 1,
+              companyId: insp.companyId,
               productId: insp.productId,
               unitId: insp.unitId,
               quantity: insp.quantity,

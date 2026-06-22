@@ -5,13 +5,14 @@ import { MenuOutlined, AppstoreOutlined, BellOutlined, QuestionCircleOutlined, L
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
+import { screenRight } from './screenRight'
 
 const NAVY = '#0f2238'
 const NAVY_DARK = '#0a1626'
 
 export const Shell = ({ children }: { children: ReactNode }) => {
   const { mutate: logout } = useLogout()
-  const { data: user } = useGetIdentity<{ fullName?: string; roles?: string[] }>()
+  const { data: user } = useGetIdentity<{ fullName?: string; roles?: string[]; isSuperAdmin?: boolean; screens?: string[]; screenRights?: Record<string, { view: boolean }> }>()
   const { mode, toggle } = useThemeMode()
   const location = useLocation()
   const selected = location.pathname.split('/')[1] ?? ''
@@ -23,12 +24,16 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   })
   const allOpenKeys = [...SECTIONS, ...new Set(RESOURCES.map((r) => `${r.section}::${r.group}`))]
 
+  // Web menü görünürlüğü: ekran hakkı 'view' (aksiyon matrisi). Kayıt yoksa görünür; super-admin/ADMIN tümünü görür.
+  const isAdmin = !!user?.isSuperAdmin || (user?.roles ?? []).includes('ADMIN')
+  const screenAllowed = (name: string) => screenRight(name, 'view')
+
   const menuItems = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr')
     const match = (label: string) => !q || label.toLocaleLowerCase('tr').includes(q)
     const pano = match('Pano') ? [{ key: 'dashboard', label: <Link to="/dashboard">Pano</Link> }] : []
     const sections = SECTIONS.map((section) => {
-      const inSection = RESOURCES.filter((r) => r.section === section && !r.hidden)
+      const inSection = RESOURCES.filter((r) => r.section === section && !r.hidden && screenAllowed(r.name))
       const groups = [...new Set(inSection.filter((r) => r.group).map((r) => r.group))]
       const groupNodes = groups
         .map((group) => {
@@ -47,7 +52,8 @@ export const Shell = ({ children }: { children: ReactNode }) => {
       return children.length ? { key: section, label: section, children } : null
     }).filter(Boolean)
     return [...pano, ...sections]
-  }, [query])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, isAdmin, JSON.stringify(user?.screenRights)])
 
   const openState = query.trim() ? allOpenKeys : openKeys
 

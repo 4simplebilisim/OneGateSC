@@ -39,6 +39,7 @@ export async function createCount(
         lines: {
           create: stocks.map((s, i) => ({
             lineNo: i + 1,
+            companyId,
             stockId: s.id,
             locationId: s.locationId,
             productId: s.productId,

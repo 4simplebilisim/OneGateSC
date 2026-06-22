@@ -87,7 +87,7 @@ export async function createPickOrder(orderId: number, userId: number) {
       salesOrderId: orderId,
       createdById: userId,
       note: `Satış siparişi ${order.orderNo} toplama emri`,
-      lines: { create: lines.map((l, i) => ({ lineNo: i + 1, ...l })) },
+      lines: { create: lines.map((l, i) => ({ lineNo: i + 1, companyId: order.companyId, ...l })) },
     },
     include: { lines: { orderBy: { lineNo: 'asc' } } },
   })
@@ -160,7 +160,7 @@ export async function shipOrder(orderId: number, shipments: ShipmentLine[], user
       createdById: userId,
       status: 'CONFIRMED',
       note: `Satış siparişi ${order.orderNo} sevkiyatı`,
-      lines: { create: docLines },
+      lines: { create: docLines.map((l) => ({ ...l, companyId: order.companyId })) },
     },
   })
   await completeDocument(doc.id) // OUTBOUND → stok düşer (yetersizse MovementError)
@@ -216,7 +216,7 @@ export async function allocateOrder(orderId: number) {
         if (avail.lessThanOrEqualTo(ZERO)) continue
         const take = avail.lessThan(remaining) ? avail : remaining
         await tx.tBLSTOCK.update({ where: { id: row.id }, data: { reservedQty: { increment: take } } })
-        await tx.tBLSALESALLOCATION.create({ data: { orderLineId: line.id, stockId: row.id, quantity: take } })
+        await tx.tBLSALESALLOCATION.create({ data: { orderLineId: line.id, stockId: row.id, quantity: take, companyId: order.companyId } })
         await tx.tBLSALESORDERLINE.update({ where: { id: line.id }, data: { allocatedQty: { increment: take } } })
         remaining = remaining.sub(take)
       }
@@ -289,6 +289,7 @@ export async function shipAllocatedOrder(orderId: number, userId: number, now: D
       await tx.tBLSALESORDERLINE.update({ where: { id: a.orderLineId }, data: { shippedQty: { increment: a.quantity } } })
       docLines.push({
         lineNo: lineNo++,
+        companyId: order.companyId,
         product: { connect: { id: a.productId } },
         unit: { connect: { id: a.unitId } },
         quantity: a.quantity,

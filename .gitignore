@@ -26,6 +26,9 @@ yarn-error.log*
 # ── Yedek / arşiv ──
 *.zip
 
+# ── Yerel E2E/senaryo scriptleri (geçici doğrulama, repoda tutulmaz) ──
+/_*.mjs
+
 # ── Editör / OS ──
 .DS_Store
 Thumbs.db

@@ -80,7 +80,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
           orderNo,
           companyId,
           createdById: request.user.sub,
-          lines: { create: lines.map((l, i) => ({ lineNo: i + 1, ...l })) },
+          lines: { create: lines.map((l, i) => ({ lineNo: i + 1, companyId, ...l })) },
         },
         include: { lines: { orderBy: { lineNo: 'asc' } } },
       })

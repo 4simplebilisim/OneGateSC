@@ -21,8 +21,11 @@ export async function assertUserAuthorized(request: FastifyRequest, scopes: Chec
   const userId = user.sub
   if (!userId) return
 
+  // Kullanıcının doğrudan yetkileri + üyesi olduğu grupların yetkileri (birleşik)
+  const groups = await prisma.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+  const groupIds = groups.map((g) => g.groupId)
   const auths = await prisma.tBLUSERAUTHORIZATION.findMany({
-    where: { userId, isActive: true },
+    where: { isActive: true, OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])] },
     select: { scopeType: true, referenceId: true },
   })
   if (auths.length === 0) return // hiç yetki kaydı yok → kısıtsız

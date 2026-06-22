@@ -103,7 +103,7 @@ export async function receiveOrder(orderId: number, receipts: ReceiptLine[], use
       createdById: userId,
       status: 'CONFIRMED',
       note: `Satınalma siparişi ${order.orderNo} mal kabulü`,
-      lines: { create: docLines },
+      lines: { create: docLines.map((l) => ({ ...l, companyId: order.companyId })) },
     },
   })
   await completeDocument(doc.id)

@@ -60,6 +60,9 @@ model TBLCOMPANY {
   documentStatusCriteria  TBLDOCUMENTSTATUSCRITERIA[]
   documentApprovalTypes   TBLDOCUMENTAPPROVALTYPE[]
   userAuthorizations      TBLUSERAUTHORIZATION[]
+  userGroups              TBLUSERGROUP[]
+  userColumnAuths         TBLUSERCOLUMNAUTH[]
+  userScreenRights        TBLUSERSCREENRIGHT[]
 
   @@schema("wms")
 }
@@ -78,13 +81,25 @@ model TBLUSER {
   isActive     Boolean   @default(true)
   isSuperAdmin Boolean   @default(false)
   lastLoginAt  DateTime?
+  // StokBar Kullanıcı kartı alanları (B)
+  userType             String?   @db.VarChar(20) // Tip: CENTRAL (Merkez) / BRANCH (Şube)
+  isApproved           Boolean   @default(true) // Onay durumu
+  phone                String?   @db.VarChar(30) // Cep Tel No
+  validUntil           DateTime? @db.Date // Geçerlilik Tarihi
+  alias                String?   @db.VarChar(60)
+  passwordNeverExpires Boolean   @default(true) // Şifre her zaman geçerli olsun
+  mustChangePassword   Boolean   @default(false) // Sonraki oturumda şifre değiştir
+  cannotChangePassword Boolean   @default(false) // Şifreyi değiştiremez
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  company        TBLCOMPANY?            @relation(fields: [companyId], references: [id])
-  userRoles      TBLUSERROLE[]
-  authorizations TBLUSERAUTHORIZATION[]
-  documents      TBLDOCUMENT[]          @relation("DocumentCreatedBy")
+  company          TBLCOMPANY?            @relation(fields: [companyId], references: [id])
+  userRoles        TBLUSERROLE[]
+  authorizations   TBLUSERAUTHORIZATION[]
+  groupMemberships TBLUSERGROUPMEMBER[]
+  columnAuths      TBLUSERCOLUMNAUTH[]
+  screenRights     TBLUSERSCREENRIGHT[]
+  documents        TBLDOCUMENT[]          @relation("DocumentCreatedBy")
 
   @@index([companyId])
   @@schema("wms")
@@ -107,6 +122,7 @@ model TBLROLE {
 model TBLUSERROLE {
   userId     Int
   roleId     Int
+  companyId  Int? // tenant (çok-kiracılık) — kullanıcının companyId'siyle aynı (super-admin'de null olabilir)
   assignedAt DateTime @default(now())
 
   user TBLUSER @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -114,27 +130,35 @@ model TBLUSERROLE {
 
   @@id([userId, roleId])
   @@index([roleId])
+  @@index([companyId])
   @@schema("wms")
 }
 
 // Kullanıcı yetkisi: hangi tesis/depo/operasyon tipine erişebilir (legacy TBLKULLANICIYETKIDETAY mantığı, temiz).
 // Bir scope tipinde HİÇ kayıt yoksa o boyut serbest (kısıtlama-listesi modeli); kayıt varsa yalnız listedekiler.
 model TBLUSERAUTHORIZATION {
-  id          Int           @id @default(autoincrement())
-  companyId   Int
-  userId      Int
-  scopeType   UserScopeType
-  referenceId Int // scopeType'a göre TBLFACILITY / TBLWAREHOUSE / TBLOPERATIONTYPE id'si (app-katmanı doğrular)
-  isActive    Boolean       @default(true)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            Int           @id @default(autoincrement())
+  companyId     Int
+  userId        Int? // sahip = kullanıcı (doğrudan) — VEYA groupId (gruptan miras)
+  groupId       Int? // sahip = kullanıcı grubu
+  scopeType     UserScopeType
+  referenceId   Int? // entity scope (FACILITY/WAREHOUSE/OPERATION_TYPE) → ilgili tablo id'si
+  referenceCode String?       @db.VarChar(60) // SCREEN scope → ekran/menü anahtarı (resource adı)
+  isActive      Boolean       @default(true)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 
-  company TBLCOMPANY @relation(fields: [companyId], references: [id])
-  user    TBLUSER    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  user    TBLUSER?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   TBLUSERGROUP? @relation(fields: [groupId], references: [id], onDelete: Cascade)
 
   @@unique([userId, scopeType, referenceId])
+  @@unique([userId, scopeType, referenceCode])
+  @@unique([groupId, scopeType, referenceId])
+  @@unique([groupId, scopeType, referenceCode])
   @@index([companyId])
   @@index([userId])
+  @@index([groupId])
   @@schema("wms")
 }
 
@@ -142,6 +166,150 @@ enum UserScopeType {
   FACILITY
   WAREHOUSE
   OPERATION_TYPE
+  SCREEN // ekran/menü erişimi (referenceCode = resource adı)
+
+  @@schema("wms")
+}
+
+// Kullanıcı grubu — gruba verilen yetkiler üyelerine miras geçer (legacy TBLKULLANICIGRUP).
+model TBLUSERGROUP {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(40)
+  name      String   @db.VarChar(100)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company        TBLCOMPANY             @relation(fields: [companyId], references: [id])
+  members        TBLUSERGROUPMEMBER[]
+  authorizations TBLUSERAUTHORIZATION[]
+  columnAuths    TBLUSERCOLUMNAUTH[]
+  screenRights   TBLUSERSCREENRIGHT[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLUSERGROUPMEMBER {
+  userId    Int
+  groupId   Int
+  companyId Int? // tenant (çok-kiracılık) — kullanıcının companyId'siyle aynı (super-admin'de null olabilir)
+
+  user  TBLUSER      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group TBLUSERGROUP @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([userId, groupId])
+  @@index([groupId])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Kolon (alan) yetkisi: kullanıcı/grup × ekran(resource) × alan → mod. Kayıt yoksa = görünür+düzenlenebilir (varsayılan).
+model TBLUSERCOLUMNAUTH {
+  id        Int           @id @default(autoincrement())
+  companyId Int
+  userId    Int?
+  groupId   Int?
+  resource  String        @db.VarChar(60) // ekran (resource adı)
+  column    String        @db.VarChar(60) // alan adı (formConfig field)
+  mode      ColumnAuthMode // READONLY (salt-okunur) | HIDDEN (gizli)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  company TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  user    TBLUSER?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   TBLUSERGROUP? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource, column])
+  @@unique([groupId, resource, column])
+  @@index([companyId])
+  @@index([userId])
+  @@index([groupId])
+  @@schema("wms")
+}
+
+enum ColumnAuthMode {
+  READONLY
+  HIDDEN
+
+  @@schema("wms")
+}
+
+// Ekran hakkı (aksiyon matrisi): kullanıcı/grup × ekran(resource) → İzle/Yeni/Düzenle/Sil.
+// Kayıt YOKSA tüm aksiyonlar serbest (kısıtlama-listesi). Grup birleşiminde en kısıtlayıcı geçer (false öncelikli).
+model TBLUSERSCREENRIGHT {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  userId    Int?
+  groupId   Int?
+  resource  String   @db.VarChar(60)
+  canView   Boolean  @default(true) // İzle (görünür)
+  canAdd    Boolean  @default(true) // Yeni
+  canEdit   Boolean  @default(true) // Düzenle
+  canDelete Boolean  @default(true) // Sil
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  user    TBLUSER?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group   TBLUSERGROUP? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, resource])
+  @@unique([groupId, resource])
+  @@index([companyId])
+  @@index([userId])
+  @@index([groupId])
+  @@schema("wms")
+}
+
+// El terminali (Android) DİNAMİK menü — Tesis bazlı grup + menü item (operasyon koduna bağlı).
+// StokBar "El Terminali Uyarlama": menü adı/parametre/operasyon kodu dinamik. companyId/facilityId/operationTypeId düz Int (relation yok).
+model TBLHANDHELDMENUGROUP {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  facilityId Int? // Tesis (null = tüm tesisler)
+  code       String   @db.VarChar(40)
+  name       String   @db.VarChar(100)
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  items TBLHANDHELDMENUITEM[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLHANDHELDMENUITEM {
+  id              Int                @id @default(autoincrement())
+  companyId       Int
+  groupId         Int
+  code            String             @db.VarChar(40)
+  name            String             @db.VarChar(100)
+  screenType      HandheldScreenType // hangi mobil akış (mal kabul/toplama/sayım/stok)
+  operationTypeId Int? // ön-seçili operasyon tipi (operasyon kodu, ZG01 vb.)
+  sortOrder       Int                @default(0)
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  group TBLHANDHELDMENUGROUP @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([groupId])
+  @@schema("wms")
+}
+
+enum HandheldScreenType {
+  RECEIPT // Mal Kabul
+  PICK // Toplama
+  COUNT // Sayım
+  STOCK // Stok Sorgu
 
   @@schema("wms")
 }
@@ -300,6 +468,7 @@ model TBLPRODUCT {
   inventoryRules  TBLINVENTORYRULE[]
   substitutes     TBLPRODUCTSUBSTITUTE[]  @relation("ProductSubstituteMain")
   substituteOf    TBLPRODUCTSUBSTITUTE[]  @relation("ProductSubstituteSub")
+  facilities      TBLPRODUCTFACILITY[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -312,8 +481,26 @@ model TBLPRODUCT {
   @@schema("wms")
 }
 
+// Ürün ↔ kullanılabilir tesis (kısıtlama-listesi): kayıt yoksa ürün TÜM tesislerde kullanılabilir; kayıt varsa yalnız listedekiler.
+// Belge oluştururken deponun tesisi ürünün izinli tesisleri içinde olmalı (movement/documents enforcement).
+model TBLPRODUCTFACILITY {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  productId  Int
+  facilityId Int
+  createdAt  DateTime @default(now())
+
+  product TBLPRODUCT @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, facilityId])
+  @@index([companyId])
+  @@index([productId])
+  @@schema("wms")
+}
+
 model TBLPRODUCTUNIT {
   id             Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   productId      Int
   unitId         Int
   isBaseUnit     Boolean  @default(false)
@@ -345,6 +532,7 @@ model TBLPRODUCTUNIT {
   @@index([productId])
   @@index([unitId])
   @@index([barcode])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -353,21 +541,24 @@ model TBLPRODUCTUNIT {
 // ----------------------------------------------------------------------------
 
 model TBLSTATUS {
-  id        Int      @id @default(autoincrement())
-  companyId Int
-  code      String   @db.VarChar(20)
-  name      String   @db.VarChar(100)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int      @id @default(autoincrement())
+  companyId  Int // tenant (çok-kiracılık) — TBLCOMPANY. Legacy LNGDISTKOD=tesis'ten AYRI boyut (LNGTENANTID karşılığı).
+  facilityId Int // tesis — statü TAM OLARAK tek tesise aittir (legacy LNGDISTKOD karşılığı).
+  code       String   @db.VarChar(20)
+  name       String   @db.VarChar(100)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   company             TBLCOMPANY        @relation(fields: [companyId], references: [id])
+  facility            TBLFACILITY       @relation(fields: [facilityId], references: [id])
   stocks              TBLSTOCK[]
   sourceDocumentLines TBLDOCUMENTLINE[] @relation("LineSourceStatus")
   targetDocumentLines TBLDOCUMENTLINE[] @relation("LineTargetStatus")
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([facilityId])
   @@schema("wms")
 }
 
@@ -615,12 +806,29 @@ model TBLBUSINESSPARTNER {
   extraFields     TBLPARTNEREXTRAFIELD[]
   acceptanceTimes TBLPARTNERACCEPTANCETIME[]
   optimization    TBLPARTNEROPTIMIZATION[]
+  facilities      TBLPARTNERFACILITY[]
 
   @@unique([companyId, code])
   @@index([companyId])
   @@index([regionId])
   @@index([partnerGroupId])
   @@index([parentId])
+  @@schema("wms")
+}
+
+// Müşteri (cari) ↔ kullanılabilir tesis (kısıtlama-listesi): kayıt yoksa müşteri TÜM tesislerde; varsa yalnız listedekiler.
+model TBLPARTNERFACILITY {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  partnerId  Int
+  facilityId Int
+  createdAt  DateTime @default(now())
+
+  partner TBLBUSINESSPARTNER @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@unique([partnerId, facilityId])
+  @@index([companyId])
+  @@index([partnerId])
   @@schema("wms")
 }
 
@@ -848,6 +1056,7 @@ model TBLDOCUMENT {
 
 model TBLDOCUMENTLINE {
   id               Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   documentId       Int
   lineNo           Int
   productId        Int
@@ -885,6 +1094,7 @@ model TBLDOCUMENTLINE {
   @@index([productId])
   @@index([sourceLocationId])
   @@index([targetLocationId])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -896,6 +1106,7 @@ model TBLDOCUMENTLINE {
 // ----------------------------------------------------------------------------
 model TBLDOCUMENTLINESCOPE {
   id               Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   documentLineId   Int
   scopeNo          Int
   quantity         Decimal  @db.Decimal(28, 8) // legacy DBLMIKTAR
@@ -921,6 +1132,7 @@ model TBLDOCUMENTLINESCOPE {
 
   @@unique([documentLineId, scopeNo])
   @@index([documentLineId])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -1099,6 +1311,7 @@ model TBLPURCHASEORDER {
 
 model TBLPURCHASEORDERLINE {
   id             Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   orderId        Int
   lineNo         Int
   productId      Int // → wms.TBLPRODUCT
@@ -1120,6 +1333,7 @@ model TBLPURCHASEORDERLINE {
   @@unique([orderId, lineNo])
   @@index([orderId])
   @@index([productId])
+  @@index([companyId])
   @@schema("procurement")
 }
 
@@ -1173,6 +1387,7 @@ model TBLSALESORDER {
 
 model TBLSALESORDERLINE {
   id             Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   orderId        Int
   lineNo         Int
   productId      Int // → wms.TBLPRODUCT
@@ -1196,12 +1411,14 @@ model TBLSALESORDERLINE {
   @@unique([orderId, lineNo])
   @@index([orderId])
   @@index([productId])
+  @@index([companyId])
   @@schema("sales")
 }
 
 // Satış stok ayırma (allocation) — sipariş satırını WMS stok satırına gevşek bağlar (stockId)
 model TBLSALESALLOCATION {
   id          Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   orderLineId Int
   stockId     Int // → wms.TBLSTOCK (gevşek bağ, cross-schema FK yok)
   quantity    Decimal  @db.Decimal(28, 8)
@@ -1212,6 +1429,7 @@ model TBLSALESALLOCATION {
 
   @@index([orderLineId])
   @@index([stockId])
+  @@index([companyId])
   @@schema("sales")
 }
 
@@ -1277,6 +1495,7 @@ model TBLSHIPMENT {
 
 model TBLSHIPMENTSTOP {
   id           Int        @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   shipmentId   Int
   sequence     Int
   partnerId    Int // → wms.TBLBUSINESSPARTNER (müşteri)
@@ -1292,6 +1511,7 @@ model TBLSHIPMENTSTOP {
 
   @@unique([shipmentId, sequence])
   @@index([shipmentId])
+  @@index([companyId])
   @@schema("logistics")
 }
 
@@ -1351,6 +1571,7 @@ model TBLSTOCKCOUNT {
 
 model TBLSTOCKCOUNTLINE {
   id         Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   countId    Int
   lineNo     Int
   stockId    Int?
@@ -1371,6 +1592,7 @@ model TBLSTOCKCOUNTLINE {
   @@unique([countId, lineNo])
   @@index([countId])
   @@index([productId])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -1457,6 +1679,7 @@ model TBLWORKORDER {
 
 model TBLWORKORDERLINE {
   id               Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   workOrderId      Int
   lineNo           Int
   productId        Int
@@ -1480,6 +1703,7 @@ model TBLWORKORDERLINE {
   @@unique([workOrderId, lineNo])
   @@index([workOrderId])
   @@index([productId])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -1791,6 +2015,7 @@ model TBLFACILITY {
   company    TBLCOMPANY     @relation(fields: [companyId], references: [id])
   warehouses TBLWAREHOUSE[]
   regions    TBLREGION[]
+  statuses   TBLSTATUS[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2973,6 +3198,7 @@ model TBLPRODUCTDETAILTYPE {
 // Muadil Ürün (TBLSBMUADILURUN)
 model TBLPRODUCTSUBSTITUTE {
   id                  Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   productId           Int
   substituteProductId Int
   createdAt           DateTime @default(now())
@@ -2983,6 +3209,7 @@ model TBLPRODUCTSUBSTITUTE {
   @@unique([productId, substituteProductId])
   @@index([productId])
   @@index([substituteProductId])
+  @@index([companyId])
   @@schema("wms")
 }
 
@@ -3046,6 +3273,7 @@ model TBLINVOICE {
 
 model TBLINVOICELINE {
   id             Int      @id @default(autoincrement())
+  companyId Int // tenant (cok-kiracilik) - parent kaydin companyId siyle ayni
   invoiceId      Int
   lineNo         Int
   productId      Int
@@ -3065,6 +3293,7 @@ model TBLINVOICELINE {
 
   @@unique([invoiceId, lineNo])
   @@index([invoiceId])
+  @@index([companyId])
   @@schema("finance")
 }
 

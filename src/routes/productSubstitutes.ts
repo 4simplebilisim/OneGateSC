@@ -26,7 +26,7 @@ export async function productSubstituteRoutes(app: FastifyInstance) {
     if (!product) return reply.code(400).send({ error: 'Geçersiz ürün' })
     try {
       return reply.code(201).send(await prisma.tBLPRODUCTSUBSTITUTE.create({
-        data: parsed.data,
+        data: { ...parsed.data, companyId: product.companyId },
         include: { substitute: { select: { id: true, code: true, name: true } } },
       }))
     } catch (e) {

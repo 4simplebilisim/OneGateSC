@@ -154,5 +154,3 @@ export function makeTheme(mode: ThemeMode = 'light'): ThemeConfig {
     },
   }
 }
-
-export const FONTS = { ui: FONT_UI, display: FONT_DISPLAY }
