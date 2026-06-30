@@ -14,7 +14,7 @@ export const DETAIL_ACTIONS: Record<string, DetailAction[]> = {
     { action: 'confirm', label: 'Onaya Gönder', when: ['DRAFT'] }, // → Onay Bekliyor
     { action: 'complete', label: 'Onayla (stok işle)', when: ['CONFIRMED'] }, // → Onaylandı
     { action: 'cancel', label: 'İptal', when: ['DRAFT', 'CONFIRMED'], danger: true },
-    { action: 'reverse', label: 'Ters Kayıt', when: ['COMPLETED'], danger: true },
+    { action: 'reverse', label: 'Onay İptal', when: ['COMPLETED'], danger: true }, // stok geri al + Bekliyor'a dön (yeniden onaylanabilir)
   ],
   'purchase-orders': [
     { action: 'submit', label: 'Gönder', when: ['DRAFT'] },

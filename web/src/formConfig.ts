@@ -7,6 +7,8 @@ export interface FieldDef {
   options?: { value: string | number; label: string }[]
   refResource?: string // type 'ref' için seçenekleri buradan çeker
   refFilter?: (row: Record<string, unknown>) => boolean // ref seçeneklerini süz (ör. sadece COUNT operasyon tipi)
+  dependsOn?: string // bu ref, başka alanın (ör. warehouseId) değerine bağlı: o değişince /api/<refResource>?<dependsOn>=<val> ile yeniden çekilir + sıfırlanır
+  disabledWhen?: { field: string; equals: unknown } // başka alanın değeri eşitse bu alan tıklanamaz + kayıtta atılır (ör. Bağ.=Hepsi → Cari/Ürün seçilemez)
 }
 
 // Belge Durum İşlem — İşlem Tipi (BYTISLEMTIP, tinyint). Etiketler StokBar dropdown sırasına göre.
@@ -33,6 +35,17 @@ export const DOC_ACTION_TYPE_OPTS = [
 // Bağlantı kapsamı (LinkScope) — Hepsi/Grup/Belirli
 export const SCOPE_OPTS = [{ value: 'ALL', label: 'Hepsi' }, { value: 'GROUP', label: 'Grup' }, { value: 'SPECIFIC', label: 'Belirli' }]
 
+// Belge Durum Kriter koşulları (Faz 2: veri-güdümlü kural — backend documentStatus.ts DocCondition ile birebir)
+export const DOC_CONDITION_OPTS = [
+  { value: 'CANCELLED', label: 'İptal edildi' },
+  { value: 'COMPLETED', label: 'Tamamlandı' },
+  { value: 'CONFIRMED', label: 'Onaya gönderildi' },
+  { value: 'NONE_COLLECTED', label: 'Hiç toplanmadı' },
+  { value: 'PARTIAL', label: 'Kısmi toplandı (eksik var)' },
+  { value: 'FULLY_COLLECTED', label: 'Tam toplandı (eksik yok)' },
+  { value: 'ANY_COLLECTED', label: 'Bir şey toplandı' },
+]
+
 // Giriş/Çıkış koşulu kontrol tipi (SSP yerine yerleşik kontroller)
 export const CONDITION_CONTROL_OPTS = [
   { value: 'MANUAL', label: 'Manuel Onay (gate)' },
@@ -54,11 +67,11 @@ const OP_TYPE_REF: FieldDef = { name: 'operationTypeId', label: 'Operasyon Tipi'
 const TESIS_REF: FieldDef = { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' }
 const CARI_SCOPE: FieldDef[] = [
   { name: 'cariLinkType', label: 'Cari Bağ.', type: 'select', options: SCOPE_OPTS },
-  { name: 'cariLinkId', label: 'Cari', type: 'ref', refResource: 'partners' },
+  { name: 'cariLinkId', label: 'Cari', type: 'ref', refResource: 'partners', disabledWhen: { field: 'cariLinkType', equals: 'ALL' } },
 ]
 const MAT_SCOPE: FieldDef[] = [
   { name: 'materialLinkType', label: 'Malzeme Bağ.', type: 'select', options: SCOPE_OPTS },
-  { name: 'materialLinkId', label: 'Ürün', type: 'ref', refResource: 'products' },
+  { name: 'materialLinkId', label: 'Ürün', type: 'ref', refResource: 'products', disabledWhen: { field: 'materialLinkType', equals: 'ALL' } },
 ]
 const BULK_ACTION_OPTS = [
   { value: 'CONTROLLED_BULK', label: 'Kontrollü Toplu İşlem' },
@@ -108,7 +121,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   companies: [
     { name: 'code', label: 'Firma Kodu', type: 'text', required: true },
     { name: 'name', label: 'Firma Adı', type: 'text', required: true },
-    { name: 'taxNumber', label: 'Vergi No', type: 'text' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'user-groups': [
@@ -134,6 +146,7 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   ],
   // ── Ek Saha (Dinamik+Statik birleşik) — StokBar Ek Saha Tanımlama ekranı. Tesis=firma=companyId (örtük). ──
   'extra-fields': [
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
     { name: 'fieldKind', label: 'Tip (Dinamik/Statik)', type: 'select', required: true, options: EXTRA_FIELD_KIND_OPTS },
     { name: 'entityType', label: 'Uygulama Yeri', type: 'select', required: true, options: EXTRA_FIELD_ENTITY_OPTS },
     { name: 'trackingCode', label: 'Takip Kodu', type: 'text' },
@@ -271,10 +284,8 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'sortOrder', label: 'Sıra', type: 'number' },
   ],
   'operation-tolerances': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE,
-    { name: 'tolerancePercent', label: 'Tolerans %', type: 'number' },
-    { name: 'toleranceQty', label: 'Tolerans Miktar', type: 'number' },
     { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' },
-  ],
+  ], // kademe %/miktar artık Detay'da (operation-tolerance-details)
   'operation-forbidden-products': [OP_TYPE_REF, TESIS_REF, ...CARI_SCOPE, ...MAT_SCOPE],
   'operation-type-pallet-types': [OP_TYPE_REF, TESIS_REF,
     { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', required: true, refResource: 'pallet-types' },
@@ -297,9 +308,8 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Tanım', type: 'text' },
     { name: 'color', label: 'Renk', type: 'color' },
-    { name: 'sortOrder', label: 'Sıra', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
-  ],
+  ], // StokBar TBLSBBELGEDURUM: kod/tanım/renk — sıra YOK (legacy-sadık)
   // ── Giriş Koşulları ──
   'entry-condition-break-passwords': [
     { name: 'businessPartnerId', label: 'Cari', type: 'ref', refResource: 'partners' },
@@ -620,9 +630,13 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   // Tesis = firma (LNGDISTKOD) = companyId (örtük). StokBar: Tesis + Operasyon Tipi + Kriter → bizde Operasyon + Kriter.
+  // Faz 2: veri-güdümlü kural — operasyon (+ cari) için KOŞUL → hedef durum (öncelik sırasıyla; eşleşme yoksa yerleşik türetime düşülür)
   'document-status-criteria': [
     { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'criteria', label: 'Kriter', type: 'text', required: true },
+    { name: 'businessPartnerId', label: 'Cari (boş = tüm cariler)', type: 'ref', refResource: 'partners' },
+    { name: 'condition', label: 'Koşul', type: 'select', required: true, options: DOC_CONDITION_OPTS },
+    { name: 'targetStatusId', label: 'Hedef Durum', type: 'ref', required: true, refResource: 'document-statuses' },
+    { name: 'priority', label: 'Öncelik (küçük önce)', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'document-approval-types': [
@@ -638,7 +652,7 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   units: codeName(),
-  reasons: codeName(),
+  reasons: [...codeName(), { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' }],
   'product-groups': codeName(),
   'product-subgroups': codeName(),
   'product-types': codeName(),
@@ -759,22 +773,22 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Hiyerarşi: Firma > Tesis > Depo > Alan. Tesis seçilince Depo o tesise göre filtrelenir (dependsOn).
   areas: [
+    { ...TESIS_REF, required: true },
+    { name: 'warehouseId', label: 'Depo', type: 'ref', required: true, refResource: 'warehouses', dependsOn: 'facilityId' },
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Ad', type: 'text' },
-    { name: 'warehouseId', label: 'Depo', type: 'ref', required: true, refResource: 'warehouses' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Hiyerarşi: Firma > Tesis > Depo > Alan > Lokasyon (her adım bir öncekine göre filtrelenir)
   locations: [
-    { name: 'warehouseId', label: 'Depo', type: 'ref', required: true, refResource: 'warehouses' },
-    { name: 'areaId', label: 'Alan', type: 'ref', refResource: 'areas' },
+    { ...TESIS_REF, required: true },
+    { name: 'warehouseId', label: 'Depo', type: 'ref', required: true, refResource: 'warehouses', dependsOn: 'facilityId' },
+    { name: 'areaId', label: 'Alan', type: 'ref', refResource: 'areas', dependsOn: 'warehouseId' },
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Ad', type: 'text' },
-    { name: 'type', label: 'Tip', type: 'select', options: [
-      { value: 'SHELF', label: 'Raf' }, { value: 'FLOOR', label: 'Zemin' }, { value: 'RECEIVING', label: 'Mal Kabul' },
-      { value: 'SHIPPING', label: 'Sevkiyat' }, { value: 'STAGING', label: 'Hazırlık' }, { value: 'QUARANTINE', label: 'Karantina' },
-    ] },
-    { name: 'barcode', label: 'Barkod', type: 'text' },
+    { name: 'barcode', label: 'Barkod (boş bırakılırsa otomatik atanır)', type: 'text' },
     { name: 'priority', label: 'Öncelik', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
@@ -800,7 +814,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   facilities: [
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Ad', type: 'text', required: true },
-    { name: 'city', label: 'Şehir', type: 'text' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'product-units': [
@@ -823,7 +836,6 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'name', label: 'Tanım', type: 'text', required: true },
     { name: 'isAutomatic', label: 'Otomatik', type: 'bool' },
     { name: 'prefix', label: 'Ön Ek', type: 'text' },
-    { name: 'prefix2', label: 'Ön Ek-2 (SSP)', type: 'text' },
     { name: 'padLength', label: 'Hane Sayısı', type: 'number' },
     { name: 'startNo', label: 'Başlangıç No', type: 'number' },
     { name: 'endNo', label: 'Bitiş No', type: 'number' },
@@ -839,14 +851,11 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'parseScript', label: 'Parse Script (regex/ifade)', type: 'text' },
     { name: 'isProductionBarcode', label: 'Üretim Barkodu', type: 'bool' },
   ],
+  // Legacy-sade (StokBar): Tesis + Yazıcı + Yazıcı Adresi. Firma EN ÜSTTE (GenericForm), sonra Tesis.
   printers: [
-    { name: 'code', label: 'Kod', type: 'text', required: true },
-    { name: 'name', label: 'Ad', type: 'text' },
-    { name: 'type', label: 'Tip', type: 'select', options: [{ value: 'IPP', label: 'Ağ (IPP)' }, { value: 'ZPL', label: 'Termal (ZPL/Zebra)' }, { value: 'SYSTEM', label: 'Sistem / Tarayıcı' }] },
-    { name: 'host', label: 'IP / Host', type: 'text' },
-    { name: 'port', label: 'Port', type: 'number' },
-    { name: 'path', label: 'IPP Yolu (ör. /ipp/print)', type: 'text' },
-    { name: 'location', label: 'Konum', type: 'text' },
+    { ...TESIS_REF, required: true },
+    { name: 'name', label: 'Yazıcı', type: 'text', required: true },
+    { name: 'address', label: 'Yazıcı Adresi (\\\\sunucu\\yazıcı veya IP)', type: 'text', required: true },
     { name: 'isDefault', label: 'Varsayılan', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],

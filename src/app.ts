@@ -16,7 +16,7 @@ import { lookupRoutes } from './routes/lookup.js'
 import { printerRoutes } from './routes/printers.js'
 import { documentStatusActionRoutes, documentStatusCriteriaRoutes, documentApprovalTypeRoutes } from './routes/documentTypes.js'
 import {
-  reasonCategoryRoutes, operationGroupLinkRoutes, operationToleranceRoutes, forbiddenProductRoutes,
+  reasonCategoryRoutes, operationGroupLinkRoutes, operationToleranceRoutes, operationToleranceDetailRoutes, forbiddenProductRoutes,
   conversionRoutes, sequentialOperationRoutes, autoReferenceDocumentRoutes, bulkActionRoutes,
   productAdditionalGroupRoutes, productBasedCollectionRoutes, tripBasedCollectionRoutes,
 } from './routes/operationConfig.js'
@@ -251,6 +251,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(reasonCategoryRoutes, { prefix: '/api/reason-categories' })
   await app.register(operationGroupLinkRoutes, { prefix: '/api/operation-group-links' })
   await app.register(operationToleranceRoutes, { prefix: '/api/operation-tolerances' })
+  await app.register(operationToleranceDetailRoutes, { prefix: '/api/operation-tolerance-details' })
   await app.register(forbiddenProductRoutes, { prefix: '/api/operation-forbidden-products' })
   await app.register(conversionRoutes, { prefix: '/api/operation-conversions' })
   await app.register(sequentialOperationRoutes, { prefix: '/api/sequential-operations' })

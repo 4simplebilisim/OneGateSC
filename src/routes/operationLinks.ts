@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z, type ZodTypeAny } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 interface LinkDelegate {
   findMany(args: unknown): Promise<unknown[]>
@@ -17,7 +17,7 @@ function opLinkRoutes(delegate: LinkDelegate, createSchema: ZodTypeAny, updateSc
     app.get('/', async (request) => {
       const q = request.query as { operationTypeId?: string }
       return delegate.findMany({
-        where: { companyId: getCompanyId(request), operationTypeId: q.operationTypeId ? Number(q.operationTypeId) : undefined },
+        where: { ...companyListFilter(request), operationTypeId: q.operationTypeId ? Number(q.operationTypeId) : undefined },
         orderBy: [{ operationTypeId: 'asc' }, { id: 'asc' }],
         include: { operationType: { select: { code: true, name: true } } },
       })
@@ -26,7 +26,7 @@ function opLinkRoutes(delegate: LinkDelegate, createSchema: ZodTypeAny, updateSc
     app.get('/:id', async (request, reply) => {
       const id = Number((request.params as { id: string }).id)
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-      const row = await delegate.findFirst({ where: { id, companyId: getCompanyId(request) } })
+      const row = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!row) return reply.code(404).send({ error: notFound })
       return row
     })
@@ -48,7 +48,7 @@ function opLinkRoutes(delegate: LinkDelegate, createSchema: ZodTypeAny, updateSc
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
       const parsed = updateSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-      const existing = await delegate.findFirst({ where: { id, companyId: getCompanyId(request) } })
+      const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!existing) return reply.code(404).send({ error: notFound })
       return delegate.update({ where: { id }, data: parsed.data })
     })
@@ -56,7 +56,7 @@ function opLinkRoutes(delegate: LinkDelegate, createSchema: ZodTypeAny, updateSc
     app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
       const id = Number((request.params as { id: string }).id)
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-      const res = await delegate.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+      const res = await delegate.deleteMany({ where: { id, ...companyListFilter(request) } })
       if (res.count === 0) return reply.code(404).send({ error: notFound })
       return { deleted: res.count }
     })
@@ -68,7 +68,7 @@ const scope = z.enum(['ALL', 'GROUP', 'SPECIFIC'])
 const pOpt = z.number().int().positive().optional()
 
 // Operasyon ↔ statü geçişi
-const opStatus = z.object({ operationTypeId: opId, facilityId: pOpt, cariLinkType: scope.optional(), cariLinkId: pOpt, materialLinkType: scope.optional(), materialLinkId: pOpt, sourceStatusId: pOpt, targetStatusId: z.number().int().positive(), sortOrder: z.number().int().optional() })
+const opStatus = z.object({ operationTypeId: opId, facilityId: pOpt, cariLinkType: scope.optional(), cariLinkId: pOpt, materialLinkType: scope.optional(), materialLinkId: pOpt, sourceStatusId: pOpt, targetStatusId: pOpt, sortOrder: z.number().int().optional() })
 export const operationTypeStatusRoutes = opLinkRoutes(prisma.tBLOPERATIONTYPESTATUS as unknown as LinkDelegate, opStatus, opStatus.partial(), 'Operation status link not found')
 
 // Operasyon ↔ lokasyon

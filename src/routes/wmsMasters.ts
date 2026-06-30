@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z, type ZodTypeAny } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 interface MasterDelegate {
   findMany(args: unknown): Promise<unknown[]>
@@ -15,13 +15,13 @@ interface MasterDelegate {
 function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, dupMsg: string, notFound: string) {
   return async function (app: FastifyInstance) {
     app.get('/', async (request) =>
-      delegate.findMany({ where: { companyId: getCompanyId(request) }, orderBy: { code: 'asc' } }),
+      delegate.findMany({ where: { ...companyListFilter(request) }, orderBy: { code: 'asc' } }),
     )
 
     app.get('/:id', async (request, reply) => {
       const id = Number((request.params as { id: string }).id)
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-      const row = await delegate.findFirst({ where: { id, companyId: getCompanyId(request) } })
+      const row = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!row) return reply.code(404).send({ error: notFound })
       return row
     })
@@ -43,7 +43,7 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
       const parsed = updateSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-      const existing = await delegate.findFirst({ where: { id, companyId: getCompanyId(request) } })
+      const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!existing) return reply.code(404).send({ error: notFound })
       return delegate.update({ where: { id }, data: parsed.data })
     })
@@ -52,7 +52,7 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
       const id = Number((request.params as { id: string }).id)
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
       try {
-        const res = await delegate.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+        const res = await delegate.deleteMany({ where: { id, ...companyListFilter(request) } })
         if (res.count === 0) return reply.code(404).send({ error: notFound })
         return { deleted: res.count }
       } catch (err) {
@@ -64,7 +64,7 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
 }
 
 // Neden (legacy TBLSBNEDEN)
-const reason = z.object({ code: z.string().min(1).max(10), name: z.string().min(1).max(100), isActive: z.boolean().optional() })
+const reason = z.object({ code: z.string().min(1).max(10), name: z.string().min(1).max(100), facilityId: z.number().int().positive().nullable().optional(), isActive: z.boolean().optional() })
 export const reasonRoutes = masterRoutes(prisma.tBLREASON as unknown as MasterDelegate, reason, reason.partial().omit({ code: true }), 'Neden kodu zaten var', 'Reason not found')
 
 // Lokasyon grubu (legacy TBLSBLOKASYONGRUP)
@@ -112,7 +112,7 @@ export const exitConditionTypeRoutes = masterRoutes(prisma.tBLEXITCONDITIONTYPE 
 export const routingTypeRoutes = masterRoutes(prisma.tBLROUTINGTYPE as unknown as MasterDelegate, condType, condUpdate, 'Yönlendirme tipi kodu zaten var', 'Routing type not found')
 
 // Tesis (bizim eklediğimiz) · Bölge (legacy MSDBOLGE) · Cari grup (legacy MUSTERIGRUP)
-const facility = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(100), city: z.string().max(60).optional(), address: z.string().max(255).optional(), isActive: z.boolean().optional() })
+const facility = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(100), isActive: z.boolean().optional() })
 export const facilityRoutes = masterRoutes(prisma.tBLFACILITY as unknown as MasterDelegate, facility, facility.partial().omit({ code: true }), 'Tesis kodu zaten var', 'Facility not found')
 const codeName60 = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(60), isActive: z.boolean().optional() })
 const codeName60Upd = codeName60.partial().omit({ code: true })
@@ -144,13 +144,13 @@ async function facilityInTenant(companyId: number, facilityId: number): Promise<
 
 export async function statusRoutes(app: FastifyInstance) {
   app.get('/', async (request) =>
-    prisma.tBLSTATUS.findMany({ where: { companyId: getCompanyId(request) }, orderBy: { code: 'asc' } }),
+    prisma.tBLSTATUS.findMany({ where: { ...companyListFilter(request) }, orderBy: { code: 'asc' } }),
   )
 
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const row = await prisma.tBLSTATUS.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const row = await prisma.tBLSTATUS.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!row) return reply.code(404).send({ error: 'Status not found' })
     return row
   })
@@ -174,10 +174,9 @@ export async function statusRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = statusUpdate.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const companyId = getCompanyId(request)
-    const existing = await prisma.tBLSTATUS.findFirst({ where: { id, companyId } })
+    const existing = await prisma.tBLSTATUS.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Status not found' })
-    if (parsed.data.facilityId != null && !(await facilityInTenant(companyId, parsed.data.facilityId)))
+    if (parsed.data.facilityId != null && !(await facilityInTenant(existing.companyId, parsed.data.facilityId)))
       return reply.code(400).send({ error: 'Geçersiz tesis (bu firmaya ait değil)' })
     return prisma.tBLSTATUS.update({ where: { id }, data: parsed.data })
   })
@@ -186,7 +185,7 @@ export async function statusRoutes(app: FastifyInstance) {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     try {
-      const res = await prisma.tBLSTATUS.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+      const res = await prisma.tBLSTATUS.deleteMany({ where: { id, ...companyListFilter(request) } })
       if (res.count === 0) return reply.code(404).send({ error: 'Status not found' })
       return { deleted: res.count }
     } catch (err) {
@@ -228,5 +227,5 @@ const parameter = z.object({ code: z.string().min(1).max(100), name: z.string().
 export const parameterRoutes = masterRoutes(prisma.tBLPARAMETER as unknown as MasterDelegate, parameter, parameter.partial().omit({ code: true }), 'Parametre kodu zaten var', 'Parameter not found')
 
 // Belge durumu (legacy TBLSBBELGEDURUM) — kod/tanım/renk + yaşam döngüsü sırası
-const docStatus = z.object({ code: z.string().min(1).max(20), name: z.string().max(100).optional(), color: z.string().max(20).optional(), sortOrder: z.number().int().optional(), isActive: z.boolean().optional() })
+const docStatus = z.object({ code: z.string().min(1).max(20), name: z.string().max(100).optional(), color: z.string().max(20).optional(), isActive: z.boolean().optional() }) // StokBar TBLSBBELGEDURUM: sıra yok
 export const documentStatusRoutes = masterRoutes(prisma.tBLDOCUMENTSTATUS as unknown as MasterDelegate, docStatus, docStatus.partial().omit({ code: true }), 'Belge durumu kodu zaten var', 'Document status not found')

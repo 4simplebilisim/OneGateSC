@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 const directions = ['IN', 'OUT'] as const
 const statuses = ['PENDING', 'SUCCESS', 'ERROR'] as const
@@ -50,7 +50,7 @@ export async function integrationLogRoutes(app: FastifyInstance) {
   app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const existing = await prisma.tBLINTEGRATIONLOG.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const existing = await prisma.tBLINTEGRATIONLOG.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Not found' })
     await prisma.tBLINTEGRATIONLOG.delete({ where: { id } })
     return reply.code(204).send()

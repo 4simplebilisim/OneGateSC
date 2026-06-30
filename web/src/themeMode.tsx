@@ -10,16 +10,15 @@ export const useThemeMode = () => useContext(ThemeModeContext)
 
 const STORAGE_KEY = 'og_theme'
 const mql = () => window.matchMedia?.('(prefers-color-scheme: dark)')
-const systemPrefersDark = () => !!mql()?.matches
 const savedMode = (): ThemeMode | null => {
   const s = localStorage.getItem(STORAGE_KEY)
   return s === 'dark' || s === 'light' ? s : null
 }
 
 export const ThemeModeProvider = ({ children }: { children: ReactNode }) => {
-  // İlk açılış: kullanıcı daha önce seçtiyse onu, yoksa cihaz/sistem tercihini kullan
-  const [mode, setModeState] = useState<ThemeMode>(() => savedMode() ?? (systemPrefersDark() ? 'dark' : 'light'))
-  const [isAuto, setIsAuto] = useState<boolean>(() => savedMode() === null)
+  // İlk açılış: kullanıcı daha önce seçtiyse onu, yoksa AÇIK tema (Nexus) — varsayılan görünüm açık.
+  const [mode, setModeState] = useState<ThemeMode>(() => savedMode() ?? 'light')
+  const [isAuto, setIsAuto] = useState<boolean>(false)
 
   // <html data-theme> daima güncel mod'u yansıtır
   useEffect(() => {

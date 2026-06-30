@@ -78,14 +78,16 @@ function ChainStores({ partnerId, allPartners }: { partnerId: string; allPartner
   )
 }
 
-function useOpts(path: string) {
+function useOpts(path: string, companyId?: number | null) {
   const [opts, setOpts] = useState<Opt[]>([])
   useEffect(() => {
-    axiosInstance.get(`/api/${path}`, { params: { pageSize: 500 } }).then((r) => {
+    const params: Record<string, unknown> = { pageSize: 500 }
+    if (companyId) params.companyId = companyId // ref'ler seçili firmaya scoped (super-admin liste tüm firmalar olsa da)
+    axiosInstance.get(`/api/${path}`, { params }).then((r) => {
       const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
       setOpts(list.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code ?? x.id}${x.name ? ' — ' + x.name : ''}` })))
     })
-  }, [path])
+  }, [path, companyId])
   return opts
 }
 
@@ -103,18 +105,25 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [submitting, setSubmitting] = useState(false)
   const [tab, setTab] = useState('def')
 
-  const regions = useOpts('regions')
-  const partnerGroups = useOpts('partner-groups')
-  const partners = useOpts('partners')
-  const facilities = useOpts('facilities')
-
-  // Firma (tenant) — müşteri hangi firmaya ait
+  // Firma (tenant) — müşteri hangi firmaya ait. Ref'ler bu firmaya göre çekilir (firma değişince yeniden).
   const [companies, setCompanies] = useState<{ id: number; code: string; name: string }[]>([])
   const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+
+  const regions = useOpts('regions', companyId)
+  const partnerGroups = useOpts('partner-groups', companyId)
+  const partners = useOpts('partners', companyId)
+  const facilities = useOpts('facilities', companyId)
   useEffect(() => {
     axiosInstance.get('/api/companies').then((r) => setCompanies((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])).catch(() => { /* boş */ })
   }, [])
   const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
+  const isSuper = (() => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } })()
+  // Super-admin yeni cari oluştururken firmayı seçer → tenant bağlamı (og_company) + tesis seçenekleri hizalanır
+  const onFirmaChange = (v: number) => {
+    setCompanyId(v)
+    localStorage.setItem('og_company', String(v))
+    form.setFieldValue('facilities', undefined) // tesisler firmaya bağlı → sıfırla
+  }
 
   useEffect(() => {
     if (mode === 'edit' && id) axiosInstance.get(`/api/partners/${id}`).then((r) => {
@@ -152,9 +161,18 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   const defTab = (
     <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, type: 'BOTH' }}>
-      <Card className="og-section-card" size="small" title="Müşteri">
+      <Card className="og-section-card" size="small" title="Cari Bilgileri">
         <Row gutter={[20, 0]}>
-          <Col xs={24} sm={6}><Form.Item name="code" label="Müşteri Kodu" rules={[{ required: true, message: 'Zorunlu' }]}><Input disabled={mode === 'edit'} /></Form.Item></Col>
+          {/* Firma (tenant) + Tesis — kanonik üst sıra */}
+          {isSuper && mode === 'create' ? (
+            <Col xs={24} sm={8}><Form.Item label="Firma" tooltip="Carinin ait olacağı firma (kiracı)"><Select value={companyId ?? undefined} onChange={onFirmaChange} options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} showSearch optionFilterProp="label" placeholder="Firma seçin" /></Form.Item></Col>
+          ) : (
+            <Col xs={24} sm={8}><Form.Item label="Firma"><Input value={firmLabel} disabled /></Form.Item></Col>
+          )}
+          <Col xs={24} sm={16}><Form.Item name="facilities" label="Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa cari tüm tesislerde işlem yapabilir" /></Form.Item></Col>
+
+          {/* Kimlik */}
+          <Col xs={24} sm={6}><Form.Item name="code" label="Cari Kodu" rules={[{ required: true, message: 'Zorunlu' }]}><Input disabled={mode === 'edit'} /></Form.Item></Col>
           <Col xs={24} sm={12}><Form.Item name="name" label="Ünvan" rules={[{ required: true, message: 'Zorunlu' }]}><Input /></Form.Item></Col>
           <Col xs={24} sm={6}>
             <div className="og-switchrow" style={{ marginTop: 30 }}>
@@ -162,21 +180,13 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
               <Form.Item name="isActive" valuePropName="checked" noStyle><Switch /></Form.Item>
             </div>
           </Col>
-        </Row>
-      </Card>
-
-      <Card className="og-section-card" size="small" title="Genel Bilgiler">
-        <Row gutter={[20, 0]}>
-          {txt('shortName', 'Kısa Ad')}
-          {txt('contactPerson', 'İlgili Kişi')}
-          {txt('contactPerson2', 'İlgili Kişi 2')}
-          {txt('specialCode', 'Özel Kod')}
           <Col xs={24} sm={8}><Form.Item name="type" label="Çalışma Tipi" rules={[{ required: true, message: 'Zorunlu' }]}><Select options={TYPE_OPTS} /></Form.Item></Col>
-        </Row>
-      </Card>
+          {txt('shortName', 'Kısa Ad')}
+          <Col xs={24} sm={8}><Form.Item name="regionId" label="Bölge"><Select options={regions} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item name="partnerGroupId" label="Grup"><Select options={partnerGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
+          <Col xs={24} sm={8}><Form.Item name="parentId" label="Zincir / Üst Cari"><Select options={partners.filter((p) => String(p.value) !== id)} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
 
-      <Card className="og-section-card" size="small" title="İletişim Bilgileri">
-        <Row gutter={[20, 0]}>
+          {/* İletişim */}
           {txt('address', 'Adres', 12)}
           {txt('address2', 'Adres 2', 12)}
           {txt('city', 'Şehir')}
@@ -189,16 +199,8 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           {txt('fax', 'Faks')}
           {txt('website', 'Web Adresi')}
           {txt('email', 'Email')}
-        </Row>
-      </Card>
 
-      <Card className="og-section-card" size="small" title="Diğer">
-        <Row gutter={[20, 0]}>
-          <Col xs={24} sm={8}><Form.Item name="regionId" label="Bölge"><Select options={regions} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
-          <Col xs={24} sm={8}><Form.Item name="partnerGroupId" label="Grup"><Select options={partnerGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
-          <Col xs={24} sm={8}><Form.Item name="parentId" label="Zincir / Üst Cari"><Select options={partners.filter((p) => String(p.value) !== id)} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
-          <Col xs={24} sm={8}><Form.Item label="Firma (tenant)"><Input value={firmLabel} disabled /></Form.Item></Col>
-          <Col xs={24} sm={16}><Form.Item name="facilities" label="Kullanılabilir Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa müşteri tüm tesislerde işlem yapabilir" /></Form.Item></Col>
+          {/* Yasal / teslim / zincir */}
           {txt('taxOffice', 'Vergi Dairesi')}
           {txt('taxNumber', 'Vergi Numarası')}
           {txt('nationalId', 'TC Kimlik No')}
@@ -208,17 +210,8 @@ export const PartnerForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           {txt('minDeliveryTime', 'Min. Teslim Zamanı')}
           {txt('maxDeliveryTime', 'Max. Teslim Zamanı')}
           {txt('vehicleRestriction', 'Araç Kısıtlama')}
-          <Col xs={24} sm={8}>
-            <div className="og-switchrow" style={{ marginTop: 30 }}>
-              <span className="og-switchrow__label">Paletli</span>
-              <Form.Item name="palletized" valuePropName="checked" noStyle><Switch /></Form.Item>
-            </div>
-          </Col>
-        </Row>
-      </Card>
 
-      <Card className="og-section-card" size="small" title="Adres Bilgileri">
-        <Row gutter={[20, 0]}>
+          {/* Adres detayı */}
           {txt('street', 'Cadde')}
           {txt('streetName', 'Sokak')}
           {txt('neighborhood', 'Mahalle')}

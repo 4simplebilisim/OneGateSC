@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { App, Alert, Button, Card, Col, Form, Input, InputNumber, Row, Select, Switch, Tabs, Space } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { LinkTab, type LF } from '../components/LinkTab'
+import { QuickCreateSelect } from '../components/QuickCreateSelect'
 
-type F = { n: string; l: string; t?: 'text' | 'number' | 'bool' | 'select' | 'ref'; req?: boolean; opts?: { value: string; label: string }[]; ref?: string }
+type F = { n: string; l: string; t?: 'text' | 'number' | 'bool' | 'select' | 'ref'; req?: boolean; opts?: { value: string; label: string }[]; ref?: string; disabled?: boolean }
 type Sec = { title: string; fields: F[] }
 
 const SECTIONS: Sec[] = [
   {
     title: 'Genel',
     fields: [
+      { n: 'facilityId', l: 'Tesis', t: 'ref', ref: 'facilities' },
       { n: 'code', l: 'Kod', t: 'text', req: true },
       { n: 'name', l: 'Tanım', t: 'text', req: true },
       { n: 'direction', l: 'Kategori', t: 'select', req: true, opts: [{ value: 'INBOUND', label: 'Giriş' }, { value: 'OUTBOUND', label: 'Çıkış' }, { value: 'INTERNAL', label: 'Transfer' }, { value: 'COUNT', label: 'Sayım' }] },
       { n: 'documentType', l: 'Belge Tipi', t: 'select', opts: [{ value: 'STOCK_MOVEMENT', label: 'Stok Hareketi' }, { value: 'COUNT', label: 'Sayım' }, { value: 'PRODUCTION', label: 'Üretim' }, { value: 'ORDER', label: 'Sipariş' }, { value: 'OTHER', label: 'Diğer' }] },
-      { n: 'facilityId', l: 'Tesis', t: 'ref', ref: 'facilities' },
       { n: 'sequenceId', l: 'Sayaç', t: 'ref', ref: 'sequences' },
       { n: 'operationSequenceId', l: 'Operasyon Sayaç', t: 'ref', ref: 'sequences' },
       { n: 'operationGroupId', l: 'Grup', t: 'ref', ref: 'operation-groups' },
@@ -31,10 +32,8 @@ const SECTIONS: Sec[] = [
     fields: [
       { n: 'controlMode', l: 'Kontrollü İşlem', t: 'select', opts: [{ value: 'UNCONTROLLED', label: 'Kontrolsüz' }, { value: 'CONTROLLED', label: 'Kontrollü İşlem' }, { value: 'REFERENCE_CONTROLLED', label: 'Referans Kontrollü' }] },
       { n: 'reverseOperationTypeId', l: 'Ters Operasyon', t: 'ref', ref: 'operation-types' },
-      { n: 'cancelLocationId', l: 'İptal Lokasyon', t: 'ref', ref: 'locations' },
       { n: 'reasonRequired', l: 'Neden Girişi Zorunlu', t: 'bool' },
       { n: 'reasonInHeader', l: 'Neden Girişi Başlıkta', t: 'bool' },
-      { n: 'equivalentApplication', l: 'Muadil Uygulaması', t: 'bool' },
       { n: 'materialBasedCollection', l: 'Mal Bazında Toplama', t: 'bool' },
       { n: 'materialBasedQtyEdit', l: 'Mal Bazında Miktar Düzenlensin', t: 'bool' },
       { n: 'batchAssignment', l: 'Batch Atama Yapılsın', t: 'bool' },
@@ -46,8 +45,6 @@ const SECTIONS: Sec[] = [
     title: 'Entegrasyon',
     fields: [
       { n: 'integration', l: 'Entegrasyon Yapılsın', t: 'bool' },
-      { n: 'approvedDocUpdate', l: 'Onaylı Belge Güncellensin', t: 'bool' },
-      { n: 'bulkSend', l: 'Toplu Gönderim', t: 'bool' },
     ],
   },
   {
@@ -70,7 +67,7 @@ const SECTIONS: Sec[] = [
       { n: 'passiveProductUse', l: 'Pasif Ürün Kullanılsın', t: 'bool' },
       { n: 'palletBreaking', l: 'Palet Bozma', t: 'bool' },
       { n: 'originalQtyUpdate', l: 'Orjinal Miktar Güncellensin', t: 'bool' },
-      { n: 'reserveTransfer', l: 'Rezerve Transfer Edilsin', t: 'bool' },
+      { n: 'partialUsage', l: 'Parçalı Kullanım Yapılsın', t: 'bool' },
     ],
   },
 ]
@@ -80,18 +77,19 @@ const REF_RESOURCES = [...new Set(SECTIONS.flatMap((s) => s.fields).filter((f) =
 // ── Bağlantı sekmesi alan tanımları (LF tipi paylaşılan LinkTab'ten) ──
 // Bağlantı kapsamı (Hepsi/Grup/Belirli) + Tesis ortak deseni
 const SCOPE: LF['options'] = [{ value: 'ALL', label: 'Hepsi' }, { value: 'GROUP', label: 'Grup' }, { value: 'SPECIFIC', label: 'Belirli' }]
-const TESIS: LF = { name: 'facilityId', label: 'Tesis', type: 'ref', ref: 'facilities' }
-const CARI: LF[] = [{ name: 'cariLinkType', label: 'Cari Bağ.', type: 'select', options: SCOPE }, { name: 'cariLinkId', label: 'Cari', type: 'ref', ref: 'partners' }]
-const MALZEME: LF[] = [{ name: 'materialLinkType', label: 'Malzeme Bağ.', type: 'select', options: SCOPE }, { name: 'materialLinkId', label: 'Ürün', type: 'ref', ref: 'products' }]
+// NOT: alt-sekmelerde Tesis sorulmaz — operasyon tipinin Tesis'i (facilityId) LinkTab defaults ile devralınır.
+// Cari/Malzeme Bağ.='Hepsi' iken Cari/Ürün seçimi DISABLED (zaten hepsini kapsıyor) — tüm alt-tab'lara yansır
+const CARI: LF[] = [{ name: 'cariLinkType', label: 'Cari Bağ.', type: 'select', options: SCOPE }, { name: 'cariLinkId', label: 'Cari', type: 'ref', ref: 'partners', disabledWhen: { field: 'cariLinkType', equals: 'ALL' } }]
+const MALZEME: LF[] = [{ name: 'materialLinkType', label: 'Malzeme Bağ.', type: 'select', options: SCOPE }, { name: 'materialLinkId', label: 'Ürün', type: 'ref', ref: 'products', disabledWhen: { field: 'materialLinkType', equals: 'ALL' } }]
 
 const STATUS_FIELDS: LF[] = [
-  TESIS, ...CARI, ...MALZEME,
+  ...CARI, ...MALZEME,
   { name: 'sourceStatusId', label: 'Kaynak Statü (boş=dış)', type: 'ref', ref: 'statuses' },
   { name: 'targetStatusId', label: 'Hedef Statü', type: 'ref', ref: 'statuses', required: true },
   { name: 'sortOrder', label: 'Sıra', type: 'number' },
 ]
 const LOCATION_FIELDS: LF[] = [
-  TESIS, ...CARI, ...MALZEME,
+  ...CARI, ...MALZEME,
   { name: 'sourceLinkType', label: 'Kaynak Bağ.', type: 'select', options: SCOPE },
   { name: 'sourceLocationId', label: 'Kaynak Lokasyon', type: 'ref', ref: 'locations' },
   { name: 'targetLinkType', label: 'Hedef Bağ.', type: 'select', options: SCOPE },
@@ -101,21 +99,18 @@ const LOCATION_FIELDS: LF[] = [
   { name: 'terminalFixTarget', label: 'El Terminali Hedef Sabit', type: 'bool' },
 ]
 const REASON_FIELDS: LF[] = [
-  TESIS,
   { name: 'reasonCategoryId', label: 'Neden Kategori', type: 'ref', ref: 'reason-categories' },
   { name: 'reasonId', label: 'Neden', type: 'ref', ref: 'reasons', required: true },
   { name: 'isAutomatic', label: 'Otomatik', type: 'bool' },
 ]
 const PALLET_FIELDS: LF[] = [
-  TESIS,
   { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', ref: 'pallet-types', required: true },
   { name: 'innerPalletTypeId', label: 'İç Palet Tipi', type: 'ref', ref: 'pallet-types' },
 ]
 // Kurallar sekmesi (operasyona ait config)
-const TOLERANCE_FIELDS: LF[] = [TESIS, ...CARI, ...MALZEME, { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' }]
-const FORBIDDEN_FIELDS: LF[] = [TESIS, ...CARI, ...MALZEME]
+const TOLERANCE_FIELDS: LF[] = [...CARI, ...MALZEME, { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' }]
+const FORBIDDEN_FIELDS: LF[] = [...CARI, ...MALZEME]
 const CONVERSION_FIELDS: LF[] = [
-  TESIS,
   { name: 'conversionCode', label: 'Dönüşüm Kodu', type: 'text', required: true },
   { name: 'statusId', label: 'Statü', type: 'ref', ref: 'statuses' },
   { name: 'outgoing', label: 'Giden', type: 'bool' },
@@ -125,12 +120,10 @@ const CONVERSION_FIELDS: LF[] = [
   { name: 'targetLocLinkId', label: 'Hedef Lokasyon', type: 'ref', ref: 'locations' },
 ]
 const BULK_FIELDS: LF[] = [
-  TESIS,
   { name: 'bulkActionType', label: 'Toplu İşlem Tipi', type: 'select', options: [{ value: 'CONTROLLED_BULK', label: 'Kontrollü Toplu İşlem' }, { value: 'BULK', label: 'Toplu İşlem' }, { value: 'RESERVATION', label: 'Rezervasyon' }, { value: 'SELECTED_DOCUMENT', label: 'Seçimli Belge' }, { value: 'BATCH_CHANGE', label: 'Batch Değiştirme' }] },
   { name: 'description', label: 'Açıklama', type: 'text' },
 ]
 const GROUPLINK_FIELDS: LF[] = [
-  TESIS,
   { name: 'operationGroupId', label: 'Operasyon Grubu', type: 'ref', ref: 'operation-groups', required: true },
   { name: 'businessPartnerId', label: 'Cari', type: 'ref', ref: 'partners' },
 ]
@@ -144,21 +137,38 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm()
+  // Operasyon yönü — Lokasyon alt-tab'ında kaynak/hedef alanlarını yöne göre filtrelemek için izlenir
+  const direction = (Form.useWatch('direction', form) ?? 'INBOUND') as string
   const [refOpts, setRefOpts] = useState<Record<string, Opt[]>>({})
   const [submitting, setSubmitting] = useState(false)
   const [tab, setTab] = useState('def')
 
+  // Firma (tenant) — companyId katmanı, tesisten AYRI. Önce firma seçilir; Tesis o firmaya ait tesisleri gösterir.
+  // Super-admin yeni kayıtta firmayı seçer (og_company hizalanır → ref alanları, özellikle Tesis, o firmaya göre yeniden çekilir).
+  const isSuper = (() => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } })()
+  const [companies, setCompanies] = useState<{ id: number; code: string; name: string }[]>([])
+  const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+  const [opFacilityId, setOpFacilityId] = useState<number | null>(null) // operasyon tipinin tesisi → alt-sekmeler devralır
   useEffect(() => {
-    REF_RESOURCES.forEach((rr) => {
-      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 300 } }).then((r) => {
-        const rows = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
-        setRefOpts((p) => ({ ...p, [rr]: rows.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` })) }))
-      })
-    })
+    axiosInstance.get('/api/companies').then((r) => setCompanies((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])).catch(() => { /* tek firma / yetki yok */ })
   }, [])
+  const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
+
+  // Tek bir ref kaynağının seçeneklerini (yeniden) çek — hızlı-ekle sonrası da kullanılır
+  const refetchRef = useCallback((rr: string) =>
+    axiosInstance.get(`/api/${rr}`, { params: { pageSize: 300, companyId: companyId || undefined } }).then((r) => {
+      const rows = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
+      setRefOpts((p) => ({ ...p, [rr]: rows.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` })) }))
+    }), [companyId])
 
   useEffect(() => {
-    if (mode === 'edit' && id) axiosInstance.get(`/api/operation-types/${id}`).then((r) => form.setFieldsValue(r.data))
+    REF_RESOURCES.forEach((rr) => refetchRef(rr))
+    // companyId değişince (super-admin firma değiştirdi) Tesis dahil tüm ref'ler o firmaya göre yeniden çekilir
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyId])
+
+  useEffect(() => {
+    if (mode === 'edit' && id) axiosInstance.get(`/api/operation-types/${id}`).then((r) => { form.setFieldsValue(r.data); if (r.data?.companyId) setCompanyId(r.data.companyId); setOpFacilityId(r.data?.facilityId ?? null) })
     else if (mode === 'create' && copyFrom) {
       // Kopyala: tanım alanlarını çek, kimlik/zaman/kod alanlarını at (bağlantı sekmeleri kopyalanmaz — kaydet sonrası eklenir)
       axiosInstance.get(`/api/operation-types/${copyFrom}`).then((r) => {
@@ -170,11 +180,22 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, id, copyFrom])
 
+  // Super-admin firmayı değiştirince: tenant bağlamını (og_company) hizala (switcher yok) → Tesis dahil ref'ler
+  // o firmaya göre yeniden çekilir; eski firmaya ait ref seçimlerini temizle.
+  const onFirmaChange = (v: number) => {
+    setCompanyId(v)
+    localStorage.setItem('og_company', String(v))
+    const refNames = SECTIONS.flatMap((s) => s.fields).filter((f) => f.t === 'ref').map((f) => f.n)
+    if (refNames.length) form.resetFields(refNames)
+  }
+
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
     try {
       if (mode === 'create') {
-        const r = await axiosInstance.post('/api/operation-types', values)
+        const cfg = isSuper && companyId ? { headers: { 'x-company-id': String(companyId) } } : undefined
+        const r = await axiosInstance.post('/api/operation-types', values, cfg)
+        if (isSuper && companyId) localStorage.setItem('og_company', String(companyId))
         message.success('Tanım kaydedildi — şimdi sekmelerden statü/lokasyon/neden/palet bağlayabilirsiniz')
         navigate(`/operation-types/${r.data.id}/edit`)
       } else {
@@ -190,27 +211,59 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   }
 
   const control = (f: F) => {
-    if (f.t === 'bool') return <Switch />
-    if (f.t === 'number') return <InputNumber style={{ width: '100%' }} />
-    if (f.t === 'select') return <Select options={f.opts} allowClear />
-    if (f.t === 'ref') return <Select options={refOpts[f.ref!] ?? []} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" />
-    return <Input disabled={mode === 'edit' && f.n === 'code'} />
+    if (f.t === 'bool') return <Switch disabled={f.disabled} />
+    if (f.t === 'number') return <InputNumber style={{ width: '100%' }} disabled={f.disabled} />
+    if (f.t === 'select') return <Select options={f.opts} allowClear disabled={f.disabled} />
+    // Ref alanı: "Veri Yok" durumunda dropdown'dan hızlı-ekle (formConfig'i olan kaynaklarda) — kayıt sonrası refetch + otomatik seç
+    if (f.t === 'ref') return <QuickCreateSelect resource={f.ref!} options={refOpts[f.ref!] ?? []} onCreated={() => refetchRef(f.ref!)} placeholder="Seçiniz" disabled={f.disabled} />
+    return <Input disabled={(mode === 'edit' && f.n === 'code') || !!f.disabled} />
   }
+
+  // "Stok İşlemleri" parametreleri operasyon YÖNÜNE göre filtrelenir:
+  //   Giriş → Aynı Palet / Aynı Seri / Pasif Ürün / Orijinal Miktar Güncelle
+  //   Çıkış + Transfer → Palet Bozma / Parçalı Kullanım
+  const INBOUND_PARAMS = new Set(['sameUsePallet', 'sameUseSerial', 'passiveProductUse', 'originalQtyUpdate'])
+  const OUT_TRANSFER_PARAMS = new Set(['palletBreaking', 'partialUsage'])
+  // İlgisiz parametreler GİZLENMEZ — sadece disabled (tıklanamaz) olur
+  const sections = SECTIONS.map((sec) =>
+    sec.title !== 'Stok İşlemleri'
+      ? sec
+      : {
+          ...sec,
+          fields: sec.fields.map((f) => ({
+            ...f,
+            disabled: INBOUND_PARAMS.has(f.n)
+              ? direction !== 'INBOUND'
+              : OUT_TRANSFER_PARAMS.has(f.n)
+                ? !(direction === 'OUTBOUND' || direction === 'INTERNAL')
+                : false,
+          })),
+        },
+  )
 
   const defTab = (
     <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ direction: 'INBOUND', documentType: 'STOCK_MOVEMENT', affectsStock: true, isActive: true }}>
       {mode === 'create' && (
         <Alert type="info" showIcon style={{ marginBottom: 14 }} title="Önce tanımı kaydedin — ardından Statü, Lokasyon, Neden ve Palet Tipi sekmeleri açılır." />
       )}
-      {SECTIONS.map((sec) => (
+      {sections.map((sec) => (
         <Card key={sec.title} className="og-section-card" size="small" title={sec.title}>
           <Row gutter={[18, 0]}>
+            {sec.title === 'Genel' && (
+              <Col xs={24} sm={12} lg={8}>
+                <Form.Item label="Firma (tenant)" tooltip={isSuper && mode === 'create' ? 'Önce firma seçin — Tesis bu firmaya göre listelenir' : 'Kaydın ait olduğu firma'}>
+                  {isSuper && mode === 'create'
+                    ? <Select value={companyId ?? undefined} onChange={onFirmaChange} options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} showSearch optionFilterProp="label" placeholder="Firma seçiniz" />
+                    : <Input value={firmLabel} disabled />}
+                </Form.Item>
+              </Col>
+            )}
             {sec.fields.map((f) =>
               f.t === 'bool' ? (
                 <Col xs={24} sm={12} lg={8} key={f.n} style={{ marginBottom: 12 }}>
-                  <div className="og-switchrow">
+                  <div className="og-switchrow" style={f.disabled ? { opacity: 0.5 } : undefined}>
                     <span className="og-switchrow__label">{f.l}</span>
-                    <Form.Item name={f.n} valuePropName="checked" noStyle><Switch /></Form.Item>
+                    <Form.Item name={f.n} valuePropName="checked" noStyle><Switch disabled={f.disabled} /></Form.Item>
                   </div>
                 </Col>
               ) : (
@@ -234,12 +287,27 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   )
 
   const linkTabsEnabled = mode === 'edit' && !!id
+  // Alt-sekme kayıtları operasyon tipinin tesisini (facilityId) devralır — kullanıcı tekrar girmez
+  const linkDefaults = opFacilityId ? { facilityId: opFacilityId } : undefined
+  // Lokasyon alt-tab'ı operasyon YÖNÜNE göre: Çıkış=yalnız Kaynak, Giriş=yalnız Hedef, Transfer=ikisi (ilgisiz alanlar gizlenir)
+  const SRC_LOC = new Set(['sourceLinkType', 'sourceLocationId', 'terminalFixSource'])
+  const TGT_LOC = new Set(['targetLinkType', 'targetLocationId', 'terminalFixTarget'])
+  // İlgisiz Kaynak/Hedef alanları GİZLENMEZ — disabled (tıklanamaz) olur
+  const locationFields = LOCATION_FIELDS.map((f) => ({
+    ...f,
+    disabled: (SRC_LOC.has(f.name) && direction === 'INBOUND') || (TGT_LOC.has(f.name) && direction === 'OUTBOUND'),
+  }))
+  // Statü alt-tab'ı da yöne göre: Çıkış→Hedef Statü disabled, Giriş→Kaynak Statü disabled, Transfer→ikisi aktif
+  const statusFields = STATUS_FIELDS.map((f) => ({
+    ...f,
+    disabled: (f.name === 'sourceStatusId' && direction === 'INBOUND') || (f.name === 'targetStatusId' && direction === 'OUTBOUND'),
+  }))
   const items = [
     { key: 'def', label: 'Tanım', children: defTab },
-    { key: 'status', label: 'Statü', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-statuses" fields={STATUS_FIELDS} /> : null },
-    { key: 'loc', label: 'Lokasyon', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-locations" fields={LOCATION_FIELDS} /> : null },
-    { key: 'reason', label: 'Neden', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-reasons" fields={REASON_FIELDS} /> : null },
-    { key: 'pallet', label: 'Palet Tipi', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-pallet-types" fields={PALLET_FIELDS} /> : null },
+    { key: 'status', label: 'Statü', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-statuses" fields={statusFields} defaults={linkDefaults} /> : null },
+    { key: 'loc', label: 'Lokasyon', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-locations" fields={locationFields} defaults={linkDefaults} /> : null },
+    { key: 'reason', label: 'Neden', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-reasons" fields={REASON_FIELDS} defaults={linkDefaults} /> : null },
+    { key: 'pallet', label: 'Palet Tipi', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-pallet-types" fields={PALLET_FIELDS} defaults={linkDefaults} /> : null },
     {
       key: 'rules', label: 'Kurallar', disabled: !linkTabsEnabled,
       children: linkTabsEnabled ? (
@@ -253,7 +321,8 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           ] as [string, string, LF[]][]).map(([title, res, flds]) => (
             <div key={res}>
               <div className="og-display" style={{ fontWeight: 700, fontSize: 14, color: 'var(--og-ink)', marginBottom: 8 }}>{title}</div>
-              <LinkTab ownerField="operationTypeId" ownerId={id!} resource={res} fields={flds} />
+              <LinkTab ownerField="operationTypeId" ownerId={id!} resource={res} fields={flds} defaults={linkDefaults}
+                extraActions={res === 'operation-tolerances' ? (row) => <Button size="small" type="link" onClick={() => navigate(`/operation-tolerances/${(row as { id: number }).id}/details`)}>Birim Detayı →</Button> : undefined} />
             </div>
           ))}
         </Space>

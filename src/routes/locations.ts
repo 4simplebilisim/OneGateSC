@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 const locationTypes = ['SHELF', 'FLOOR', 'RECEIVING', 'SHIPPING', 'STAGING', 'QUARANTINE'] as const
 
@@ -19,11 +19,12 @@ const updateSchema = createSchema.partial().omit({ warehouseId: true })
 
 export async function locationRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
-    const companyId = getCompanyId(request)
-    const query = request.query as { warehouseId?: string }
+    const query = request.query as { warehouseId?: string; facilityId?: string }
     const warehouseId = query.warehouseId ? Number(query.warehouseId) : undefined
+    const facilityId = query.facilityId ? Number(query.facilityId) : undefined
     return prisma.tBLLOCATION.findMany({
-      where: { companyId, ...(warehouseId ? { warehouseId } : {}) },
+      // Tesis süzgeci depo ilişkisinden (lokasyon → depo → tesis); belge tesis-bazlı oluşturmada kullanılır
+      where: { ...companyListFilter(request), ...(warehouseId ? { warehouseId } : {}), ...(facilityId ? { warehouse: { facilityId } } : {}) },
       orderBy: [{ warehouseId: 'asc' }, { code: 'asc' }],
     })
   })
@@ -33,10 +34,19 @@ export async function locationRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     }
+    const companyId = getCompanyId(request)
+    // facilityId (Tesis) depodan türetilir (firma>tesis>depo>alan>lokasyon hiyerarşisi)
+    const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: parsed.data.warehouseId, companyId } })
+    if (!wh) return reply.code(400).send({ error: 'Geçersiz depo' })
     try {
       const location = await prisma.tBLLOCATION.create({
-        data: { ...parsed.data, companyId: getCompanyId(request) },
+        data: { ...parsed.data, companyId, facilityId: wh.facilityId },
       })
+      // Barkod verilmediyse otomatik id numarasını ata (StokBar deseni) — sonradan bu alandan düzenlenebilir
+      if (!location.barcode) {
+        const updated = await prisma.tBLLOCATION.update({ where: { id: location.id }, data: { barcode: String(location.id) } })
+        return reply.code(201).send(updated)
+      }
       return reply.code(201).send(location)
     } catch (err) {
       const code = (err as { code?: string }).code
@@ -53,7 +63,7 @@ export async function locationRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const location = await prisma.tBLLOCATION.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const location = await prisma.tBLLOCATION.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!location) return reply.code(404).send({ error: 'Location not found' })
     return location
   })
@@ -63,7 +73,7 @@ export async function locationRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const existing = await prisma.tBLLOCATION.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const existing = await prisma.tBLLOCATION.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Location not found' })
     try {
       return await prisma.tBLLOCATION.update({ where: { id }, data: parsed.data })
@@ -78,7 +88,7 @@ export async function locationRoutes(app: FastifyInstance) {
   app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const existing = await prisma.tBLLOCATION.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const existing = await prisma.tBLLOCATION.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Location not found' })
     try {
       await prisma.tBLLOCATION.delete({ where: { id } })

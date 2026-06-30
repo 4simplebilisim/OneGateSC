@@ -13,7 +13,7 @@ export class AuthorizationError extends Error {
   }
 }
 
-type CheckScopes = { warehouseId?: number | null; operationTypeId?: number | null }
+type CheckScopes = { warehouseId?: number | null; facilityId?: number | null; operationTypeId?: number | null }
 
 export async function assertUserAuthorized(request: FastifyRequest, scopes: CheckScopes): Promise<void> {
   const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
@@ -43,11 +43,15 @@ export async function assertUserAuthorized(request: FastifyRequest, scopes: Chec
     throw new AuthorizationError('Bu operasyon tipi için yetkiniz yok')
   }
 
-  // Tesis: belgede doğrudan yok → deponun tesisi üzerinden kontrol edilir
+  // Tesis: doğrudan verilirse (belge = operationType.facilityId) onu, yoksa deponun tesisinden türet
   const facAllowed = allowedOf('FACILITY')
-  if (scopes.warehouseId != null && facAllowed.length > 0) {
-    const wh = await prisma.tBLWAREHOUSE.findUnique({ where: { id: scopes.warehouseId }, select: { facilityId: true } })
-    if (wh?.facilityId != null && !facAllowed.includes(wh.facilityId)) {
+  if (facAllowed.length > 0) {
+    let facilityId = scopes.facilityId ?? null
+    if (facilityId == null && scopes.warehouseId != null) {
+      const wh = await prisma.tBLWAREHOUSE.findUnique({ where: { id: scopes.warehouseId }, select: { facilityId: true } })
+      facilityId = wh?.facilityId ?? null
+    }
+    if (facilityId != null && !facAllowed.includes(facilityId)) {
       throw new AuthorizationError('Bu tesis için yetkiniz yok')
     }
   }

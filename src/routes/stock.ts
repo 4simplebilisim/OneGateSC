@@ -23,17 +23,22 @@ const keySchema = z.object({
 const num = (v?: string) => (v ? Number(v) : undefined)
 
 export async function stockRoutes(app: FastifyInstance) {
-  // FEFO sıralı stok sorgu (uygun miktar hesaplı, sayfalı)
+  // FEFO sıralı stok sorgu (uygun miktar hesaplı, sayfalı) — tesis/depo/lokasyon/ürün/statü ile süzülür
   app.get('/', async (request) => {
     const companyId = getCompanyId(request)
     const q = request.query as Record<string, string | undefined>
     const warehouseId = num(q.warehouseId)
+    const facilityId = num(q.facilityId)
+    // Tesis + depo lokasyon ilişkisinden süzülür (tesis = depodan türer)
+    const locFilter: Prisma.TBLLOCATIONWhereInput = {}
+    if (warehouseId) locFilter.warehouseId = warehouseId
+    if (facilityId) locFilter.warehouse = { facilityId }
     const where = {
       companyId,
       productId: num(q.productId),
       locationId: num(q.locationId),
       statusId: num(q.statusId),
-      ...(warehouseId ? { location: { warehouseId } } : {}),
+      ...(Object.keys(locFilter).length ? { location: locFilter } : {}),
       ...(q.includeZero === 'true' ? {} : { mainQty: { gt: 0 } }),
     }
     const p = parsePagination(request)
@@ -43,8 +48,11 @@ export async function stockRoutes(app: FastifyInstance) {
         orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }], // FEFO
         include: {
           product: { select: { id: true, code: true, name: true } },
-          location: { select: { id: true, code: true, warehouseId: true } },
-          status: { select: { id: true, code: true } },
+          // Tesis (depodan) + depo adları çözümlü — stok raporu kolonları
+          location: { select: { id: true, code: true, warehouseId: true,
+            warehouse: { select: { id: true, code: true, name: true, facility: { select: { id: true, code: true, name: true } } } },
+          } },
+          status: { select: { id: true, code: true, name: true } },
           unit: { select: { id: true, code: true } },
           pallet: { select: { id: true, palletNo: true } },
         },

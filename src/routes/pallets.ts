@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { nextSequence } from '../lib/sequence.js'
 
 const createSchema = z.object({
@@ -23,7 +23,7 @@ export async function palletRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const q = request.query as { palletTypeId?: string }
     return prisma.tBLPALLET.findMany({
-      where: { companyId: getCompanyId(request), palletTypeId: num(q.palletTypeId) },
+      where: { ...companyListFilter(request), palletTypeId: num(q.palletTypeId) },
       orderBy: { id: 'desc' },
       include: { palletType: { select: { code: true } } },
     })

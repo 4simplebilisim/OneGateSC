@@ -1,6 +1,6 @@
 import { prisma } from './prisma.js'
 import { completeDocument } from './movement.js'
-import { docStatusId, DOC_STATUS } from './documentStatus.js'
+import { refreshDocStatus } from './documentStatus.js'
 
 /** Satınalma akışı hatası — route'larda 409'a map'lenir. */
 export class ProcurementError extends Error {
@@ -107,8 +107,7 @@ export async function receiveOrder(orderId: number, receipts: ReceiptLine[], use
     },
   })
   await completeDocument(doc.id)
-  const onyId = await docStatusId(order.companyId, DOC_STATUS.APPROVED)
-  if (onyId) await prisma.tBLDOCUMENT.update({ where: { id: doc.id }, data: { documentStatusId: onyId } })
+  await refreshDocStatus(prisma, doc.id) // COMPLETED → ONY — tek doğru kaynağı
 
   // PO satır receivedQty güncelle
   for (const r of receipts) {

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 const createSchema = z.object({
   username: z.string().min(1).max(50),
@@ -80,7 +80,7 @@ const userSelect = {
 export async function userRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: [app.authenticate, app.requireAdmin] }, async (request) => {
     return prisma.tBLUSER.findMany({
-      where: { companyId: getCompanyId(request) },
+      where: { ...companyListFilter(request) },
       orderBy: { username: 'asc' },
       select: userSelect,
     })
@@ -90,7 +90,7 @@ export async function userRoutes(app: FastifyInstance) {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     // tenant güvenliği: admin yalnız kendi firmasının kullanıcısını okur (super-admin getCompanyId ile seçili firma)
-    const user = await prisma.tBLUSER.findFirst({ where: { id, companyId: getCompanyId(request) }, select: userSelect })
+    const user = await prisma.tBLUSER.findFirst({ where: { id, ...companyListFilter(request) }, select: userSelect })
     if (!user) return reply.code(404).send({ error: 'User not found' })
     return user
   })
@@ -160,7 +160,7 @@ export async function userRoutes(app: FastifyInstance) {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     if ((request.user as { sub?: number }).sub === id) return reply.code(400).send({ error: 'Kendi hesabınızı silemezsiniz' })
-    const existing = await prisma.tBLUSER.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const existing = await prisma.tBLUSER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'User not found' })
     if (existing.isSuperAdmin) return reply.code(403).send({ error: 'Super-admin kullanıcı silinemez' })
     try {

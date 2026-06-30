@@ -59,7 +59,7 @@ export const Dashboard = () => {
       <PageHeader title="Pano" subtitle="Depo, sipariş ve finans özeti — tek bakışta" />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        {card('Stok kalemi', stock.length, '/stock', '#16a3b3', 'rgba(68,212,227,.14)', <DatabaseOutlined />)}
+        {card('Stok kalemi', stock.length, '/stock-report', '#16a3b3', 'rgba(68,212,227,.14)', <DatabaseOutlined />)}
         {card('Açık satınalma', open?.purchaseOrders.count ?? 0, '/purchase-orders', '#4e86ff', 'rgba(78,134,255,.12)', <ShoppingCartOutlined />)}
         {card('Açık satış', open?.salesOrders.count ?? 0, '/sales-orders', '#4e86ff', 'rgba(78,134,255,.12)', <ShopOutlined />)}
         {card('MRP reorder', mrp?.reorderCount ?? 0, '/products', '#9b5cf6', 'rgba(155,92,246,.12)', <SyncOutlined />)}

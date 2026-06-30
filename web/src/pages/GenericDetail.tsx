@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Descriptions, Input, Modal, Select, Space, Table, Tag, Badge, Spin } from 'antd'
-import { ArrowLeftOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, HistoryOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { DETAIL_ACTIONS } from '../detailActions'
 import { canWrite } from '../formConfig'
+import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
 
 const STATUS_COLOR: Record<string, string> = {
   COMPLETED: 'green', CONFIRMED: 'blue', PLANNED: 'gold', IN_PROGRESS: 'cyan', CANCELLED: 'red',
@@ -18,8 +19,11 @@ const PRETTY: Record<string, string> = {
   documentNo: 'Belge No', orderNo: 'No', status: 'Durum', type: 'Tip', direction: 'Yön',
   quantity: 'Miktar', mainQty: 'Miktar', reservedQty: 'Rezerve', batchNo: 'Parti', serialNo: 'Seri',
   createdAt: 'Oluşturma', updatedAt: 'Güncelleme', lineNo: 'Satır', priority: 'Öncelik', note: 'Not',
+  documentDate: 'Belge Tarihi', completedAt: 'Tamamlanma', referenceQty: 'Referans Mik.', collectedQty: 'Toplanan',
+  preparedQty: 'Hazırlanan', expiryDate: 'SKT', productionDate: 'Üretim Tar.', poNo: 'PO', poLine: 'PO Satır', palletNo: 'Palet No',
 }
-const pretty = (k: string) => PRETTY[k] ?? k
+// FK alanları FK_LABEL'den, diğerleri PRETTY'den; yoksa ham anahtar
+const pretty = (k: string) => FK_LABEL[k] ?? PRETTY[k] ?? k
 
 const fmt = (v: unknown) => {
   if (v === null || v === undefined || v === '') return <span style={{ color: '#c0cad9' }}>—</span>
@@ -41,6 +45,8 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   const [bpw, setBpw] = useState('')
   const [brc, setBrc] = useState<string | undefined>()
   const [breaking, setBreaking] = useState(false)
+  // FK alanlarını id → "kod — ad" çöz (başlık + satırlar) — ham id yerine isim göster
+  const [refMaps, setRefMaps] = useState<Record<string, Record<number, string>>>({})
 
   const load = useCallback(() => {
     setLoading(true)
@@ -52,6 +58,29 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   }, [resource, id, message])
 
   useEffect(load, [load])
+
+  // Kayıttaki + satırlardaki FK alanları → kaynak; benzersiz kaynakları çekip id→ad map'i kur
+  const fkFieldMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    const collect = (obj?: Record<string, unknown>) => { if (obj) Object.keys(obj).forEach((k) => { if (FK_RESOURCE[k]) m[k] = FK_RESOURCE[k] }) }
+    collect(record ?? undefined)
+    collect(((record?.lines as Record<string, unknown>[] | undefined) ?? [])[0])
+    return m
+  }, [record])
+  const fkResourcesKey = [...new Set(Object.values(fkFieldMap))].sort().join(',')
+  useEffect(() => {
+    [...new Set(Object.values(fkFieldMap))].forEach((rr) => {
+      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500 } }).then((r) => {
+        const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
+        const map: Record<number, string> = {}
+        list.forEach((x: Record<string, unknown>) => {
+          map[x.id as number] = x.code ? `${x.code}${x.name ? ' — ' + x.name : ''}` : String(x.palletNo ?? x.documentNo ?? x.username ?? x.name ?? x.description ?? `#${x.id}`)
+        })
+        setRefMaps((prev) => ({ ...prev, [rr]: map }))
+      }).catch(() => { /* ref yüklenemedi → id gösterilir */ })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fkResourcesKey])
 
   const errOf = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error
   const isBreakErr = (msg?: string) => !!msg && /kırma şifresi/i.test(msg)
@@ -103,18 +132,30 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   const status = (record.status ?? record.result) as string | undefined
   const lines = (record.lines as Record<string, unknown>[] | undefined) ?? []
+  // FK alanları için id → "kod — ad"; değilse normal format
+  const showVal = (k: string, v: unknown) => {
+    const res = fkFieldMap[k]
+    if (res && typeof v === 'number' && refMaps[res]?.[v]) return refMaps[res][v]
+    return fmt(v)
+  }
+  // Belge tesise bağlı (depoya değil) → Depo (warehouseId + null warehouse objesi) detayda gizli
+  const HIDDEN = ['createdById', 'companyId', 'documentId', ...(resource === 'documents' ? ['warehouseId', 'warehouse'] : [])]
   const headerFields = Object.keys(record).filter(
-    (k) => record[k] === null || (typeof record[k] !== 'object' && !['createdById', 'companyId'].includes(k)),
+    (k) => record[k] === null || (typeof record[k] !== 'object' && !HIDDEN.includes(k)),
   )
   const actions = (DETAIL_ACTIONS[resource] ?? []).filter((a) => !status || a.when.includes(status))
 
-  const lineCols = lines[0]
+  const baseLineCols = lines[0]
     ? Object.keys(lines[0])
         .filter((k) => lines[0]![k] === null || typeof lines[0]![k] !== 'object')
-        .filter((k) => !['createdAt', 'updatedAt'].includes(k))
+        .filter((k) => !['createdAt', 'updatedAt', ...HIDDEN].includes(k))
         .slice(0, 9)
-        .map((k) => ({ title: pretty(k), dataIndex: k, ellipsis: true, render: (v: unknown) => fmt(v) }))
+        .map((k) => ({ title: pretty(k), dataIndex: k, ellipsis: true, render: (v: unknown) => showVal(k, v) }))
     : []
+  // Belge satırlarında DRAFT iken "Topla" — satır bazında okutma ekranı (miktar/palet/seri/lot/üretim/SKT)
+  const lineCols = resource === 'documents' && status === 'DRAFT' && baseLineCols.length
+    ? [...baseLineCols, { title: 'Toplama', key: 'collect', render: (_: unknown, row: Record<string, unknown>) => <Button size="small" type="link" onClick={() => navigate(`/documents/${id}/lines/${row.id}/collect`)}>Topla →</Button> }]
+    : baseLineCols
 
   return (
     <div className="og-page">
@@ -129,7 +170,12 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
           </Space>
         }
         subtitle="Kayıt detayı"
-        extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${resource}`)}>Liste</Button>}
+        extra={
+          <Space>
+            {resource === 'documents' && <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${id}/status-history`)}>Durum Geçmişi</Button>}
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${resource}`)}>Liste</Button>
+          </Space>
+        }
       />
 
       {canWrite() && actions.length > 0 && (
@@ -148,7 +194,7 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
       <Card className="og-section-card" size="small" title="Bilgiler">
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
           {headerFields.map((k) => (
-            <Descriptions.Item key={k} label={pretty(k)}>{fmt(record[k])}</Descriptions.Item>
+            <Descriptions.Item key={k} label={pretty(k)}>{showVal(k, record[k])}</Descriptions.Item>
           ))}
         </Descriptions>
       </Card>

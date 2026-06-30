@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 
 const createSchema = z.object({
@@ -51,10 +51,9 @@ async function validFacilityIds(companyId: number, facilities: number[] | undefi
 
 export async function productRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
-    const companyId = getCompanyId(request)
     const q = request.query as { search?: string }
     const where = {
-      companyId,
+      ...companyListFilter(request),
       ...(q.search ? { OR: [{ code: { contains: q.search, mode: 'insensitive' as const } }, { name: { contains: q.search, mode: 'insensitive' as const } }] } : {}),
     }
     const p = parsePagination(request)
@@ -70,7 +69,7 @@ export async function productRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
 
     const product = await prisma.tBLPRODUCT.findFirst({
-      where: { id, companyId: getCompanyId(request) },
+      where: { id, ...companyListFilter(request) },
       include: { unit: true, facilities: { select: { facilityId: true } } },
     })
     if (!product) return reply.code(404).send({ error: 'Product not found' })
@@ -109,16 +108,16 @@ export async function productRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const companyId = getCompanyId(request)
-    const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, companyId } })
+    const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Product not found' })
     const { facilities, ...rest } = parsed.data
     const data: Record<string, unknown> = { ...rest }
     // Gün sayısı bu patch'te geldiyse, raf ömrü takibini gün>0'a göre türet.
     if (rest.shelfLifeDays !== undefined) data.shelfLifeControl = (rest.shelfLifeDays ?? 0) > 0
     if (facilities) {
-      const facIds = await validFacilityIds(companyId, facilities)
-      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId, facilityId: fid })) }
+      // Cross-company düzenlemede tesisler düzenlenen ürünün firmasına göre doğrulanır (og_company değil)
+      const facIds = await validFacilityIds(existing.companyId, facilities)
+      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId: existing.companyId, facilityId: fid })) }
     }
     try {
       const product = await prisma.tBLPRODUCT.update({ where: { id }, data, include: { unit: true, facilities: { select: { facilityId: true } } } })

@@ -15,9 +15,15 @@ export const reasonCategoryRoutes = simpleCrud(prisma.tBLREASONCATEGORY as unkno
 const opGroupLink = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), operationGroupId: pInt, businessPartnerId: pInt.optional(), isActive: z.boolean().optional() })
 export const operationGroupLinkRoutes = simpleCrud(prisma.tBLOPERATIONGROUPLINK as unknown as Delegate, opGroupLink, opGroupLink.partial(), 'Operation group link not found', 'operationTypeId')
 
-// Operasyon Tipi Tolerans
-const opTolerance = z.object({ operationTypeId: pInt.optional(), facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), ignoreSplit: z.boolean().optional(), tolerancePercent: z.number().optional(), toleranceQty: z.number().optional(), isActive: z.boolean().optional() })
+// Operasyon Tipi Tolerans (master — kademe detayları ayrı tabloda)
+const opTolerance = z.object({ operationTypeId: pInt.optional(), facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), ignoreSplit: z.boolean().optional(), isActive: z.boolean().optional() })
 export const operationToleranceRoutes = simpleCrud(prisma.tBLOPERATIONTYPETOLERANCE as unknown as Delegate, opTolerance, opTolerance.partial(), 'Operation tolerance not found', 'operationTypeId')
+
+// Operasyon Tipi Tolerans DETAY — kademe bazında (StokBar Tolerans Detay). Bir toleransta N detay (ör. kg %10, adet %15).
+const dNum = z.number().nullable().optional()
+const dInt = pInt.nullable().optional()
+const opToleranceDetail = z.object({ toleranceId: pInt, unitId: dInt, lowerPercent: dNum, upperPercent: dNum })
+export const operationToleranceDetailRoutes = simpleCrud(prisma.tBLOPERATIONTYPETOLERANCEDETAIL as unknown as Delegate, opToleranceDetail, opToleranceDetail.partial().omit({ toleranceId: true }), 'Tolerance detail not found', 'toleranceId')
 
 // Operasyon Tipi Yasaklı Ürün
 const forbidden = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), isActive: z.boolean().optional() })

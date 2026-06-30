@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { simpleCrud, type Delegate } from './documentTypes.js'
 
 const pInt = z.number().int().positive()
@@ -66,14 +66,14 @@ async function runReport(companyId: number, sourceKey: string, c: Crit) {
 // ── Çalıştırma uçları: tanım (full) + run ──
 export async function reportRunRoutes(app: FastifyInstance) {
   // rapor listesi (sadece başlık)
-  app.get('/', async (request) => prisma.tBLREPORTDEF.findMany({ where: { companyId: getCompanyId(request), isActive: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] }))
+  app.get('/', async (request) => prisma.tBLREPORTDEF.findMany({ where: { ...companyListFilter(request), isActive: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] }))
 
   // tek raporun tam tanımı (kriter + saha)
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const def = await prisma.tBLREPORTDEF.findFirst({
-      where: { id, companyId: getCompanyId(request) },
+      where: { id, ...companyListFilter(request) },
       include: { criteria: { orderBy: { sortOrder: 'asc' } }, fields: { orderBy: { sortOrder: 'asc' } } },
     })
     if (!def) return reply.code(404).send({ error: 'Rapor bulunamadı' })

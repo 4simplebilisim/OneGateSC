@@ -25,6 +25,8 @@ import { PalletBulkUpdate } from './pages/PalletBulkUpdate'
 import { CountDifferences } from './pages/CountDifferences'
 import { PalletOps } from './pages/PalletOps'
 import { ReportCenter } from './pages/ReportCenter'
+import { StockReport } from './pages/StockReport'
+import { DocumentObservation } from './pages/DocumentObservation'
 import { BulkDocOps } from './pages/BulkDocOps'
 import { Reservation } from './pages/Reservation'
 import { StockReclassify } from './pages/StockReclassify'
@@ -32,6 +34,9 @@ import { SuggestList } from './pages/SuggestList'
 import { StockEntry } from './pages/StockEntry'
 import { EntryLabeling } from './pages/EntryLabeling'
 import { ExtraFieldOptions } from './pages/ExtraFieldOptions'
+import { ToleranceDetails } from './pages/ToleranceDetails'
+import { StatusHistory } from './pages/StatusHistory'
+import { DocumentLineCollect } from './pages/DocumentLineCollect'
 import { OwnerLines } from './pages/OwnerLines'
 import { LabelPrint } from './pages/LabelPrint'
 import { UserForm } from './pages/UserForm'
@@ -85,6 +90,9 @@ export default function App() {
           <Route path="documents/new" element={<DocumentCreate />} />
           <Route path="product-units/:id/barcodes" element={<ProductUnitBarcodes />} />
           <Route path="extra-fields/:id/options" element={<ExtraFieldOptions />} />
+          <Route path="operation-tolerances/:id/details" element={<ToleranceDetails />} />
+          <Route path="documents/:id/status-history" element={<StatusHistory />} />
+          <Route path="documents/:id/lines/:lineId/collect" element={<DocumentLineCollect />} />
           <Route path="control-counts/:id/lines" element={<OwnerLines resource="control-count-lines" ownerField="controlCountId" ownerResource="control-counts" backTo="/control-counts" title="Kontrol Sayım Satırları" />} />
           <Route path="pallet-notifications/:id/lines" element={<OwnerLines resource="pallet-notification-lines" ownerField="notificationId" ownerResource="pallet-notifications" backTo="/pallet-notifications" title="Palet Bildirim Satırları" />} />
           <Route path="routing-types/:id/params" element={<OwnerLines resource="routing-parameters" ownerField="routingTypeId" ownerResource="routing-types" backTo="/routing-types" title="Yönlendirme Parametre" subtitle="Yönlendirme tipine bağlı parametreler" />} />
@@ -113,6 +121,10 @@ export default function App() {
           <Route path="count-differences" element={<CountDifferences />} />
           <Route path="pallets" element={<PalletOps />} />
           <Route path="report-center" element={<ReportCenter />} />
+          <Route path="stock-report" element={<StockReport />} />
+          <Route path="documents-in-obs" element={<DocumentObservation direction="INBOUND" />} />
+          <Route path="documents-out-obs" element={<DocumentObservation direction="OUTBOUND" />} />
+          <Route path="documents-tr-obs" element={<DocumentObservation direction="INTERNAL" />} />
           <Route path="bulk-doc-ops" element={<BulkDocOps />} />
           <Route path="reservation" element={<Reservation />} />
           <Route path="stock-reclassify" element={<StockReclassify />} />
@@ -133,7 +145,7 @@ export default function App() {
           {RESOURCES.filter((r) => hasDetail(r.name)).map((r) => (
             <Route key={`${r.name}-detail`} path={`${r.name}/:id`} element={<GenericDetail resource={r.name} label={r.label} />} />
           ))}
-          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'bulk-doc-ops', 'reservation', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
+          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'reservation', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
             <Route key={r.name} path={r.name} element={<GenericList resource={r.apiName ?? r.name} label={r.label} filter={r.filter} observe={r.observe} />} />
           ))}
         </Route>

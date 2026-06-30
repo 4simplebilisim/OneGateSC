@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 const scopeEnum = z.enum(['FACILITY', 'WAREHOUSE', 'OPERATION_TYPE', 'SCREEN'])
 const createSchema = z.object({
@@ -70,7 +70,7 @@ export async function userAuthorizationRoutes(app: FastifyInstance) {
   app.delete('/:id', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const res = await prisma.tBLUSERAUTHORIZATION.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+    const res = await prisma.tBLUSERAUTHORIZATION.deleteMany({ where: { id, ...companyListFilter(request) } })
     if (res.count === 0) return reply.code(404).send({ error: 'Yetki bulunamadı' })
     return reply.code(204).send()
   })

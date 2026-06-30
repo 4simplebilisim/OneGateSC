@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 // Ekran hakkı (aksiyon matrisi): kullanıcı/grup × ekran → İzle/Yeni/Düzenle/Sil.
 // Kayıt yoksa tüm aksiyonlar serbest; grup birleşiminde false öncelikli (en kısıtlayıcı).
@@ -19,7 +19,7 @@ export async function screenRightRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: [app.authenticate, app.requireAdmin] }, async (request) => {
     const q = request.query as { userId?: string; groupId?: string }
     return prisma.tBLUSERSCREENRIGHT.findMany({
-      where: { companyId: getCompanyId(request), userId: q.userId ? Number(q.userId) : undefined, groupId: q.groupId ? Number(q.groupId) : undefined },
+      where: { ...companyListFilter(request), userId: q.userId ? Number(q.userId) : undefined, groupId: q.groupId ? Number(q.groupId) : undefined },
       orderBy: { id: 'asc' },
     })
   })

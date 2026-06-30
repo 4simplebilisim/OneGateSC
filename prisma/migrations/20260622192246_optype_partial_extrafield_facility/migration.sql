@@ -1,0 +1,4 @@
+-- Operasyon tipi: parçalı kullanım (BYTPARCALIKULLANIM) + Ek saha: opsiyonel tesis (facilityId)
+ALTER TABLE wms."TBLOPERATIONTYPE" ADD COLUMN IF NOT EXISTS "partialUsage" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE wms."TBLEXTRAFIELD" ADD COLUMN IF NOT EXISTS "facilityId" INTEGER;
+CREATE INDEX IF NOT EXISTS "TBLEXTRAFIELD_facilityId_idx" ON wms."TBLEXTRAFIELD"("facilityId");

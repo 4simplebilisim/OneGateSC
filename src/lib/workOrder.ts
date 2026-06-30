@@ -1,6 +1,6 @@
 import { prisma } from './prisma.js'
 import { completeDocument, MovementError } from './movement.js'
-import { docStatusId, DOC_STATUS } from './documentStatus.js'
+import { refreshDocStatus } from './documentStatus.js'
 
 export class WorkOrderError extends Error {
   constructor(message: string) {
@@ -101,8 +101,7 @@ export async function completeWorkOrder(id: number, userId: number, now: Date) {
       if (err instanceof MovementError) throw new WorkOrderError(`Stok hareketi başarısız: ${err.message}`)
       throw err
     }
-    const onyId = await docStatusId(wo.companyId, DOC_STATUS.APPROVED)
-    if (onyId) await prisma.tBLDOCUMENT.update({ where: { id: doc.id }, data: { documentStatusId: onyId } })
+    await refreshDocStatus(prisma, doc.id) // COMPLETED → ONY — tek doğru kaynağı
     generatedDocumentId = doc.id
   }
 

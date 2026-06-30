@@ -111,17 +111,14 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'operation-types', label: 'Operasyon Tipi', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-groups', label: 'Grup', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-group-links', label: 'Grup Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'operation-type-locations', label: 'Lokasyon', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'operation-type-statuses', label: 'Statü', section: 'Uyarlamalar', group: 'Operasyon' },
+  // NOT: "Lokasyon" + "Statü" (operation-type-locations/statuses) menüden çıkarıldı — Operasyon Tipi tanım ekranı sekmelerinde zaten var.
   { name: 'operation-tolerances', label: 'Tolerans', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'operation-forbidden-products', label: 'Yasaklı Ürün', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-type-pallet-types', label: 'Palet Tipi', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-conversions', label: 'Dönüşüm', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'sequential-operations', label: 'Sıralı Operasyon', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'auto-reference-documents', label: 'Otomatik Ref. Kontrollü Belge', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-bulk-actions', label: 'Toplu İşlem Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'product-based-collections', label: 'Ürün Bazında Toplama Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'trip-based-collections', label: 'Sefer Bazında Toplama Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
   // Belge Tipleri
   { name: 'document-statuses', label: 'Belge Durumları', section: 'Uyarlamalar', group: 'Belge Tipleri' },
   { name: 'document-status-actions', label: 'Belge Durum İşlem', section: 'Uyarlamalar', group: 'Belge Tipleri' },
@@ -180,8 +177,10 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'users', label: 'Kullanıcılar', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'user-groups', label: 'Kullanıcı Grup', section: 'Uyarlamalar', group: 'Sistem' },
 
-  // ── Raporlar — metadata-driven rapor merkezi (Başlık/Kriter/Saha'dan dinamik) ──
-  { name: 'report-center', label: 'Raporlar', section: 'Raporlar', group: '' },
+  // ── Raporlar ──
+  { name: 'stock-report', label: 'Stok Raporu', section: 'Raporlar', group: '' },
+  // metadata-driven rapor merkezi (Başlık/Kriter/Saha'dan dinamik)
+  { name: 'report-center', label: 'Rapor Merkezi', section: 'Raporlar', group: '' },
 ]
 
 export const sectionOf = (name: string) => RESOURCES.find((r) => r.name === name)?.section ?? SECTIONS[0]

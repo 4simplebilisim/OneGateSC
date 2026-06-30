@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { completeDocument, reverseDocument, MovementError } from '../lib/movement.js'
-import { docStatusId, DOC_STATUS } from '../lib/documentStatus.js'
+import { docStatusId, DOC_STATUS, refreshDocStatus } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
@@ -29,7 +29,7 @@ const lineSchema = z.object({
 const createSchema = z.object({
   documentNo: z.string().min(1).max(40).optional(), // verilmezse operasyon tipinin sayacından üretilir
   operationTypeId: z.number().int().positive(),
-  warehouseId: z.number().int().positive(),
+  warehouseId: z.number().int().positive().optional(), // belge tesise (operationType.facilityId) bağlı; depo opsiyonel
   partnerId: z.number().int().positive().optional(),
   reasonId: z.number().int().positive().optional(),
   documentDate: z.string().optional(),
@@ -49,27 +49,43 @@ const lineInclude = {
 export async function documentRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const companyId = getCompanyId(request)
-    const query = request.query as { warehouseId?: string; status?: string; operationTypeId?: string; direction?: string; openOnly?: string }
+    const q = request.query as { warehouseId?: string; status?: string; operationTypeId?: string; direction?: string; openOnly?: string; facilityId?: string; partnerId?: string; documentNo?: string; dateFrom?: string; dateTo?: string; statusCodes?: string }
     const statuses = ['DRAFT', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const
     const directions = ['INBOUND', 'OUTBOUND', 'INTERNAL', 'COUNT'] as const
+    const num = (v?: string) => (v ? Number(v) : undefined)
+    // operationType alt-filtresi: yön (İşlem Tipi) + tesis (belge tesise bağlı)
+    const opFilter = {
+      ...(directions.includes(q.direction as (typeof directions)[number]) ? { direction: q.direction as (typeof directions)[number] } : {}),
+      ...(q.facilityId ? { facilityId: Number(q.facilityId) } : {}),
+    }
+    // Belge tarihi aralığı (Gözlem) — gün sınırlarında UTC
+    const dateFilter = {
+      ...(q.dateFrom ? { gte: new Date(q.dateFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}),
+      ...(q.dateTo ? { lte: new Date(q.dateTo.slice(0, 10) + 'T23:59:59.999Z') } : {}),
+    }
     return prisma.tBLDOCUMENT.findMany({
       where: {
         companyId,
-        warehouseId: query.warehouseId ? Number(query.warehouseId) : undefined,
-        operationTypeId: query.operationTypeId ? Number(query.operationTypeId) : undefined,
-        status: query.openOnly === 'true'
+        warehouseId: num(q.warehouseId),
+        operationTypeId: num(q.operationTypeId),
+        partnerId: num(q.partnerId),
+        ...(q.documentNo ? { documentNo: { contains: q.documentNo, mode: 'insensitive' as const } } : {}),
+        ...(Object.keys(dateFilter).length ? { documentDate: dateFilter } : {}),
+        status: q.openOnly === 'true'
           ? { in: ['DRAFT', 'CONFIRMED'] } // Açık Belgeler (toplanmamış/onaylanmamış)
-          : statuses.includes(query.status as (typeof statuses)[number])
-            ? (query.status as (typeof statuses)[number])
+          : statuses.includes(q.status as (typeof statuses)[number])
+            ? (q.status as (typeof statuses)[number])
             : undefined,
-        operationType: directions.includes(query.direction as (typeof directions)[number])
-          ? { direction: query.direction as (typeof directions)[number] }
-          : undefined,
+        ...(Object.keys(opFilter).length ? { operationType: opFilter } : {}),
+        // Gözlem durum toggle'ları (Belge Durumu kodları: BKL/TPL/OBK/ONY/IPT — virgülle)
+        ...(q.statusCodes ? { documentStatus: { code: { in: q.statusCodes.split(',').map((s) => s.trim()).filter(Boolean) } } } : {}),
       },
       orderBy: { id: 'desc' },
+      take: 2000,
       include: {
-        operationType: { select: { code: true, direction: true } },
+        operationType: { select: { code: true, name: true, direction: true } },
         documentStatus: { select: { code: true, name: true, color: true } },
+        partner: { select: { code: true, name: true } },
         _count: { select: { lines: true } },
       },
     })
@@ -91,6 +107,17 @@ export async function documentRoutes(app: FastifyInstance) {
     })
     if (!document) return reply.code(404).send({ error: 'Document not found' })
     return document
+  })
+
+  // Belge durum geçiş geçmişi (Faz 3 audit) — kimden→kime, ne zaman, hangi olay, kim
+  app.get('/:id/status-history', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const rows = await prisma.tBLDOCUMENTSTATUSHISTORY.findMany({ where: { documentId: id, companyId: getCompanyId(request) }, orderBy: { id: 'asc' } })
+    const userIds = [...new Set(rows.map((r) => r.userId).filter((x): x is number => x != null))]
+    const users = userIds.length ? await prisma.tBLUSER.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } }) : []
+    const uname = new Map(users.map((u) => [u.id, u.username]))
+    return rows.map((r) => ({ ...r, username: r.userId != null ? uname.get(r.userId) ?? null : null }))
   })
 
   // Belge oluştur (DRAFT)
@@ -138,15 +165,20 @@ export async function documentRoutes(app: FastifyInstance) {
 
     // Kullanıcı yetkisi: yalnız yetkili olduğu depo / operasyon tipi / tesis ile belge açabilir (super-admin bypass)
     try {
-      await assertUserAuthorized(request, { warehouseId: header.warehouseId, operationTypeId: header.operationTypeId })
+      await assertUserAuthorized(request, { warehouseId: header.warehouseId, facilityId: opType.facilityId, operationTypeId: header.operationTypeId })
     } catch (err) {
       if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       throw err
     }
 
-    // Ürün-tesis kısıtı: deponun tesisi, satırdaki ürünün izinli tesisleri içinde olmalı (ürünün kaydı yoksa serbest)
-    const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: header.warehouseId, companyId }, select: { facilityId: true } })
-    if (wh?.facilityId != null) {
+    // Tesis = operasyonun tesisi (operationType.facilityId, legacy LNGDISTKOD); depo verilmişse onun tesisine düş
+    let facilityId = opType.facilityId ?? null
+    if (facilityId == null && header.warehouseId) {
+      const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: header.warehouseId, companyId }, select: { facilityId: true } })
+      facilityId = wh?.facilityId ?? null
+    }
+    // Ürün-tesis kısıtı: belgenin tesisi, satırdaki ürünün izinli tesisleri içinde olmalı (ürünün kaydı yoksa serbest)
+    if (facilityId != null) {
       const productIds = [...new Set(lines.map((l) => l.productId))]
       const restrictions = await prisma.tBLPRODUCTFACILITY.findMany({ where: { companyId, productId: { in: productIds } }, select: { productId: true, facilityId: true } })
       const byProduct = new Map<number, Set<number>>()
@@ -156,15 +188,15 @@ export async function documentRoutes(app: FastifyInstance) {
       }
       for (const pid of productIds) {
         const allowed = byProduct.get(pid)
-        if (allowed && allowed.size > 0 && !allowed.has(wh.facilityId)) {
-          return reply.code(400).send({ error: `Ürün (id ${pid}) bu deponun tesisinde kullanılamaz — ürün-tesis kısıtı` })
+        if (allowed && allowed.size > 0 && !allowed.has(facilityId)) {
+          return reply.code(400).send({ error: `Ürün (id ${pid}) bu tesiste kullanılamaz — ürün-tesis kısıtı` })
         }
       }
       // Müşteri-tesis kısıtı: belgenin cari'si bu deponun tesisinde işlem yapabilmeli (kayıt yoksa serbest)
       if (header.partnerId) {
         const partnerFacs = await prisma.tBLPARTNERFACILITY.findMany({ where: { companyId, partnerId: header.partnerId }, select: { facilityId: true } })
-        if (partnerFacs.length > 0 && !partnerFacs.some((f) => f.facilityId === wh.facilityId)) {
-          return reply.code(400).send({ error: 'Müşteri bu deponun tesisinde işlem yapamaz — müşteri-tesis kısıtı' })
+        if (partnerFacs.length > 0 && !partnerFacs.some((f) => f.facilityId === facilityId)) {
+          return reply.code(400).send({ error: 'Müşteri bu tesiste işlem yapamaz — müşteri-tesis kısıtı' })
         }
       }
       // Statü-tesis kısıtı: satırlarda kullanılan her statü (kaynak/hedef) bu deponun tesisine AİT olmalı.
@@ -174,8 +206,8 @@ export async function documentRoutes(app: FastifyInstance) {
         const sts = await prisma.tBLSTATUS.findMany({ where: { companyId, id: { in: statusIds } }, select: { id: true, facilityId: true } })
         const byStatus = new Map(sts.map((s) => [s.id, s.facilityId]))
         for (const sid of statusIds) {
-          if (byStatus.get(sid) !== wh.facilityId) {
-            return reply.code(400).send({ error: `Statü (id ${sid}) bu deponun tesisinde kullanılamaz — statü-tesis kısıtı` })
+          if (byStatus.get(sid) !== facilityId) {
+            return reply.code(400).send({ error: `Statü (id ${sid}) bu tesiste kullanılamaz — statü-tesis kısıtı` })
           }
         }
       }
@@ -194,14 +226,14 @@ export async function documentRoutes(app: FastifyInstance) {
     let inboundTargetStatusId: number | undefined
     if (opType.direction === 'INBOUND') {
       if (opType.qualityControl) {
-        const q = await prisma.tBLSTATUS.findFirst({ where: { companyId, code: 'QUARANTINE' } })
+        const q = await prisma.tBLSTATUS.findFirst({ where: { companyId, code: 'QUARANTINE', ...(facilityId ? { facilityId } : {}) } })
         inboundTargetStatusId = q?.id
       } else {
         const st = await prisma.tBLOPERATIONTYPESTATUS.findFirst({
           where: { companyId, operationTypeId: opType.id },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
         })
-        inboundTargetStatusId = st?.targetStatusId
+        inboundTargetStatusId = st?.targetStatusId ?? undefined // targetStatusId nullable (Çıkış'ta boş) → null'u undefined'a indir
       }
     }
 
@@ -270,11 +302,9 @@ export async function documentRoutes(app: FastifyInstance) {
     if (doc.status !== 'DRAFT') {
       return reply.code(409).send({ error: `Sadece DRAFT belge onaya gönderilebilir (mevcut: ${doc.status})` })
     }
-    return prisma.tBLDOCUMENT.update({
-      where: { id },
-      data: { status: 'CONFIRMED', documentStatusId: await docStatusId(doc.companyId, DOC_STATUS.PENDING_APPROVAL) },
-      include: { documentStatus: true },
-    })
+    await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
+    await refreshDocStatus(prisma, id, { source: 'confirm', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → OBK
+    return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
   })
 
   // CONFIRMED → COMPLETED (+ stok'a işle)
@@ -287,9 +317,7 @@ export async function documentRoutes(app: FastifyInstance) {
     const userId = Number((request.user as { sub?: number | string })?.sub) || undefined
     try {
       const done = await completeDocument(id, { breakPassword: body.breakPassword, breakReasonCode: body.breakReasonCode, userId })
-      // Onaylandı
-      const onyId = await docStatusId(doc.companyId, DOC_STATUS.APPROVED)
-      if (onyId) await prisma.tBLDOCUMENT.update({ where: { id }, data: { documentStatusId: onyId } })
+      await refreshDocStatus(prisma, id, { source: 'complete', userId: userId ?? null }) // → ONY
       return await prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true, lines: { orderBy: { lineNo: 'asc' } } } }) ?? done
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
@@ -307,11 +335,9 @@ export async function documentRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: 'Tamamlanmış belge iptal edilemez (stok ters kaydı gerekir)' })
     }
     if (doc.status === 'CANCELLED') return reply.code(409).send({ error: 'Belge zaten iptal edilmiş' })
-    return prisma.tBLDOCUMENT.update({
-      where: { id },
-      data: { status: 'CANCELLED', documentStatusId: await docStatusId(doc.companyId, DOC_STATUS.CANCELLED) },
-      include: { documentStatus: true },
-    })
+    await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CANCELLED' } })
+    await refreshDocStatus(prisma, id, { source: 'cancel', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → IPT
+    return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
   })
 
   // COMPLETED → ters kayıt (stok geri al) → CANCELLED
@@ -321,9 +347,8 @@ export async function documentRoutes(app: FastifyInstance) {
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     try {
-      const rev = await reverseDocument(id)
-      const iptId = await docStatusId(doc.companyId, DOC_STATUS.CANCELLED)
-      if (iptId) await prisma.tBLDOCUMENT.update({ where: { id }, data: { documentStatusId: iptId } })
+      const rev = await reverseDocument(id) // stok geri + DRAFT
+      await refreshDocStatus(prisma, id, { source: 'reverse', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → Bekliyor/Toplanıyor/Onay Bekliyor (toplama durumuna göre)
       return rev
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
@@ -331,9 +356,10 @@ export async function documentRoutes(app: FastifyInstance) {
     }
   })
 
-  // Toplu İşlem — seçili belgelere yaşam-döngüsü aksiyonu (confirm/complete/cancel) topluca uygula
+  // Toplu İşlem — seçili belgelere yaşam-döngüsü aksiyonu topluca uygula (Gözlem + Toplu İşlem ekranları)
+  // confirm=Onaya Gönder · complete=Onay(stok işle) · reverse=Onay İptal(ters kayıt) · cancel-picking=Toplama İptal · cancel=İptal/Sil
   app.post('/bulk-action', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
-    const parsed = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500), action: z.enum(['confirm', 'complete', 'cancel']) }).safeParse(request.body)
+    const parsed = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500), action: z.enum(['confirm', 'complete', 'reverse', 'cancel-picking', 'cancel']) }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
     const userId = Number((request.user as { sub?: number | string })?.sub) || undefined
@@ -346,14 +372,26 @@ export async function documentRoutes(app: FastifyInstance) {
       try {
         if (action === 'confirm') {
           if (doc.status !== 'DRAFT') throw new MovementError(`DRAFT değil (${doc.status})`)
-          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED', documentStatusId: await docStatusId(companyId, DOC_STATUS.PENDING_APPROVAL) } })
+          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
+          await refreshDocStatus(prisma, id) // → OBK
         } else if (action === 'complete') {
           await completeDocument(id, { userId })
-          const onyId = await docStatusId(companyId, DOC_STATUS.APPROVED)
-          if (onyId) await prisma.tBLDOCUMENT.update({ where: { id }, data: { documentStatusId: onyId } })
+          await refreshDocStatus(prisma, id) // → ONY
+        } else if (action === 'reverse') {
+          if (doc.status !== 'COMPLETED') throw new MovementError(`Yalnız onaylı belgenin onayı iptal edilir (${doc.status})`)
+          await reverseDocument(id) // stok geri + DRAFT
+          await refreshDocStatus(prisma, id) // → toplama durumuna göre Bekliyor/Onay Bekliyor
+        } else if (action === 'cancel-picking') {
+          // Toplama İptal: okutmaları (kapsam) sil + collectedQty sıfırla → Bekliyor (yalnız iç-statü DRAFT belgede)
+          if (doc.status !== 'DRAFT') throw new MovementError(`Toplama iptali yalnız bekleyen/toplanan belgede (${doc.status})`)
+          const lines = await prisma.tBLDOCUMENTLINE.findMany({ where: { documentId: id }, select: { id: true } })
+          if (lines.length) await prisma.tBLDOCUMENTLINESCOPE.deleteMany({ where: { documentLineId: { in: lines.map((l) => l.id) } } })
+          await prisma.tBLDOCUMENTLINE.updateMany({ where: { documentId: id }, data: { collectedQty: 0 } })
+          await refreshDocStatus(prisma, id) // → BKL
         } else {
           if (doc.status === 'COMPLETED' || doc.status === 'CANCELLED') throw new MovementError(`İptal edilemez (${doc.status})`)
-          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CANCELLED', documentStatusId: await docStatusId(companyId, DOC_STATUS.CANCELLED) } })
+          await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CANCELLED' } })
+          await refreshDocStatus(prisma, id) // → IPT
         }
         ok++
       } catch (err) {

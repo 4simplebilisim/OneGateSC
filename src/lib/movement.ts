@@ -29,13 +29,67 @@ function cariScopeMatches(type: Scope, linkId: number | null, partnerId: number 
   if (type === 'SPECIFIC') return linkId != null && linkId === partnerId
   return false
 }
-/** Lokasyon kapsamı bir lokasyona uyuyor mu? (null/Hepsi→serbest, Grup→lokasyon o gruba üye, Belirli→lokasyon eşleşir) */
+/** Lokasyon kapsamı bir lokasyona uyuyor mu? (Hepsi→serbest, Grup→lokasyon o gruba üye, Belirli→lokasyon eşleşir)
+ *  Tip BOŞ ama belirli lokasyon verilmişse → o lokasyona kilit (SPECIFIC) — "lokasyon seçmek = kısıtlamak" sezgisi. */
 function locationScopeMatches(type: Scope, linkId: number | null, locationId: number | null, locationGroupIds: number[]): boolean {
-  if (!type || type === 'ALL') return true
+  const effType: Exclude<Scope, null> = type ?? (linkId != null ? 'SPECIFIC' : 'ALL')
+  if (effType === 'ALL') return true
   if (locationId == null) return false
-  if (type === 'GROUP') return linkId != null && locationGroupIds.includes(linkId)
-  if (type === 'SPECIFIC') return linkId != null && linkId === locationId
+  if (effType === 'GROUP') return linkId != null && locationGroupIds.includes(linkId)
+  if (effType === 'SPECIFIC') return linkId != null && linkId === locationId
   return false
+}
+
+/**
+ * Okutma (kapsam) doğrulaması — operasyonun TANIMLI statü/lokasyon kurallarına uyuyor mu?
+ * Movement'taki non-scope kontrollerin (statü-geçiş + lokasyon-kapsamı) okutma-zamanı eşi; böylece
+ * yanlış lokasyon/statüden okutma anında reddedilir (eskiden yalnız complete'te, scope yolu ise atlıyordu).
+ * Döner: hata mesajı (uyumsuzsa) | null (uygun). Kural TANIMLI DEĞİLSE o boyut serbesttir.
+ */
+export async function validateScopeAgainstOperation(
+  client: Prisma.TransactionClient,
+  companyId: number,
+  op: { id: number; direction: 'INBOUND' | 'OUTBOUND' | 'INTERNAL' | 'COUNT'; qualityControl: boolean },
+  ctx: { partnerId: number | null; partnerGroupId: number | null; productId: number; productGroupId: number | null },
+  scope: { sourceLocationId: number | null; targetLocationId: number | null; sourceStatusId: number | null; targetStatusId: number | null },
+): Promise<string | null> {
+  const dir = op.direction
+  // Statü uyumu: operasyonda geçiş tanımlıysa okutulan statü uygun olmalı (INBOUND+kalite kontrol → karantina zorlandığı için atlanır)
+  const transitions = await client.tBLOPERATIONTYPESTATUS.findMany({ where: { operationTypeId: op.id, companyId } })
+  if (transitions.length > 0 && !(dir === 'INBOUND' && op.qualityControl)) {
+    const valid =
+      dir === 'INBOUND' ? transitions.some((t) => t.targetStatusId === scope.targetStatusId)
+        : dir === 'OUTBOUND' ? transitions.some((t) => t.sourceStatusId === scope.sourceStatusId)
+          : transitions.some((t) => t.sourceStatusId === scope.sourceStatusId && t.targetStatusId === scope.targetStatusId)
+    if (!valid) return 'Statü uyumsuz — okutulan statü bu operasyon tanımında yok'
+  }
+  // Lokasyon uyumu: kapsamı (cari+malzeme) eşleşen lokasyon kuralı varsa okutulan lokasyon izinli listede olmalı
+  const locationRules = await client.tBLOPERATIONTYPELOCATION.findMany({ where: { operationTypeId: op.id, companyId } })
+  if (locationRules.length > 0) {
+    const scoped = locationRules.filter((r) =>
+      cariScopeMatches(r.cariLinkType as Scope, r.cariLinkId, ctx.partnerId, ctx.partnerGroupId) &&
+      materialScopeMatches(r.materialLinkType as Scope, r.materialLinkId, ctx.productId, ctx.productGroupId),
+    )
+    if (scoped.length > 0) {
+      if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
+        const groups = scope.sourceLocationId != null
+          ? (await client.tBLLOCATIONGROUPLINK.findMany({ where: { companyId, locationId: scope.sourceLocationId }, select: { locationGroupId: true } })).map((g) => g.locationGroupId)
+          : []
+        if (!scoped.some((r) => locationScopeMatches(r.sourceLinkType as Scope, r.sourceLocationId, scope.sourceLocationId, groups))) {
+          return 'Lokasyon uyumsuz — kaynak lokasyon bu operasyonda okutulamaz'
+        }
+      }
+      if (dir === 'INBOUND' || dir === 'INTERNAL') {
+        const groups = scope.targetLocationId != null
+          ? (await client.tBLLOCATIONGROUPLINK.findMany({ where: { companyId, locationId: scope.targetLocationId }, select: { locationGroupId: true } })).map((g) => g.locationGroupId)
+          : []
+        if (!scoped.some((r) => locationScopeMatches(r.targetLinkType as Scope, r.targetLocationId, scope.targetLocationId, groups))) {
+          return 'Lokasyon uyumsuz — hedef lokasyon bu operasyonda okutulamaz'
+        }
+      }
+    }
+  }
+  return null
 }
 
 // Giriş/Çıkış koşulu kontrol tipi — SSP yerine yerleşik kontroller
@@ -89,7 +143,7 @@ interface MoveCtx {
  * Yoksa ve delta>0 ise yeni satır açar; delta<0 ve satır yoksa/yetersizse hata.
  * Her başarılı değişim hareket defterine (ledger) işaretli qtyDelta ile yazılır.
  */
-async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null) {
+async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null, productionDate?: Date | null) {
   const existing = await tx.tBLSTOCK.findFirst({ where: key })
 
   if (existing) {
@@ -109,7 +163,7 @@ async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.
         `Stok bulunamadı (lokasyon ${key.locationId}, ürün ${key.productId}, statü ${key.statusId}) — çıkış yapılamaz`,
       )
     }
-    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta, ...(expiryDate ? { expiryDate } : {}) } })
+    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta, ...(expiryDate ? { expiryDate } : {}), ...(productionDate ? { productionDate } : {}) } })
   }
 
   // Hareket defteri (legacy TBLSBLOGBELGE) — append-only, stok değişimiyle aynı transaction
@@ -250,7 +304,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       ...exitParams.map((p) => ({ id: p.id, dir: 'EXIT' as const, cariLinkType: p.cariLinkType as Scope, cariLinkId: p.cariLinkId, materialLinkType: p.materialLinkType as Scope, materialLinkId: p.materialLinkId, controlType: p.controlType as CtrlType, conditionBreakAllowed: p.conditionBreakAllowed, exclude: p.exclude, controlFieldName: p.controlFieldId != null ? (ctrlFieldMap.get(p.controlFieldId) ?? null) : null, dayCount: p.dayCount })),
     ]
     // Operasyon ↔ tolerans: kapsamı eşleşen kural + satırda referenceQty varsa miktar tolerans bandında olmalı
-    const toleranceRules = await tx.tBLOPERATIONTYPETOLERANCE.findMany({ where: { operationTypeId: op.id, companyId: doc.companyId, isActive: true } })
+    const toleranceRules = await tx.tBLOPERATIONTYPETOLERANCE.findMany({ where: { operationTypeId: op.id, companyId: doc.companyId, isActive: true }, include: { details: true } })
     // Directed putaway: ürün başına önerilen lokasyonlar (yönlendirme kuralı varsa hedef bu listede olmalı) — ürün bazında cache
     const putawayCache = new Map<number, Set<number>>()
     // Koşul kırma geçerli mi? Şifre + neden birlikte gerekli; şifre aktif kırma-şifresi tablosunda (cari null veya belge carisi) olmalı
@@ -278,6 +332,15 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           if (blocked) throw new MovementError(`Satır ${line.lineNo}: ürün (${product?.code}) bu operasyonda yasaklı`)
         }
 
+        // Kontrollü operasyon (Kontrollü/Referans Kontrollü): satır OKUTMA (toplama) ile tamamlanmadan onaylanamaz.
+        // Kontrolsüz'de serbest (planlanan miktar doğrudan işlenir). → "detayları toplamadan onay" engellenir.
+        if (op.controlMode !== 'UNCONTROLLED') {
+          const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+          if (collected.lt(line.quantity)) {
+            throw new MovementError(`Satır ${line.lineNo}: kontrollü operasyon — toplama tamamlanmadan onaylanamaz (toplanan ${collected.toString()} / ${line.quantity.toString()}, okutma gerekli)`)
+          }
+        }
+
         // ── KAPSAM (okutma) katmanı — satırda scope varsa: her scope = bir fiili hareket (legacy DETAY→N KAPSAM) ──
         // Scope'ta loc/statü/palet/batch/seri/cari/PO scope'tan gelir. Satır-seviyesi alan validasyonları (batch/seri/
         // statü-geçiş/koşul/tolerans) scope yolunda atlanır — scope kaynak gerçektir (MVP; tam per-scope validasyon: follow-up).
@@ -297,7 +360,9 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
             if (dir === 'INBOUND' || dir === 'INTERNAL') {
               if (sc.targetLocationId == null || sc.targetStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: hedef lokasyon/statü gerekli`)
               await enforceCapacity(tx, doc.companyId, sc.targetLocationId, line.productId, sc.quantity, line.lineNo)
-              await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }, sc.unitId, sc.quantity, moveCtx)
+              // toplamada okutulan üretim/SKT stok'a taşınır (yoksa INBOUND'da ürün raf ömründen türetilir)
+              const scExpiry = sc.expiryDate ?? (dir === 'INBOUND' && product?.shelfLifeDays ? new Date(Date.now() + product.shelfLifeDays * 86400000) : null)
+              await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }, sc.unitId, sc.quantity, moveCtx, scExpiry, sc.productionDate)
             }
             collected = collected.add(sc.quantity)
           }
@@ -428,18 +493,25 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           }
         }
 
-        // Operasyon Toleransı: referenceQty varsa miktar, tolerans bandı (± yüzde + ± mutlak) dışındaysa bloke
+        // Operasyon Toleransı: referenceQty varsa miktar, satır biriminin alt/üst yüzde bandı dışındaysa bloke
         if (toleranceRules.length > 0 && line.referenceQty != null) {
           const rule = toleranceRules.find((r) =>
             cariScopeMatches(r.cariLinkType as Scope, r.cariLinkId, doc.partnerId, docPartnerGroupId) &&
             materialScopeMatches(r.materialLinkType as Scope, r.materialLinkId, line.productId, product?.productGroupId ?? null))
-          if (rule && (rule.tolerancePercent != null || rule.toleranceQty != null)) {
+          if (rule && rule.details.length > 0) {
             const ref = line.referenceQty
-            let allowed = new Prisma.Decimal(0)
-            if (rule.tolerancePercent != null) allowed = allowed.add(ref.abs().mul(rule.tolerancePercent).div(100))
-            if (rule.toleranceQty != null && rule.toleranceQty.greaterThan(allowed)) allowed = rule.toleranceQty
-            if (line.quantity.sub(ref).abs().greaterThan(allowed)) {
-              throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referans (${ref}) toleransı dışında (izin ±${allowed})`)
+            const refAbs = ref.abs()
+            // Satırın birimine ait detayı seç (kg %10, adet %15 gibi birim-bazlı); birim eşleşmesi yoksa birimsiz (genel) detaya düş
+            const detail = rule.details.find((d) => d.unitId === line.unitId) ?? rule.details.find((d) => d.unitId == null)
+            if (detail) {
+              // Alt/üst izin = referansın yüzdesi (alt %5 → ref'in %5'i kadar eksik, üst %10 → %10 fazla kabul)
+              const lowerAllowed = detail.lowerPercent == null ? null : refAbs.mul(detail.lowerPercent).div(100)
+              const upperAllowed = detail.upperPercent == null ? null : refAbs.mul(detail.upperPercent).div(100)
+              const diff = line.quantity.sub(ref) // + fazla, − eksik
+              if (lowerAllowed != null && diff.lessThan(lowerAllowed.negated()))
+                throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referansın (${ref}) ALT toleransı dışında (izin −%${detail.lowerPercent})`)
+              if (upperAllowed != null && diff.greaterThan(upperAllowed))
+                throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referansın (${ref}) ÜST toleransı dışında (izin +%${detail.upperPercent})`)
             }
           }
         }
@@ -577,9 +649,11 @@ export async function reverseDocument(documentId: number) {
       }
     }
 
+    // Onay İptal: stok geri alındı → belge DRAFT'a döner (terminal CANCELLED değil) → düzeltilip/toplanıp yeniden onaylanabilir.
+    // completedAt temizlenir; okutmalar (scope) KORUNUR (collectedQty duruyor → tekrar onaya hazır).
     return tx.tBLDOCUMENT.update({
       where: { id: documentId },
-      data: { status: 'CANCELLED' },
+      data: { status: 'DRAFT', completedAt: null },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
   })
