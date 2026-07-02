@@ -11,7 +11,8 @@ export interface DetailAction {
 export const DETAIL_ACTIONS: Record<string, DetailAction[]> = {
   documents: [
     { action: 'start-picking', label: 'Toplamaya Başla', when: ['DRAFT'] }, // Bekliyor → Toplanıyor
-    { action: 'confirm', label: 'Onaya Gönder', when: ['DRAFT'] }, // → Onay Bekliyor
+    { action: 'confirm', label: 'Onaya Gönder', when: ['DRAFT'] }, // → Onay Bekliyor (eksik toplamada engellenir)
+    { action: 'split', label: 'Böl', when: ['DRAFT'] }, // toplanan kısmı yeni belgeye ayır (eksik toplamada)
     { action: 'complete', label: 'Onayla (stok işle)', when: ['CONFIRMED'] }, // → Onaylandı
     { action: 'cancel', label: 'İptal', when: ['DRAFT', 'CONFIRMED'], danger: true },
     { action: 'reverse', label: 'Onay İptal', when: ['COMPLETED'], danger: true }, // stok geri al + Bekliyor'a dön (yeniden onaylanabilir)

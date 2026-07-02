@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { firstBadRef } from '../lib/refGuard.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 
 const createSchema = z.object({
@@ -83,6 +84,12 @@ export async function productRoutes(app: FastifyInstance) {
     }
     const companyId = getCompanyId(request)
     const { facilities, ...rest } = parsed.data
+    // FK'ler bu firmaya ait mi (çapraz-firma izolasyon)
+    const bad = await firstBadRef(companyId, [
+      ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
+      ['ürün tipi', 'productType', rest.productTypeId], ['detay tipi', 'productDetailType', rest.detailTypeId],
+    ])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const facIds = await validFacilityIds(companyId, facilities)
     // Raf ömrü takibi artık ayrı bir kutu değil: gün sayısı girildiyse (>0) takip açık sayılır.
     const shelfLifeControl = (rest.shelfLifeDays ?? 0) > 0
@@ -97,7 +104,7 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: 'Product code already exists' })
       }
       if (code === 'P2003') {
-        return reply.code(400).send({ error: 'Unit does not exist' })
+        return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
       }
       throw err
     }
@@ -111,6 +118,12 @@ export async function productRoutes(app: FastifyInstance) {
     const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Product not found' })
     const { facilities, ...rest } = parsed.data
+    // FK'ler ürünün firmasına ait mi (çapraz-firma izolasyon; og_company değil)
+    const bad = await firstBadRef(existing.companyId, [
+      ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
+      ['ürün tipi', 'productType', rest.productTypeId], ['detay tipi', 'productDetailType', rest.detailTypeId],
+    ])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const data: Record<string, unknown> = { ...rest }
     // Gün sayısı bu patch'te geldiyse, raf ömrü takibini gün>0'a göre türet.
     if (rest.shelfLifeDays !== undefined) data.shelfLifeControl = (rest.shelfLifeDays ?? 0) > 0
@@ -123,7 +136,7 @@ export async function productRoutes(app: FastifyInstance) {
       const product = await prisma.tBLPRODUCT.update({ where: { id }, data, include: { unit: true, facilities: { select: { facilityId: true } } } })
       return product
     } catch (err) {
-      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Unit does not exist' })
+      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
       throw err
     }
   })

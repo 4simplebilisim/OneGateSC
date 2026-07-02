@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
+import { seedReports } from '../lib/reportSeed.js'
 
 // Firma (tenant) yönetimi. Okuma: super-admin tümü, normal admin yalnız kendi firması.
 // Yazma (oluştur/düzenle/sil): YALNIZ super-admin — firmalar cross-tenant'tır.
@@ -44,6 +45,7 @@ export async function companyRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     try {
       const row = await prisma.tBLCOMPANY.create({ data: parsed.data, select })
+      await seedReports(row.id) // yeni firmaya kanonik raporları (Rapor Merkezi) seed'le
       return reply.code(201).send(row)
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Bu firma kodu zaten kullanımda' })

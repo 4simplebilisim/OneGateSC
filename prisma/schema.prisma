@@ -1563,6 +1563,14 @@ model TBLSTOCKCOUNT {
   status      CountStatus @default(DRAFT)
   countDate   DateTime    @default(now())
   note        String?     @db.VarChar(500)
+  // Kapsam kısıtları (StokBar Sayım Belge — Bağlantı Tipi: Hepsi/Grup/Kod)
+  materialLinkType LinkScope? // Malzeme Bağlantı Tipi — ALL(Hepsi)/GROUP(Grup)/SPECIFIC(Kod)
+  materialLinkId   Int?       // GROUP→ürün grubu, SPECIFIC→ürün
+  userLinkType     LinkScope? // Kullanıcı Bağlantı Tipi
+  userLinkId       Int?       // GROUP→kullanıcı grubu, SPECIFIC→kullanıcı
+  // Sayım Parametreleri (TBLCOUNTPARAMETER) — sayım operasyonundan çözülür
+  operationTypeId  Int?       // Sayım Operasyonu (parametre kaynağı)
+  equalize         Boolean  @default(true) // Eşitleme — false ise tamamlamada stok DÜZELTİLMEZ (yalnız fark raporu)
   createdById Int
   completedAt DateTime?
   createdAt   DateTime    @default(now())

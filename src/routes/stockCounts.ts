@@ -3,14 +3,22 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, countDifferences, CountingError } from '../lib/counting.js'
+import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 
+const scope = z.enum(['ALL', 'GROUP', 'SPECIFIC'])
 const createSchema = z.object({
   countNo: z.string().min(1).max(40),
   warehouseId: z.number().int().positive(),
   countType: z.string().max(20).optional(),
+  operationTypeId: z.number().int().positive().optional(), // Sayım Operasyonu → parametreler (eşitleme vb.)
   locationId: z.number().int().positive().optional(), // kapsam: belirli lokasyon
-  productId: z.number().int().positive().optional(), // kapsam: belirli ürün
+  productId: z.number().int().positive().optional(), // kapsam: belirli ürün (geriye dönük)
   note: z.string().max(500).optional(),
+  // Bağlantı Tipi kapsamı (StokBar Sayım Belge): Malzeme + Kullanıcı → Hepsi/Grup/Kod
+  materialLinkType: scope.optional(),
+  materialLinkId: z.number().int().positive().optional(), // GROUP→ürün grubu, SPECIFIC→ürün
+  userLinkType: scope.optional(),
+  userLinkId: z.number().int().positive().optional(), // GROUP→kullanıcı grubu, SPECIFIC→kullanıcı
 })
 
 const idOf = (request: FastifyRequest) => Number((request.params as { id: string }).id)
@@ -40,9 +48,27 @@ export async function stockCountRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const d = parsed.data
+    // Bağlantı Tipi seçiliyse (Kod/Grup) hedef id zorunlu
+    if ((d.materialLinkType === 'SPECIFIC' || d.materialLinkType === 'GROUP') && !d.materialLinkId)
+      return reply.code(400).send({ error: 'Malzeme Bağlantı Tipi Kod/Grup iken Ürün/Ürün Grubu zorunlu' })
+    if ((d.userLinkType === 'SPECIFIC' || d.userLinkType === 'GROUP') && !d.userLinkId)
+      return reply.code(400).send({ error: 'Kullanıcı Bağlantı Tipi Kod/Grup iken Kullanıcı/Kullanıcı Grubu zorunlu' })
+    // Çapraz-firma FK: depo + kapsam referansları aynı firmaya ait olmalı (Kod→ürün/kullanıcı, Grup→grup)
+    const refs: [string, RefModel, number | null | undefined][] = [['Depo', 'warehouse', d.warehouseId], ['Sayım Operasyonu', 'operationType', d.operationTypeId]]
+    if (d.materialLinkType === 'SPECIFIC') refs.push(['Ürün', 'product', d.materialLinkId])
+    if (d.materialLinkType === 'GROUP') refs.push(['Ürün Grubu', 'productGroup', d.materialLinkId])
+    if (d.userLinkType === 'SPECIFIC') refs.push(['Kullanıcı', 'user', d.userLinkId])
+    if (d.userLinkType === 'GROUP') refs.push(['Kullanıcı Grubu', 'userGroup', d.userLinkId])
+    const bad = await firstBadRef(companyId, refs)
+    if (bad) return reply.code(400).send({ error: `${bad}: başka firmaya ait veya geçersiz` })
     try {
-      const { warehouseId, countNo, note, countType, locationId, productId } = parsed.data
-      const count = await createCount(getCompanyId(request), warehouseId, countNo, request.user.sub, { note, countType, locationId, productId })
+      const count = await createCount(companyId, d.warehouseId, d.countNo, request.user.sub, {
+        note: d.note, countType: d.countType, operationTypeId: d.operationTypeId, locationId: d.locationId, productId: d.productId,
+        materialLinkType: d.materialLinkType, materialLinkId: d.materialLinkId,
+        userLinkType: d.userLinkType, userLinkId: d.userLinkId,
+      })
       return reply.code(201).send(count)
     } catch (err) {
       if (err instanceof CountingError) return reply.code(409).send({ error: err.message })

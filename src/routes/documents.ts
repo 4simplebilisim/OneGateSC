@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
-import { completeDocument, reverseDocument, MovementError } from '../lib/movement.js'
+import { completeDocument, reverseDocument, splitDocument, collectionShortfall, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
@@ -302,6 +302,9 @@ export async function documentRoutes(app: FastifyInstance) {
     if (doc.status !== 'DRAFT') {
       return reply.code(409).send({ error: `Sadece DRAFT belge onaya gönderilebilir (mevcut: ${doc.status})` })
     }
+    // Kontrollü op: her satır TAM toplanmadan onaya gönderilemez (eksikse tamamla ya da BÖL)
+    const short = await collectionShortfall(prisma, id)
+    if (short) return reply.code(409).send({ error: `Satır ${short.lineNo}: toplama eksik (${short.collected}/${short.quantity}) — onaya gönderilemez. Tamamlayın ya da belgeyi bölün (Böl).` })
     await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
     await refreshDocStatus(prisma, id, { source: 'confirm', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → OBK
     return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
@@ -350,6 +353,21 @@ export async function documentRoutes(app: FastifyInstance) {
       const rev = await reverseDocument(id) // stok geri + DRAFT
       await refreshDocStatus(prisma, id, { source: 'reverse', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → Bekliyor/Toplanıyor/Onay Bekliyor (toplama durumuna göre)
       return rev
+    } catch (err) {
+      if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
+      throw err
+    }
+  })
+
+  // Böl — toplanan kısmı yeni belgeye ayır (eksik toplamada onaya gitmeden önce). Kalan orijinalde (Bekliyor) durur.
+  app.post('/:id/split', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    try {
+      const result = await splitDocument(id, Number((request.user as { sub?: number | string })?.sub) || undefined)
+      return reply.code(201).send(result)
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err

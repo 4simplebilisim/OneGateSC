@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { suggestPutawayLocations } from './routing.js'
 import { writeLedger } from './ledger.js'
+import { refreshDocStatus } from './documentStatus.js'
+import { nextSequence } from './sequence.js'
 
 /** Hareket motoru hatası — route'larda 409'a map'lenir. */
 export class MovementError extends Error {
@@ -88,6 +90,24 @@ export async function validateScopeAgainstOperation(
         }
       }
     }
+  }
+  return null
+}
+
+/**
+ * Toplama eksiği — KONTROLLÜ operasyonda her satır tam toplanmalı (Σ okutma ≥ miktar).
+ * İlk eksik satırı döner (yoksa null). Kontrolsüz op / stok-etkisiz → her zaman null (toplama gerekmez).
+ * "satır bazlı her şey toplanmalı, emin ol öyle onaya gönder" kuralı — confirm + complete + böl kararı için.
+ */
+export async function collectionShortfall(client: Prisma.TransactionClient, documentId: number): Promise<{ lineNo: number; collected: string; quantity: string } | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    include: { operationType: { select: { controlMode: true, affectsStock: true } }, lines: { orderBy: { lineNo: 'asc' }, include: { scopes: { select: { quantity: true } } } } },
+  })
+  if (!doc || !doc.operationType.affectsStock || doc.operationType.controlMode === 'UNCONTROLLED') return null
+  for (const line of doc.lines) {
+    const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+    if (collected.lt(line.quantity)) return { lineNo: line.lineNo, collected: collected.toString(), quantity: line.quantity.toString() }
   }
   return null
 }
@@ -656,5 +676,55 @@ export async function reverseDocument(documentId: number) {
       data: { status: 'DRAFT', completedAt: null },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
+  })
+}
+
+/**
+ * Belge BÖL — toplanan kısmı YENİ belgeye ayırır (tam-toplanmış → onaya hazır), toplanmamış kalan orijinalde durur (Bekliyor).
+ * Kısmi satır: toplanan miktar → yeni satır (okutmalar/scope taşınır), kalan miktar → orijinal (collectedQty=0).
+ * Tam-toplanan satır tamamen taşınır; hiç-toplanmamış satır orijinalde kalır. "Eksik toplamada bölmeden onaya gidilemez" kuralı.
+ * Yalnız DRAFT belge. Döner: { originalId, newDocumentId, newDocumentNo }.
+ */
+export async function splitDocument(documentId: number, userId?: number) {
+  return prisma.$transaction(async (tx) => {
+    const doc = await tx.tBLDOCUMENT.findUniqueOrThrow({
+      where: { id: documentId },
+      include: { operationType: { include: { sequence: true } }, lines: { orderBy: { lineNo: 'asc' }, include: { scopes: true } } },
+    })
+    if (doc.status !== 'DRAFT') throw new MovementError('Yalnız bekleyen (DRAFT) belge bölünebilir')
+    const collectedOf = (line: (typeof doc.lines)[number]) => line.scopes.reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+    if (!doc.lines.some((l) => collectedOf(l).gt(0))) throw new MovementError('Toplanmış satır yok — bölünecek bir şey yok')
+    if (doc.lines.every((l) => collectedOf(l).gte(l.quantity))) throw new MovementError('Tüm satırlar toplanmış — bölmeye gerek yok, doğrudan onaya gönderin')
+
+    const newNo = doc.operationType.sequence ? (await nextSequence(doc.companyId, doc.operationType.sequence.code)).formatted : `${doc.documentNo}-B`
+    const newDoc = await tx.tBLDOCUMENT.create({
+      data: {
+        companyId: doc.companyId, documentNo: newNo, operationTypeId: doc.operationTypeId, warehouseId: doc.warehouseId,
+        partnerId: doc.partnerId, reasonId: doc.reasonId, createdById: userId ?? doc.createdById, documentStatusId: doc.documentStatusId,
+        note: doc.note ? `${doc.note} · bölündü← ${doc.documentNo}` : `Bölündü ← ${doc.documentNo}`,
+      },
+    })
+    let newLineNo = 0
+    for (const line of doc.lines) {
+      const collected = collectedOf(line)
+      if (collected.lte(0)) continue // toplanmamış → orijinalde kalır
+      newLineNo++
+      const newLine = await tx.tBLDOCUMENTLINE.create({
+        data: {
+          companyId: doc.companyId, documentId: newDoc.id, lineNo: newLineNo,
+          productId: line.productId, unitId: line.unitId, quantity: collected, collectedQty: collected,
+          sourceLocationId: line.sourceLocationId, sourceStatusId: line.sourceStatusId,
+          targetLocationId: line.targetLocationId, targetStatusId: line.targetStatusId,
+          batchNo: line.batchNo, serialNo: line.serialNo, palletId: line.palletId,
+        },
+      })
+      await tx.tBLDOCUMENTLINESCOPE.updateMany({ where: { documentLineId: line.id }, data: { documentLineId: newLine.id } }) // okutmalar yeni satıra
+      const remaining = line.quantity.sub(collected)
+      if (remaining.lte(0)) await tx.tBLDOCUMENTLINE.delete({ where: { id: line.id } }) // tamamı taşındı
+      else await tx.tBLDOCUMENTLINE.update({ where: { id: line.id }, data: { quantity: remaining, collectedQty: new Prisma.Decimal(0) } })
+    }
+    await refreshDocStatus(tx, newDoc.id) // toplanan kısım → Onay Bekliyor (tam)
+    await refreshDocStatus(tx, documentId) // kalan → Bekliyor (toplanmamış)
+    return { originalId: documentId, newDocumentId: newDoc.id, newDocumentNo: newNo }
   })
 }

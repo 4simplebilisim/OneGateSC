@@ -53,7 +53,12 @@ export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateS
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
       const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!existing) return reply.code(404).send({ error: notFound })
-      return delegate.update({ where: { id }, data: parsed.data })
+      try {
+        return await delegate.update({ where: { id }, data: parsed.data })
+      } catch (err) {
+        if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
+        throw err
+      }
     })
 
     app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

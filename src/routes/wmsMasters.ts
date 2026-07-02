@@ -2,6 +2,10 @@ import type { FastifyInstance } from 'fastify'
 import { z, type ZodTypeAny } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { firstBadRef, type RefModel } from '../lib/refGuard.js'
+
+// Master şemasındaki FK alanı → [etiket, model, alan-adı] (çapraz-firma doğrulama için)
+type MasterRef = [label: string, model: RefModel, field: string]
 
 interface MasterDelegate {
   findMany(args: unknown): Promise<unknown[]>
@@ -12,7 +16,10 @@ interface MasterDelegate {
 }
 
 /** Basit tanım tablosu (code+name+...) için ortak CRUD route'ları. */
-function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, dupMsg: string, notFound: string) {
+function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, dupMsg: string, notFound: string, refs: MasterRef[] = []) {
+  // FK'ler bu firmaya ait mi (çapraz-firma izolasyon) — ilk hatalı alan etiketi
+  const badRef = (companyId: number, data: Record<string, unknown>) =>
+    firstBadRef(companyId, refs.map(([label, model, field]) => [label, model, data[field] as number | null | undefined]))
   return async function (app: FastifyInstance) {
     app.get('/', async (request) =>
       delegate.findMany({ where: { ...companyListFilter(request) }, orderBy: { code: 'asc' } }),
@@ -29,11 +36,16 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
     app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
       const parsed = createSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+      const companyId = getCompanyId(request)
+      const bad = await badRef(companyId, parsed.data as Record<string, unknown>)
+      if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
       try {
-        const row = await delegate.create({ data: { ...(parsed.data as Record<string, unknown>), companyId: getCompanyId(request) } })
+        const row = await delegate.create({ data: { ...(parsed.data as Record<string, unknown>), companyId } })
         return reply.code(201).send(row)
       } catch (err) {
-        if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: dupMsg })
+        const code = (err as { code?: string }).code
+        if (code === 'P2002') return reply.code(409).send({ error: dupMsg })
+        if (code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
         throw err
       }
     })
@@ -43,9 +55,16 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
       if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
       const parsed = updateSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-      const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
+      const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } }) as { companyId: number } | null
       if (!existing) return reply.code(404).send({ error: notFound })
-      return delegate.update({ where: { id }, data: parsed.data })
+      const bad = await badRef(existing.companyId, parsed.data as Record<string, unknown>)
+      if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
+      try {
+        return await delegate.update({ where: { id }, data: parsed.data })
+      } catch (err) {
+        if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
+        throw err
+      }
     })
 
     app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
@@ -65,7 +84,7 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
 
 // Neden (legacy TBLSBNEDEN)
 const reason = z.object({ code: z.string().min(1).max(10), name: z.string().min(1).max(100), facilityId: z.number().int().positive().nullable().optional(), isActive: z.boolean().optional() })
-export const reasonRoutes = masterRoutes(prisma.tBLREASON as unknown as MasterDelegate, reason, reason.partial().omit({ code: true }), 'Neden kodu zaten var', 'Reason not found')
+export const reasonRoutes = masterRoutes(prisma.tBLREASON as unknown as MasterDelegate, reason, reason.partial().omit({ code: true }), 'Neden kodu zaten var', 'Reason not found', [['tesis', 'facility', 'facilityId']])
 
 // Lokasyon grubu (legacy TBLSBLOKASYONGRUP)
 const locGroup = z.object({ code: z.string().min(1).max(16), name: z.string().min(1).max(100), isWorkOrderGroup: z.boolean().optional(), isActive: z.boolean().optional() })
@@ -119,7 +138,7 @@ const codeName60Upd = codeName60.partial().omit({ code: true })
 // Bölge: code+name + Tesis (facilityId) — legacy TBLMSDBOLGE.LNGDISTKOD
 const region = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(60), facilityId: z.number().int().positive().nullable().optional(), isActive: z.boolean().optional() })
 const regionUpd = region.partial().omit({ code: true })
-export const regionRoutes = masterRoutes(prisma.tBLREGION as unknown as MasterDelegate, region, regionUpd, 'Bölge kodu zaten var', 'Region not found')
+export const regionRoutes = masterRoutes(prisma.tBLREGION as unknown as MasterDelegate, region, regionUpd, 'Bölge kodu zaten var', 'Region not found', [['tesis', 'facility', 'facilityId']])
 export const partnerGroupRoutes = masterRoutes(prisma.tBLPARTNERGROUP as unknown as MasterDelegate, codeName60, codeName60Upd, 'Cari grup kodu zaten var', 'Partner group not found')
 
 // Statü (legacy TBLSBSTATU) — operasyon statü geçişleri bunu kullanır.

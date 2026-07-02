@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { areaBelongsToWarehouse } from '../lib/refGuard.js'
 
 const locationTypes = ['SHELF', 'FLOOR', 'RECEIVING', 'SHIPPING', 'STAGING', 'QUARANTINE'] as const
 
@@ -38,6 +39,10 @@ export async function locationRoutes(app: FastifyInstance) {
     // facilityId (Tesis) depodan türetilir (firma>tesis>depo>alan>lokasyon hiyerarşisi)
     const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: parsed.data.warehouseId, companyId } })
     if (!wh) return reply.code(400).send({ error: 'Geçersiz depo' })
+    // Alan verilmişse: bu firmaya VE bu depoya ait olmalı (çapraz-firma + hiyerarşi tutarlılığı)
+    if (!(await areaBelongsToWarehouse(companyId, parsed.data.areaId, parsed.data.warehouseId))) {
+      return reply.code(400).send({ error: 'Geçersiz alan — bu depoya/firmaya ait değil' })
+    }
     try {
       const location = await prisma.tBLLOCATION.create({
         data: { ...parsed.data, companyId, facilityId: wh.facilityId },
@@ -75,6 +80,10 @@ export async function locationRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const existing = await prisma.tBLLOCATION.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Location not found' })
+    // Alan değişiyorsa: bu firmaya + lokasyonun deposuna ait olmalı (warehouseId update'te değişmez)
+    if (parsed.data.areaId != null && !(await areaBelongsToWarehouse(existing.companyId, parsed.data.areaId, existing.warehouseId))) {
+      return reply.code(400).send({ error: 'Geçersiz alan — bu depoya/firmaya ait değil' })
+    }
     try {
       return await prisma.tBLLOCATION.update({ where: { id }, data: parsed.data })
     } catch (err) {

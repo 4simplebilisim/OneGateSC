@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { firstBadRef, partnerParentIssue } from '../lib/refGuard.js'
 
 const partnerTypes = ['CUSTOMER', 'SUPPLIER', 'BOTH'] as const
 
@@ -106,6 +107,9 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     }
     const companyId = getCompanyId(request)
     const { facilities, ...rest } = parsed.data
+    // FK'ler bu firmaya ait mi (çapraz-firma izolasyon)
+    const bad = await firstBadRef(companyId, [['cari grubu', 'partnerGroup', rest.partnerGroupId], ['bölge', 'region', rest.regionId], ['üst cari', 'partner', rest.parentId]])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const facIds = await validFacilityIds(companyId, facilities)
     try {
       const partner = await prisma.tBLBUSINESSPARTNER.create({
@@ -113,9 +117,9 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
       })
       return reply.code(201).send(partner)
     } catch (err) {
-      if ((err as { code?: string }).code === 'P2002') {
-        return reply.code(409).send({ error: 'Partner code already exists' })
-      }
+      const code = (err as { code?: string }).code
+      if (code === 'P2002') return reply.code(409).send({ error: 'Partner code already exists' })
+      if (code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (cari grubu/bölge/üst cari)' })
       throw err
     }
   })
@@ -128,12 +132,26 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     const existing = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Partner not found' })
     const { facilities, ...rest } = parsed.data
+    // FK'ler cari'nin firmasına ait mi (çapraz-firma izolasyon; og_company değil)
+    const bad = await firstBadRef(existing.companyId, [['cari grubu', 'partnerGroup', rest.partnerGroupId], ['bölge', 'region', rest.regionId], ['üst cari', 'partner', rest.parentId]])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
+    // Zincir (parentId): self-referans / döngü engeli
+    if (rest.parentId !== undefined) {
+      const issue = await partnerParentIssue(existing.companyId, id, rest.parentId)
+      if (issue === 'self') return reply.code(400).send({ error: 'Cari kendisini üst cari (zincir) yapamaz' })
+      if (issue === 'cycle') return reply.code(400).send({ error: 'Zincir döngüsü — bu üst cari zaten bu carinin altında' })
+    }
     const data: Record<string, unknown> = { ...rest }
     if (facilities) {
       // Cross-company düzenlemede tesisler düzenlenen cari'nin firmasına göre doğrulanır (og_company değil)
       const facIds = await validFacilityIds(existing.companyId, facilities)
       data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId: existing.companyId, facilityId: fid })) }
     }
-    return prisma.tBLBUSINESSPARTNER.update({ where: { id }, data, include: { facilities: { select: { facilityId: true } } } })
+    try {
+      return await prisma.tBLBUSINESSPARTNER.update({ where: { id }, data, include: { facilities: { select: { facilityId: true } } } })
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (cari grubu/bölge/üst cari)' })
+      throw err
+    }
   })
 }
