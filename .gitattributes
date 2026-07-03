@@ -1,0 +1,2 @@
+# Shell scriptleri sunucuda LF olmali (CRLF bash'i kirar: $'\r': command not found)
+*.sh text eol=lf
