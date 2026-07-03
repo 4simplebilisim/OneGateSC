@@ -22,7 +22,14 @@ npm run dev
 # UI :5173
 cd web && npm run dev
 ```
-Giriş: `admin/admin123` (super) · `operator/operator123` · `viewer/viewer123`
+Giriş: `admin/admin123` (super) · `operator/operator123` · `viewer/viewer123` (yalnız LOCAL — canlıda rotasyonlu)
+
+## Canlı ortam (Hetzner) + yeni PC
+- **Canlı:** https://onegate.4simple.com.tr — `ssh hetzner` (root@178.104.102.17, paylaşımlı sunucu), kod `/opt/onegate-wms`, systemd `onegate-wms-api` (**:3010** — 3000-3006 başka uygulamaların), DB native PG16 **`onegate_wms`** (sunucudaki `onegate` DB'si BAŞKA sistem — dokunma).
+- **Deploy (tek komut):** `ssh hetzner "/opt/onegate-wms/scripts/deploy.sh"` — pull→ci→migrate+**generate**→build→restart→sağlık.
+- **Sırlar yalnız sunucuda** (chat/repo'ya yazma): `/root/.onegate_wms_dbpass` · `/root/.onegate_wms_users.txt` (canlı kullanıcı şifreleri) · `/opt/onegate-wms/.env`.
+- ⚠️ **Migration'lar taze DB'de sıfırdan OYNAMAZ** (erken migration'lar public-şema döneminden). Taze DB kurulumu = `prisma/baseline/baseline.sql` uygula (şema + `public._prisma_migrations` geçmişi) → `npm run seed`; sonrası normal `migrate deploy`. Prisma 7 geçmişi **public**'te arar.
+- **Yeni PC (dev):** clone → `cp .env.example .env` → `docker compose up -d` → `docker exec -i onegate-db psql -U onegate -d onegate < prisma/baseline/baseline.sql` (bash) → `npm i && npm run generate && npm run seed` → `npm run dev`. Deploy için Hetzner SSH anahtarı ayrıca gerekir (yeni pubkey'i sunucu `authorized_keys`'e ekle).
 
 | Komut (kök) | İş |
 |---|---|
