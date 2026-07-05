@@ -259,6 +259,37 @@ if (cmp3.d?.referenceDocument?.id) {
   ok(Number(dRef2.lines?.[0]?.quantity) === 4 && dRef2.referenceDocumentId === dR2.id, 'içerik okutulandan geldi (4) + referans link')
 }
 
+// ── S14: TOLERANS — kontrollüde plan üstü okutma YASAK; tolerans tanımlıysa alt/üst esner ──
+section('S14 — Tolerans: plan üstü okutma yasak; tanımlıysa alt/üst esner')
+// (a) tolerans TANIMSIZ kontrollü op: plan 5 → 6 okutma 400; 5 → 201; üstüne +1 → 400
+const dt1 = (await mkDoc(opGirK.id, [{ productId: PROD, unitId: UNIT, quantity: 5, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(dt1.id)
+const ov1 = await okut(dt1.lines[0].id, 6)
+ok(ov1.status === 400 && /Tolerans aşımı/i.test(ov1.d?.error || ''), 'tolerans tanımsız: 5 plana 6 okutma 400', ov1.d?.error?.slice(0, 55))
+ok((await okut(dt1.lines[0].id, 5)).status === 201, 'tam 5 okutma 201')
+ok((await okut(dt1.lines[0].id, 1)).status === 400, 'üstüne +1 okutma 400 (Σ plan aşar)')
+// (b) toleranslı op: master (Hepsi/Hepsi) + birim detayı (alt %20 / üst %20)
+const opTol = await findOrMakeOp('BLG-TOL', 'Toleranslı Giriş', 'INBOUND', 'CONTROLLED', { targetStatusId: STA })
+let tol = norm(await req('GET', '/api/operation-tolerances?pageSize=300').then(r => r.d)).find(t => t.operationTypeId === opTol.id && t.companyId === Number(CO))
+if (!tol) tol = (await req('POST', '/api/operation-tolerances', { operationTypeId: opTol.id, cariLinkType: 'ALL', materialLinkType: 'ALL' })).d
+const dets = norm(await req('GET', '/api/operation-tolerance-details?pageSize=300').then(r => r.d)).filter(d => d.toleranceId === tol.id)
+if (!dets.length) await req('POST', '/api/operation-tolerance-details', { toleranceId: tol.id, unitId: UNIT, lowerPercent: 20, upperPercent: 20 })
+// üst: plan 10 → 13 okutma 400 (limit 12); 12 → 201; onay + stok +12 (okutulan işlenir)
+const sT = await stockAt(LOC, STA)
+const dt2 = (await mkDoc(opTol.id, [{ productId: PROD, unitId: UNIT, quantity: 10, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(dt2.id)
+ok((await okut(dt2.lines[0].id, 13)).status === 400, 'üst tolerans: 13 okutma 400 (limit 12)')
+ok((await okut(dt2.lines[0].id, 12)).status === 201, '12 okutma 201 (=10×1.2 tam sınır)')
+await req('POST', `/api/documents/${dt2.id}/confirm`, {})
+ok((await req('POST', `/api/documents/${dt2.id}/complete`, {})).status === 200, 'onay geçti (üst tolerans içi)')
+ok((await stockAt(LOC, STA)) === sT + 12, 'stok +12 (okutulan gerçek işlendi)', `${sT}→${await stockAt(LOC, STA)}`)
+// alt: plan 10 → 8 okutma (min 10×0.8=8) → onay GEÇER; 7'lik ayrı belge → confirm 409
+const dt3 = (await mkDoc(opTol.id, [{ productId: PROD, unitId: UNIT, quantity: 10, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(dt3.id)
+await okut(dt3.lines[0].id, 8)
+ok((await req('POST', `/api/documents/${dt3.id}/confirm`, {})).status === 200, 'alt tolerans: 8/10 confirm GEÇER (min 8)')
+ok((await req('POST', `/api/documents/${dt3.id}/complete`, {})).status === 200, 'complete (8 işlenir)')
+const dt4 = (await mkDoc(opTol.id, [{ productId: PROD, unitId: UNIT, quantity: 10, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(dt4.id)
+await okut(dt4.lines[0].id, 7)
+ok((await req('POST', `/api/documents/${dt4.id}/confirm`, {})).status === 409, 'alt tolerans dışı: 7/10 confirm 409')
+
 // ── TEMİZLİK: test belgelerini iptal et (op'lar sabit kod, kalır) ──
 section('TEMİZLİK')
 for (const id of trash) { await cancel(id) }

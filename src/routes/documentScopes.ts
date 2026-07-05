@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { refreshDocStatus } from '../lib/documentStatus.js'
-import { validateScopeAgainstOperation } from '../lib/movement.js'
+import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '../lib/movement.js'
 import { firstBadRef } from '../lib/refGuard.js'
 
 // Sadece-tarih alanı (üretim/SKT): "YYYY-MM-DD" → UTC ÖĞLE Date (timezone gün-kayması önlenir; @db.Date günü korur)
@@ -121,9 +121,9 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       where: { id: documentLineId },
       select: {
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
-        batchNo: true, serialNo: true,
+        batchNo: true, serialNo: true, quantity: true,
         product: { select: { productGroupId: true } },
-        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true } } } },
+        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true } } } },
       },
     })
     // Okutulan (miras dahil) kaynak/hedef lokasyon+statü
@@ -139,9 +139,25 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       const partnerGroupId = partnerId
         ? (await prisma.tBLBUSINESSPARTNER.findUnique({ where: { id: partnerId }, select: { partnerGroupId: true } }))?.partnerGroupId ?? null
         : null
-      const vErr = await validateScopeAgainstOperation(prisma, companyId, ln.document.operationType,
-        { partnerId, partnerGroupId, productId: ln.productId, productGroupId: ln.product?.productGroupId ?? null }, eff)
+      const ctx = { partnerId, partnerGroupId, productId: ln.productId, productGroupId: ln.product?.productGroupId ?? null }
+      const vErr = await validateScopeAgainstOperation(prisma, companyId, ln.document.operationType, ctx, eff)
       if (vErr) return reply.code(400).send({ error: vErr })
+      // KONTROLLÜ/REFERANSLI toplama ÜST SINIRI: Σ okutma satır miktarını AŞAMAZ — üst tolerans tanımlıysa o kadar esner.
+      // (Kontrolsüzde sınır yok: plan yok, belge okutmayla dolar.)
+      if (ln.document.operationType.controlMode !== 'UNCONTROLLED') {
+        const agg = await prisma.tBLDOCUMENTLINESCOPE.aggregate({ where: { documentLineId }, _sum: { quantity: true } })
+        const current = agg._sum.quantity ?? new Prisma.Decimal(0)
+        const tolerances = await loadTolerances(prisma, companyId, ln.document.operationType.id)
+        const { upperPct } = pickTolerance(tolerances, ctx, scopeData.unitId)
+        const limit = ln.quantity.mul(new Prisma.Decimal(1).add(upperPct.div(100)))
+        const after = current.add(new Prisma.Decimal(scopeData.quantity))
+        if (after.gt(limit)) {
+          return reply.code(400).send({
+            error: `Tolerans aşımı: satır miktarı ${ln.quantity}, toplanan ${current} + okutma ${scopeData.quantity} = ${after} > üst sınır ${limit}` +
+              (upperPct.gt(0) ? ` (üst tolerans %${upperPct})` : ' (tolerans tanımsız — plan üstü okutma yapılamaz)'),
+          })
+        }
+      }
     }
     const created = await prisma.tBLDOCUMENTLINESCOPE.create({ data: {
       ...scopeData, documentLineId, companyId, scopeNo: (last?.scopeNo ?? 0) + 1,
@@ -167,6 +183,26 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     if (g) return reply.code(g.code).send({ error: g.error })
     // documentLineId/documentId/productId PATCH ile değiştirilemez (okutma satırına bağlıdır; taşıma = sil + yeniden okut)
     const { documentLineId: _l, documentId: _d, productId: _p, ...patch } = parsed.data
+    // Miktar artırılıyorsa üst sınır (satır miktarı + üst tolerans) kontrolü — POST'takiyle aynı kural
+    if (patch.quantity != null) {
+      const ln2 = await prisma.tBLDOCUMENTLINE.findUnique({
+        where: { id: sc.documentLineId },
+        select: {
+          quantity: true, productId: true, product: { select: { productGroupId: true } },
+          document: { select: { partnerId: true, partner: { select: { partnerGroupId: true } }, operationType: { select: { id: true, controlMode: true } } } },
+        },
+      })
+      if (ln2 && ln2.document.operationType.controlMode !== 'UNCONTROLLED') {
+        const agg = await prisma.tBLDOCUMENTLINESCOPE.aggregate({ where: { documentLineId: sc.documentLineId }, _sum: { quantity: true } })
+        const others = (agg._sum.quantity ?? new Prisma.Decimal(0)).sub(sc.quantity)
+        const tolerances = await loadTolerances(prisma, companyId, ln2.document.operationType.id)
+        const { upperPct } = pickTolerance(tolerances, { partnerId: ln2.document.partnerId, partnerGroupId: ln2.document.partner?.partnerGroupId ?? null, productId: ln2.productId, productGroupId: ln2.product?.productGroupId ?? null }, patch.unitId ?? sc.unitId)
+        const limit = ln2.quantity.mul(new Prisma.Decimal(1).add(upperPct.div(100)))
+        if (others.add(new Prisma.Decimal(patch.quantity)).gt(limit)) {
+          return reply.code(400).send({ error: `Tolerans aşımı: toplam okutma ${others.add(new Prisma.Decimal(patch.quantity))} > üst sınır ${limit}` })
+        }
+      }
+    }
     const updated = await prisma.tBLDOCUMENTLINESCOPE.update({ where: { id }, data: patch })
     await recomputeCollected(sc.documentLineId, Number((request.user as { sub?: number | string })?.sub) || null)
     return updated

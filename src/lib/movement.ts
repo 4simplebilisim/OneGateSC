@@ -94,20 +94,58 @@ export async function validateScopeAgainstOperation(
   return null
 }
 
+// ── Operasyon toleransı (TBLOPERATIONTYPETOLERANCE + birim detayı) ──
+// Kontrollü toplamada sınırlar: üst = miktar×(1+üst%), alt = miktar×(1−alt%). Tanım yoksa 0/0 (esneme yok).
+export type ToleranceRow = {
+  cariLinkType: string | null; cariLinkId: number | null
+  materialLinkType: string | null; materialLinkId: number | null
+  details: { unitId: number | null; lowerPercent: Prisma.Decimal | null; upperPercent: Prisma.Decimal | null }[]
+}
+export async function loadTolerances(client: Prisma.TransactionClient, companyId: number, operationTypeId: number): Promise<ToleranceRow[]> {
+  return client.tBLOPERATIONTYPETOLERANCE.findMany({
+    where: { companyId, operationTypeId, isActive: true },
+    select: { cariLinkType: true, cariLinkId: true, materialLinkType: true, materialLinkId: true, details: { select: { unitId: true, lowerPercent: true, upperPercent: true } } },
+  })
+}
+/** Cari+malzeme kapsamı eşleşen tolerans kaydının BİRİM detayından alt/üst yüzde (birim detayı yoksa birimsiz genel detay). */
+export function pickTolerance(
+  rows: ToleranceRow[],
+  ctx: { partnerId: number | null; partnerGroupId: number | null; productId: number; productGroupId: number | null },
+  unitId: number,
+): { lowerPct: Prisma.Decimal; upperPct: Prisma.Decimal } {
+  const zero = new Prisma.Decimal(0)
+  for (const t of rows) {
+    if (!cariScopeMatches(t.cariLinkType as Scope, t.cariLinkId, ctx.partnerId, ctx.partnerGroupId)) continue
+    if (!materialScopeMatches(t.materialLinkType as Scope, t.materialLinkId, ctx.productId, ctx.productGroupId)) continue
+    const det = t.details.find((d) => d.unitId === unitId) ?? t.details.find((d) => d.unitId == null)
+    if (det) return { lowerPct: det.lowerPercent ?? zero, upperPct: det.upperPercent ?? zero }
+  }
+  return { lowerPct: zero, upperPct: zero }
+}
+const pctBelow = (qty: Prisma.Decimal, pct: Prisma.Decimal) => qty.mul(new Prisma.Decimal(1).sub(pct.div(100))) // alt sınır
+const pctAbove = (qty: Prisma.Decimal, pct: Prisma.Decimal) => qty.mul(new Prisma.Decimal(1).add(pct.div(100))) // üst sınır
+export { pctAbove as toleranceUpperBound }
+
 /**
- * Toplama eksiği — KONTROLLÜ operasyonda her satır tam toplanmalı (Σ okutma ≥ miktar).
- * İlk eksik satırı döner (yoksa null). Kontrolsüz op / stok-etkisiz → her zaman null (toplama gerekmez).
+ * Toplama eksiği — KONTROLLÜ operasyonda her satır tam toplanmalı (Σ okutma ≥ miktar; ALT TOLERANS tanımlıysa
+ * miktar×(1−alt%) yeterli). İlk eksik satırı döner (yoksa null). Kontrolsüz op / stok-etkisiz → her zaman null.
  * "satır bazlı her şey toplanmalı, emin ol öyle onaya gönder" kuralı — confirm + complete + böl kararı için.
  */
 export async function collectionShortfall(client: Prisma.TransactionClient, documentId: number): Promise<{ lineNo: number; collected: string; quantity: string } | null> {
   const doc = await client.tBLDOCUMENT.findUnique({
     where: { id: documentId },
-    include: { operationType: { select: { controlMode: true, affectsStock: true } }, lines: { orderBy: { lineNo: 'asc' }, include: { scopes: { select: { quantity: true } } } } },
+    include: {
+      operationType: { select: { id: true, controlMode: true, affectsStock: true } },
+      partner: { select: { partnerGroupId: true } },
+      lines: { orderBy: { lineNo: 'asc' }, include: { scopes: { select: { quantity: true } }, product: { select: { productGroupId: true } } } },
+    },
   })
   if (!doc || !doc.operationType.affectsStock || doc.operationType.controlMode === 'UNCONTROLLED') return null
+  const tolerances = await loadTolerances(client, doc.companyId, doc.operationType.id)
   for (const line of doc.lines) {
     const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
-    if (collected.lt(line.quantity)) return { lineNo: line.lineNo, collected: collected.toString(), quantity: line.quantity.toString() }
+    const { lowerPct } = pickTolerance(tolerances, { partnerId: doc.partnerId, partnerGroupId: doc.partner?.partnerGroupId ?? null, productId: line.productId, productGroupId: line.product?.productGroupId ?? null }, line.unitId)
+    if (collected.lt(pctBelow(line.quantity, lowerPct))) return { lineNo: line.lineNo, collected: collected.toString(), quantity: line.quantity.toString() }
   }
   return null
 }
@@ -375,6 +413,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     }
 
     if (doc.operationType.affectsStock) {
+      const tolerances = await loadTolerances(tx, doc.companyId, op.id) // kontrollü toplama alt/üst sınırları
       for (const line of doc.lines) {
         // Okutmasız + sıfır-miktar satır (okutması silinmiş kontrolsüz satır): işlenecek bir şey yok — atla
         if ((!line.scopes || line.scopes.length === 0) && line.quantity.lte(0)) continue
@@ -394,11 +433,13 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
         }
 
         // Kontrollü operasyon (Kontrollü/Referans Kontrollü): satır OKUTMA (toplama) ile tamamlanmadan onaylanamaz.
-        // Kontrolsüz'de serbest (planlanan miktar doğrudan işlenir). → "detayları toplamadan onay" engellenir.
+        // ALT TOLERANS tanımlıysa miktar×(1−alt%) kadar eksik kabul edilir (StokBar tolerans semantiği).
         if (op.controlMode !== 'UNCONTROLLED') {
           const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
-          if (collected.lt(line.quantity)) {
-            throw new MovementError(`Satır ${line.lineNo}: kontrollü operasyon — toplama tamamlanmadan onaylanamaz (toplanan ${collected.toString()} / ${line.quantity.toString()}, okutma gerekli)`)
+          const { lowerPct } = pickTolerance(tolerances, { partnerId: doc.partnerId, partnerGroupId: docPartnerGroupId, productId: line.productId, productGroupId: product?.productGroupId ?? null }, line.unitId)
+          const minRequired = line.quantity.mul(new Prisma.Decimal(1).sub(lowerPct.div(100)))
+          if (collected.lt(minRequired)) {
+            throw new MovementError(`Satır ${line.lineNo}: kontrollü operasyon — toplama tamamlanmadan onaylanamaz (toplanan ${collected.toString()} / ${line.quantity.toString()}${lowerPct.gt(0) ? `, alt tolerans %${lowerPct}` : ''}, okutma gerekli)`)
           }
         }
 
