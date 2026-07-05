@@ -48,6 +48,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'entry-labeling', label: 'Giriş Etiketleme', section: 'İşlemler', group: 'Giriş' },
   { name: 'putaway-suggest', label: 'Giriş Öneri Listesi', section: 'İşlemler', group: 'Giriş' },
   { name: 'stock-entry', label: 'Stok Giriş', section: 'İşlemler', group: 'Giriş' },
+  { name: 'bulk-doc-ops-in', label: 'Toplu İşlem', section: 'İşlemler', group: 'Giriş' },
   { name: 'document-assignments', label: 'İş Atama', section: 'İşlemler', group: 'Giriş' },
   { name: 'documents-out', label: 'Belge', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' } },
   { name: 'documents-out-obs', label: 'Gözlem', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' }, observe: true },
@@ -60,6 +61,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'documents-tr', label: 'Belge', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' } },
   { name: 'documents-tr-obs', label: 'Gözlem', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' }, observe: true },
   { name: 'reservation', label: 'Rezervasyon', section: 'İşlemler', group: 'Transfer' },
+  { name: 'bulk-doc-ops-tr', label: 'Toplu İşlem', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
   { name: 'document-assignments-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer', apiName: 'document-assignments' },
   // Entegrasyon: izleme (Gelen/Giden) + manuel tetikleme (Entegrasyon Aktarım) — hepsi /api/integration-logs
@@ -115,9 +117,9 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'operation-tolerances', label: 'Tolerans', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-type-pallet-types', label: 'Palet Tipi', section: 'Uyarlamalar', group: 'Operasyon' },
   { name: 'operation-conversions', label: 'Dönüşüm', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'sequential-operations', label: 'Sıralı Operasyon', section: 'Uyarlamalar', group: 'Operasyon' },
+  // Sıralı Operasyon: ayrı menü değil — Operasyon Tipi formunun "Sıralı Operasyon" sekmesi (API: sequential-operations)
   { name: 'auto-reference-documents', label: 'Otomatik Ref. Kontrollü Belge', section: 'Uyarlamalar', group: 'Operasyon' },
-  { name: 'operation-bulk-actions', label: 'Toplu İşlem Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
+  // Toplu İşlem Bağlantı: ayrı ekran değil — Operasyon Tipi tanımındaki 'Toplu İşlem'/'Rezervasyon' parametreleri
   { name: 'product-based-collections', label: 'Ürün Bazında Toplama Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
   // Belge Tipleri
   { name: 'document-statuses', label: 'Belge Durumları', section: 'Uyarlamalar', group: 'Belge Tipleri' },

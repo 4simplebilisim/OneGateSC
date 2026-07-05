@@ -125,7 +125,9 @@ export default function App() {
           <Route path="documents-in-obs" element={<DocumentObservation direction="INBOUND" />} />
           <Route path="documents-out-obs" element={<DocumentObservation direction="OUTBOUND" />} />
           <Route path="documents-tr-obs" element={<DocumentObservation direction="INTERNAL" />} />
-          <Route path="bulk-doc-ops" element={<BulkDocOps />} />
+          <Route path="bulk-doc-ops" element={<BulkDocOps direction="OUTBOUND" />} />
+          <Route path="bulk-doc-ops-in" element={<BulkDocOps direction="INBOUND" />} />
+          <Route path="bulk-doc-ops-tr" element={<BulkDocOps direction="INTERNAL" />} />
           <Route path="reservation" element={<Reservation />} />
           <Route path="stock-reclassify" element={<StockReclassify />} />
           <Route path="putaway-suggest" element={<SuggestList mode="putaway" />} />
@@ -145,7 +147,7 @@ export default function App() {
           {RESOURCES.filter((r) => hasDetail(r.name)).map((r) => (
             <Route key={`${r.name}-detail`} path={`${r.name}/:id`} element={<GenericDetail resource={r.name} label={r.label} />} />
           ))}
-          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'reservation', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
+          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'bulk-doc-ops-in', 'bulk-doc-ops-tr', 'reservation', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
             <Route key={r.name} path={r.name} element={<GenericList resource={r.apiName ?? r.name} label={r.label} filter={r.filter} observe={r.observe} />} />
           ))}
         </Route>

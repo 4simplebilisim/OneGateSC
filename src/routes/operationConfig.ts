@@ -35,9 +35,67 @@ export const forbiddenProductRoutes = simpleCrud(prisma.tBLOPERATIONTYPEFORBIDDE
 const conversion = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), statusId: pInt.optional(), conversionCode: z.string().min(1).max(10), outgoing: z.boolean().optional(), sourceLocLinkType: scope.optional(), sourceLocLinkId: pInt.optional(), targetLocLinkType: scope.optional(), targetLocLinkId: pInt.optional(), isActive: z.boolean().optional() })
 export const conversionRoutes = simpleCrud(prisma.tBLOPERATIONTYPECONVERSION as unknown as Delegate, conversion, conversion.partial(), 'Conversion not found', 'operationTypeId')
 
-// Sıralı Operasyon
+// Sıralı Operasyon — bir işlemden sonra başka bir işlemle devam (operasyon tanımının "Sıralı Operasyon" sekmesi).
+// AYNI TESİS altındaki 2 operasyon için kullanılır — tesisler-arası akış Otomatik Ref. Kontrollü Belge'nin işidir.
 const sequential = z.object({ firstOperationId: pInt, secondOperationId: pInt, facilityId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), locationLinkType: scope.optional(), locationLinkId: pInt.optional(), useInWorkOrder: z.boolean().optional(), spName: z.string().max(300).optional(), isActive: z.boolean().optional() })
-export const sequentialOperationRoutes = simpleCrud(prisma.tBLSEQUENTIALOPERATION as unknown as Delegate, sequential, sequential.partial(), 'Sequential operation not found')
+
+async function sequentialIssue(companyId: number, firstOperationId: number, secondOperationId: number): Promise<string | null> {
+  if (firstOperationId === secondOperationId) return 'İlk ve ikinci operasyon aynı olamaz'
+  const [first, second] = await Promise.all([
+    prisma.tBLOPERATIONTYPE.findFirst({ where: { id: firstOperationId, companyId }, select: { facilityId: true } }),
+    prisma.tBLOPERATIONTYPE.findFirst({ where: { id: secondOperationId, companyId }, select: { facilityId: true } }),
+  ])
+  if (!first) return 'İlk operasyon geçersiz (başka firmaya ait olabilir)'
+  if (!second) return 'İkinci operasyon geçersiz (başka firmaya ait olabilir)'
+  if (first.facilityId != null && second.facilityId != null && first.facilityId !== second.facilityId) {
+    return 'Sıralı operasyon AYNI TESİS altındaki iki operasyon için kullanılır — ikinci operasyon farklı tesiste'
+  }
+  return null
+}
+
+export async function sequentialOperationRoutes(app: FastifyInstance) {
+  app.get('/', async (request) => {
+    const q = request.query as { firstOperationId?: string }
+    return prisma.tBLSEQUENTIALOPERATION.findMany({
+      where: { ...companyListFilter(request), ...(q.firstOperationId ? { firstOperationId: Number(q.firstOperationId) } : {}) },
+      orderBy: { id: 'desc' },
+    })
+  })
+  app.get('/:id', async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const row = await prisma.tBLSEQUENTIALOPERATION.findFirst({ where: { id, ...companyListFilter(request) } })
+    if (!row) return reply.code(404).send({ error: 'Sıralı operasyon bulunamadı' })
+    return row
+  })
+  app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = sequential.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const issue = await sequentialIssue(companyId, parsed.data.firstOperationId, parsed.data.secondOperationId)
+    if (issue) return reply.code(400).send({ error: issue })
+    return reply.code(201).send(await prisma.tBLSEQUENTIALOPERATION.create({ data: { ...parsed.data, companyId } }))
+  })
+  app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const parsed = sequential.partial().safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const existing = await prisma.tBLSEQUENTIALOPERATION.findFirst({ where: { id, companyId } })
+    if (!existing) return reply.code(404).send({ error: 'Sıralı operasyon bulunamadı' })
+    const issue = await sequentialIssue(companyId, parsed.data.firstOperationId ?? existing.firstOperationId, parsed.data.secondOperationId ?? existing.secondOperationId)
+    if (issue) return reply.code(400).send({ error: issue })
+    return prisma.tBLSEQUENTIALOPERATION.update({ where: { id }, data: parsed.data })
+  })
+  app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const res = await prisma.tBLSEQUENTIALOPERATION.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+    if (res.count === 0) return reply.code(404).send({ error: 'Sıralı operasyon bulunamadı' })
+    return { deleted: res.count }
+  })
+}
 
 // Otomatik Referanslı Belge — Referans Kontrollü eşleme: KAYNAK TESİS+ÇIKIŞ op onaylanınca HEDEF TESİS+GİRİŞ op'ta belge doğar.
 // facility (BYTTESIS) = TESİS İÇİ: tikli → hedef tesis = kaynak tesis (alan boş); değilse hedef tesis ZORUNLU.

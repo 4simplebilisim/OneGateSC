@@ -973,6 +973,8 @@ model TBLOPERATIONTYPE {
 
   // Genel
   emailSend        Boolean @default(false) // BYTMAILGONDERILSIN
+  bulkAction       Boolean @default(false) // BYTTOPLUISLEM — işaretliyse yönüne göre Toplu İşlem ekranında görünür
+  reservation      Boolean @default(false) // Rezervasyon parametresi (StokBar toplu-işlem tipi RESERVATION'ın sade karşılığı)
   // Stok Hareketi
   equivalentApplication Boolean @default(false) // BYTMUADILUYGULAMASI
   materialBasedCollection Boolean @default(false) // BYTMALBAZINDATOPLAMA

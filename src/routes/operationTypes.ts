@@ -14,6 +14,7 @@ const BOOL_FIELDS = [
   'bulkSend', 'readBasedControl', 'readBasedInfoMessage', 'logging', 'logControl', 'grouping',
   'reasonRequired', 'reasonInHeader', 'sameUsePallet', 'sameUseSerial', 'passiveProductUse',
   'palletBreaking', 'originalQtyUpdate', 'reserveTransfer', 'partialUsage', 'affectsStock', 'isActive',
+  'bulkAction', 'reservation', // Toplu İşlem (BYTTOPLUISLEM) + Rezervasyon — yönüne göre Toplu İşlem ekranında görünürlük
 ] as const
 const boolShape = Object.fromEntries(BOOL_FIELDS.map((b) => [b, z.boolean().optional()]))
 

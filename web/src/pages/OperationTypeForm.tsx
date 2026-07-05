@@ -40,6 +40,9 @@ const SECTIONS: Sec[] = [
       { n: 'batchAssignment', l: 'Batch Atama Yapılsın', t: 'bool' },
       { n: 'qualityControl', l: 'Kalite Kontrolü Yapılsın', t: 'bool' },
       { n: 'detailLocationToCoverage', l: 'Detay Lok. Kapsama Aktarılsın', t: 'bool' },
+      // Toplu İşlem (legacy BYTTOPLUISLEM): işaretliyse operasyon, yönüne göre ilgili Toplu İşlem ekranında görünür
+      { n: 'bulkAction', l: 'Toplu İşlem', t: 'bool' },
+      { n: 'reservation', l: 'Rezervasyon', t: 'bool' },
     ],
   },
   {
@@ -120,9 +123,10 @@ const CONVERSION_FIELDS: LF[] = [
   { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ.', type: 'select', options: SCOPE },
   { name: 'targetLocLinkId', label: 'Hedef Lokasyon', type: 'ref', ref: 'locations' },
 ]
-const BULK_FIELDS: LF[] = [
-  { name: 'bulkActionType', label: 'Toplu İşlem Tipi', type: 'select', options: [{ value: 'CONTROLLED_BULK', label: 'Kontrollü Toplu İşlem' }, { value: 'BULK', label: 'Toplu İşlem' }, { value: 'RESERVATION', label: 'Rezervasyon' }, { value: 'SELECTED_DOCUMENT', label: 'Seçimli Belge' }, { value: 'BATCH_CHANGE', label: 'Batch Değiştirme' }] },
-  { name: 'description', label: 'Açıklama', type: 'text' },
+// Sıralı Operasyon — bu operasyondan SONRA hangi operasyonla devam edilir (aynı tesis altındaki 2 operasyon)
+const SEQ_FIELDS: LF[] = [
+  { name: 'secondOperationId', label: 'İkinci Operasyon Tipi', type: 'ref', ref: 'operation-types', required: true },
+  { name: 'useInWorkOrder', label: 'İş Emrinde Kullanılsın', type: 'bool' },
 ]
 const GROUPLINK_FIELDS: LF[] = [
   { name: 'operationGroupId', label: 'Operasyon Grubu', type: 'ref', ref: 'operation-groups', required: true },
@@ -309,6 +313,8 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     { key: 'loc', label: 'Lokasyon', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-locations" fields={locationFields} defaults={linkDefaults} /> : null },
     { key: 'reason', label: 'Neden', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-reasons" fields={REASON_FIELDS} defaults={linkDefaults} /> : null },
     { key: 'pallet', label: 'Palet Tipi', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="operationTypeId" ownerId={id!} resource="operation-type-pallet-types" fields={PALLET_FIELDS} defaults={linkDefaults} /> : null },
+    // Sıralı Operasyon: bu operasyondan sonra devam edilecek operasyon(lar) — aynı tesis kuralı backend'de zorlanır
+    { key: 'seq', label: 'Sıralı Operasyon', disabled: !linkTabsEnabled, children: linkTabsEnabled ? <LinkTab ownerField="firstOperationId" ownerId={id!} resource="sequential-operations" fields={SEQ_FIELDS} defaults={linkDefaults} /> : null },
     {
       key: 'rules', label: 'Kurallar', disabled: !linkTabsEnabled,
       children: linkTabsEnabled ? (
@@ -317,7 +323,7 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             ['Tolerans', 'operation-tolerances', TOLERANCE_FIELDS],
             ['Yasaklı Ürün', 'operation-forbidden-products', FORBIDDEN_FIELDS],
             ['Dönüşüm', 'operation-conversions', CONVERSION_FIELDS],
-            ['Toplu İşlem', 'operation-bulk-actions', BULK_FIELDS],
+            // Toplu İşlem artık bağlantı tablosu değil — Tanım › Stok Hareketi'ndeki 'Toplu İşlem'/'Rezervasyon' parametreleri
             ['Grup Bağlantı', 'operation-group-links', GROUPLINK_FIELDS],
           ] as [string, string, LF[]][]).map(([title, res, flds]) => (
             <div key={res}>
