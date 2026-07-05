@@ -12,9 +12,10 @@ const MODELS = {
   partnerGroup: prisma.tBLPARTNERGROUP, region: prisma.tBLREGION, partner: prisma.tBLBUSINESSPARTNER,
   product: prisma.tBLPRODUCT, user: prisma.tBLUSER, userGroup: prisma.tBLUSERGROUP,
   operationType: prisma.tBLOPERATIONTYPE, sequence: prisma.tBLSEQUENCE, location: prisma.tBLLOCATION, operationGroup: prisma.tBLOPERATIONGROUP,
+  document: prisma.tBLDOCUMENT,
 } as unknown as Record<string, FindFirst>
 
-export type RefModel = 'facility' | 'area' | 'warehouse' | 'unit' | 'productGroup' | 'productSubGroup' | 'productType' | 'productDetailType' | 'partnerGroup' | 'region' | 'partner' | 'product' | 'user' | 'userGroup' | 'operationType' | 'sequence' | 'location' | 'operationGroup'
+export type RefModel = 'facility' | 'area' | 'warehouse' | 'unit' | 'productGroup' | 'productSubGroup' | 'productType' | 'productDetailType' | 'partnerGroup' | 'region' | 'partner' | 'product' | 'user' | 'userGroup' | 'operationType' | 'sequence' | 'location' | 'operationGroup' | 'document'
 type Ref = [label: string, model: RefModel, id: number | null | undefined]
 
 /** İlk çapraz-firma/geçersiz FK'nin etiketini döner (hepsi geçerli/boş ise null). null/undefined id atlanır (opsiyonel). */

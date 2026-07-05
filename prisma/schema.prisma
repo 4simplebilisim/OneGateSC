@@ -975,6 +975,7 @@ model TBLOPERATIONTYPE {
   emailSend        Boolean @default(false) // BYTMAILGONDERILSIN
   bulkAction       Boolean @default(false) // BYTTOPLUISLEM — işaretliyse yönüne göre Toplu İşlem ekranında görünür
   reservation      Boolean @default(false) // Rezervasyon parametresi (StokBar toplu-işlem tipi RESERVATION'ın sade karşılığı)
+  applyAssignment  Boolean @default(false) // İş Ataması Uygula — açıksa el terminalinde kullanıcı YALNIZ kendine/grubuna atanmış belgeleri görür; kapalıysa (yetkisi olan) tüm belgeler
   // Stok Hareketi
   equivalentApplication Boolean @default(false) // BYTMUADILUYGULAMASI
   materialBasedCollection Boolean @default(false) // BYTMALBAZINDATOPLAMA
@@ -3468,18 +3469,20 @@ model TBLEXTRAFIELDOPTION {
 // İş Atama — belge ↔ kullanıcı eşleştirme. Terminalde kullanıcıya atanmış belgeler gözükür.
 // Legacy: TBLSBBELGEBASLIK = bizde TBLDOCUMENT; onunla kullanıcı bağlanır.
 model TBLDOCUMENTASSIGNMENT {
-  id         Int      @id @default(autoincrement())
-  companyId  Int
-  documentId Int // TBLDOCUMENT
-  userId     Int // TBLUSER
-  note       String?  @db.VarChar(200)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  documentId  Int // TBLDOCUMENT
+  userId      Int? // TBLUSER — kullanıcıya atama (userId VEYA userGroupId, biri dolu)
+  userGroupId Int? // TBLUSERGROUP — kullanıcı grubuna atama (grubun tüm üyeleri görür)
+  note        String?  @db.VarChar(200)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([companyId])
   @@index([documentId])
   @@index([userId])
+  @@index([userGroupId])
   @@schema("wms")
 }
 

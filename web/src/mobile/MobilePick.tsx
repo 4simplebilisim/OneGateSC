@@ -37,7 +37,8 @@ export const MobilePick = () => {
     setLoading(true)
     Promise.all([
       axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }),
-      axiosInstance.get('/api/documents', { params: { openOnly: 'true', pageSize: 200 } }),
+      // assignedFor=me: op 'İş Ataması Uygula' açıksa yalnız bana/grubuma atanmış belgeler (sunucu süzer)
+      axiosInstance.get('/api/documents', { params: { openOnly: 'true', assignedFor: 'me', pageSize: 200 } }),
     ]).then(([or, dr]) => {
       const allOps = arr(or.data) as Op[]
       setOps(allOps)

@@ -43,6 +43,8 @@ const SECTIONS: Sec[] = [
       // Toplu İşlem (legacy BYTTOPLUISLEM): işaretliyse operasyon, yönüne göre ilgili Toplu İşlem ekranında görünür
       { n: 'bulkAction', l: 'Toplu İşlem', t: 'bool' },
       { n: 'reservation', l: 'Rezervasyon', t: 'bool' },
+      // İş Ataması Uygula: açıksa el terminalinde kullanıcı yalnız kendine/grubuna atanmış belgeleri görür
+      { n: 'applyAssignment', l: 'İş Ataması Uygula', t: 'bool' },
     ],
   },
   {

@@ -15,6 +15,24 @@ export class AuthorizationError extends Error {
 
 type CheckScopes = { warehouseId?: number | null; facilityId?: number | null; operationTypeId?: number | null }
 
+/** Kullanıcının izinli operasyon-tipi id'leri. null = kısıt yok (tümü serbest). Süper-admin → null. */
+export async function allowedOperationTypeIds(userId: number | undefined, isSuperAdmin?: boolean): Promise<Set<number> | null> {
+  if (isSuperAdmin || !userId) return null
+  const groups = await prisma.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+  const groupIds = groups.map((g) => g.groupId)
+  const auths = await prisma.tBLUSERAUTHORIZATION.findMany({
+    where: { isActive: true, scopeType: 'OPERATION_TYPE', OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])] },
+    select: { referenceId: true },
+  })
+  return auths.length === 0 ? null : new Set(auths.map((a) => a.referenceId).filter((x): x is number => x != null)) // hiç OP kaydı yok → kısıtsız
+}
+
+/** Kullanıcının üyesi olduğu grup id'leri (İş Atama görünürlüğü için). */
+export async function userGroupIds(userId: number): Promise<number[]> {
+  const rows = await prisma.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+  return rows.map((r) => r.groupId)
+}
+
 export async function assertUserAuthorized(request: FastifyRequest, scopes: CheckScopes): Promise<void> {
   const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
   if (!user || user.isSuperAdmin) return

@@ -25,7 +25,9 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'regions', label: 'Bölge', section: 'Tanımlamalar', group: 'Müşteriler' },
   { name: 'partners', label: 'Müşteri', section: 'Tanımlamalar', group: 'Müşteriler' },
   { name: 'partner-groups', label: 'Müşteri Grup', section: 'Tanımlamalar', group: 'Müşteriler' },
-  // Müşteri Ek Grup + Ek Sahaları: menüden kaldırıldı (altı boş, tüketen yok) — API/kod durur
+  // Ek Grup + Ek Saha: cari kartının "Gruplar"/"Ek Sahalar" sekmelerinin beslediği MASTER tanımlar (boş ama ölü değil)
+  { name: 'partner-extra-groups', label: 'Müşteri Ek Grup', section: 'Tanımlamalar', group: 'Müşteriler' },
+  { name: 'partner-extra-field-defs', label: 'Müşteri Ek Sahaları', section: 'Tanımlamalar', group: 'Müşteriler' },
   // Lokasyon hiyerarşisi: Tesis → Depo → Alan → Lokasyon
   { name: 'facilities', label: 'Tesisler', section: 'Tanımlamalar', group: 'Lokasyon' },
   { name: 'warehouses', label: 'Depolar', section: 'Tanımlamalar', group: 'Lokasyon' },
@@ -49,18 +51,20 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'putaway-suggest', label: 'Giriş Öneri Listesi', section: 'İşlemler', group: 'Giriş' },
   { name: 'stock-entry', label: 'Stok Giriş', section: 'İşlemler', group: 'Giriş' },
   { name: 'bulk-doc-ops-in', label: 'Toplu İşlem', section: 'İşlemler', group: 'Giriş' },
-  // İş Atama (×3 yön): menüden kaldırıldı (altı boş, davranış bağlanmadı) — API/kod durur (document-assignments)
+  { name: 'doc-assign-in', label: 'İş Atama', section: 'İşlemler', group: 'Giriş' },
   { name: 'documents-out', label: 'Belge', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' } },
   { name: 'documents-out-obs', label: 'Gözlem', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' }, observe: true },
   { name: 'exit-labeling', label: 'Çıkış Etiketleme', section: 'İşlemler', group: 'Çıkış' },
   { name: 'pick-suggest', label: 'Çıkış Öneri Listesi', section: 'İşlemler', group: 'Çıkış' },
   { name: 'bulk-doc-ops', label: 'Toplu İşlem', section: 'İşlemler', group: 'Çıkış' },
+  { name: 'doc-assign-out', label: 'İş Atama', section: 'İşlemler', group: 'Çıkış' },
   { name: 'stock-exit', label: 'Stok Çıkış', section: 'İşlemler', group: 'Çıkış' },
   { name: 'shipments-loading', label: 'Yükleme Takip', section: 'İşlemler', group: 'Çıkış', apiName: 'shipments' },
   { name: 'documents-tr', label: 'Belge', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' } },
   { name: 'documents-tr-obs', label: 'Gözlem', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' }, observe: true },
   { name: 'reservation', label: 'Rezervasyon', section: 'İşlemler', group: 'Transfer' },
   { name: 'bulk-doc-ops-tr', label: 'Toplu İşlem', section: 'İşlemler', group: 'Transfer' },
+  { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
   // Entegrasyon (Gelen/Giden İzleme + Aktarım): menüden kaldırıldı (altı boş — entegrasyon bacağı henüz yok);
   // entegrasyon geldiğinde geri açılır — API/kod durur (integration-logs; Dönüşüm kodu eşlemesi hazır)

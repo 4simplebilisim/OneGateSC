@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
@@ -6,7 +7,7 @@ import { completeDocument, reverseDocument, splitDocument, collectionShortfall, 
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
-import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
+import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
@@ -50,7 +51,7 @@ const lineInclude = {
 export async function documentRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const companyId = getCompanyId(request)
-    const q = request.query as { warehouseId?: string; status?: string; operationTypeId?: string; direction?: string; openOnly?: string; facilityId?: string; partnerId?: string; documentNo?: string; dateFrom?: string; dateTo?: string; statusCodes?: string }
+    const q = request.query as { warehouseId?: string; status?: string; operationTypeId?: string; direction?: string; openOnly?: string; facilityId?: string; partnerId?: string; documentNo?: string; dateFrom?: string; dateTo?: string; statusCodes?: string; assignedFor?: string }
     const statuses = ['DRAFT', 'CONFIRMED', 'COMPLETED', 'CANCELLED'] as const
     const directions = ['INBOUND', 'OUTBOUND', 'INTERNAL', 'COUNT'] as const
     const num = (v?: string) => (v ? Number(v) : undefined)
@@ -63,6 +64,26 @@ export async function documentRoutes(app: FastifyInstance) {
     const dateFilter = {
       ...(q.dateFrom ? { gte: new Date(q.dateFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}),
       ...(q.dateTo ? { lte: new Date(q.dateTo.slice(0, 10) + 'T23:59:59.999Z') } : {}),
+    }
+    // El terminali GÖRÜNÜRLÜK (assignedFor=me): op.applyAssignment açıksa yalnız bana/grubuma atanmış belgeler;
+    // kapalıysa serbest. Ayrıca (varsa) yalnız operasyon-yetkim olan belgeler. Süper-admin/yetkisiz kullanıcı → kısıtsız.
+    const andClauses: Prisma.TBLDOCUMENTWhereInput[] = []
+    if (q.assignedFor === 'me') {
+      const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
+      const uid = user?.sub
+      if (uid && !user?.isSuperAdmin) {
+        const gids = await userGroupIds(uid)
+        const assigns = await prisma.tBLDOCUMENTASSIGNMENT.findMany({
+          where: { companyId, isActive: true, OR: [{ userId: uid }, ...(gids.length ? [{ userGroupId: { in: gids } }] : [])] },
+          select: { documentId: true },
+        })
+        const assignedIds = [...new Set(assigns.map((a) => a.documentId))]
+        // applyAssignment=false operasyonlar serbest; true olanlar YALNIZ atanmışsa
+        andClauses.push({ OR: [{ operationType: { applyAssignment: false } }, { id: { in: assignedIds } }] })
+        // operasyon yetkisi (kısıt varsa)
+        const allowedOps = await allowedOperationTypeIds(uid, user?.isSuperAdmin)
+        if (allowedOps) andClauses.push({ operationTypeId: { in: [...allowedOps] } })
+      }
     }
     return prisma.tBLDOCUMENT.findMany({
       where: {
@@ -80,6 +101,7 @@ export async function documentRoutes(app: FastifyInstance) {
         ...(Object.keys(opFilter).length ? { operationType: opFilter } : {}),
         // Gözlem durum toggle'ları (Belge Durumu kodları: BKL/TPL/OBK/ONY/IPT — virgülle)
         ...(q.statusCodes ? { documentStatus: { code: { in: q.statusCodes.split(',').map((s) => s.trim()).filter(Boolean) } } } : {}),
+        ...(andClauses.length ? { AND: andClauses } : {}),
       },
       orderBy: { id: 'desc' },
       take: 2000,
