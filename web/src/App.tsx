@@ -45,6 +45,7 @@ import { ShipmentCreate } from './pages/ShipmentCreate'
 import { MobileHome } from './mobile/MobileHome'
 import { MobileStockQuery } from './mobile/MobileStockQuery'
 import { MobileReceipt } from './mobile/MobileReceipt'
+import { MobilePick } from './mobile/MobilePick'
 import { MobileStub } from './mobile/MobileStub'
 import { RESOURCES } from './resources'
 import { hasForm } from './formConfig'
@@ -73,7 +74,7 @@ export default function App() {
           <Route index element={<MobileHome />} />
           <Route path="stock" element={<MobileStockQuery />} />
           <Route path="receipt" element={<MobileReceipt />} />
-          <Route path="pick" element={<MobileStub title="Toplama" />} />
+          <Route path="pick" element={<MobilePick />} />
           <Route path="count" element={<MobileStub title="Sayım" />} />
         </Route>
         <Route
