@@ -2448,24 +2448,27 @@ model TBLSEQUENTIALOPERATION {
   @@schema("wms")
 }
 
-// Otomatik Referanslı Belge (legacy TBLSBOTOMATIKREFERANSLIBELGE)
+// Otomatik Referanslı Belge (legacy TBLSBOTOMATIKREFERANSLIBELGE) — Referans Kontrollü eşleme:
+// KAYNAK TESİS+ÇIKIŞ operasyonu onaylanınca HEDEF TESİS+GİRİŞ operasyonunda belge otomatik doğar.
+// NOT: legacy LNGKAYNAKDISTKOD/LNGHEDEFDISTKOD = TESİS (DISTKOD=tesis) — ilk port'ta yanlışlıkla cari eşlenmişti, düzeltildi.
 model TBLAUTOREFERENCEDOCUMENT {
   id                    Int      @id @default(autoincrement())
   companyId             Int
-  sourcePartnerId       Int // LNGKAYNAKDISTKOD
-  sourceOperationTypeId Int
+  sourceFacilityId      Int // LNGKAYNAKDISTKOD — kaynak TESİS
+  sourceOperationTypeId Int // kaynak (çıkış) operasyon
   sourceLocLinkType     Int?
   sourceLocLinkId       Int?
-  targetPartnerId       Int // LNGHEDEFDISTKOD
-  targetOperationTypeId Int
+  targetFacilityId      Int? // LNGHEDEFDISTKOD — hedef TESİS (facility=true "tesis içi" iken boş = kaynakla aynı)
+  targetOperationTypeId Int // hedef (giriş) operasyon
   targetLocLinkType     Int?
   targetLocLinkId       Int?
-  facility              Boolean  @default(false) // BYTTESIS
+  facility              Boolean  @default(false) // BYTTESIS — TESİS İÇİ: tikli=aynı tesiste hareket; değilse hedef tesis ZORUNLU
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   @@index([companyId])
+  @@index([sourceOperationTypeId])
   @@schema("wms")
 }
 

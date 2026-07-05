@@ -212,9 +212,14 @@ ok((await stAt(LOC2, PID)) === tgtB + 10, 'hedef lok +10 (palet taşındı)', `$
 section('S13 — Referans Kontrollü: çıkış onayı → bağlı giriş belgesi otomatik + plana karşı toplama')
 const opRGir = await findOrMakeOp('BLG-RGIR', 'Ref Giriş (oto)', 'INBOUND', 'REFERENCE_CONTROLLED', { targetStatusId: STA })
 const opRCik = await findOrMakeOp('BLG-RCK', 'Ref Çıkış (bağlı)', 'OUTBOUND', 'CONTROLLED', { sourceStatusId: STA })
-ok((await req('PATCH', '/api/operation-types/' + opRCik.id, { linkedEntryOperationTypeId: opRGir.id })).status === 200, 'çıkışa bağlı giriş operasyonu tanımlandı')
-// yanlış yön reddi: bağlı op ÇIKIŞ olamaz
-ok((await req('PATCH', '/api/operation-types/' + opRCik.id, { linkedEntryOperationTypeId: opCik.id })).status === 400, 'bağlı op GİRİŞ değilse 400')
+// ASIL TANIM YERİ: Otomatik Ref. Kontrollü Belge ekranı (tesis kırılımlı). Op-alanı fallback'i temizle → tablo yolu saf test edilsin.
+await req('PATCH', '/api/operation-types/' + opRCik.id, { linkedEntryOperationTypeId: null })
+let arow = norm(await req('GET', '/api/auto-reference-documents?pageSize=300').then(r => r.d)).find(a => a.sourceOperationTypeId === opRCik.id && a.companyId === Number(CO))
+if (!arow) arow = (await req('POST', '/api/auto-reference-documents', { sourceFacilityId: FAC, sourceOperationTypeId: opRCik.id, facility: true, targetOperationTypeId: opRGir.id })).d
+ok(arow?.id != null && arow.facility === true && arow.targetFacilityId == null, 'eşleme tanımlandı (Tesis İçi — hedef tesis boş=kaynak)')
+// doğrulamalar: tesis-içi değilse hedef tesis ZORUNLU; hedef op GİRİŞ olmalı
+ok((await req('POST', '/api/auto-reference-documents', { sourceFacilityId: FAC, sourceOperationTypeId: opRCik.id, targetOperationTypeId: opRGir.id })).status === 400, 'tesis içi değil + hedef tesis yok → 400')
+ok((await req('POST', '/api/auto-reference-documents', { sourceFacilityId: FAC, sourceOperationTypeId: opRCik.id, facility: true, targetOperationTypeId: opCik.id })).status === 400, 'hedef op GİRİŞ değilse 400')
 // A tarafı: çıkış belgesi 5 → okut → onayla
 const sSrc = await stockAt(LOC, STA)
 const dR = (await mkDoc(opRCik.id, [{ productId: PROD, unitId: UNIT, quantity: 5, sourceLocationId: LOC, sourceStatusId: STA }])).d; trash.push(dR.id)
@@ -246,6 +251,7 @@ ok(man1.status === 400 && /elle açılamaz/i.test(man1.d?.error || ''), 'referan
 ok((await mkDoc(opRGir.id)).status === 400, 'satırsız denemede de 400')
 ok((await req('POST', `/api/documents/${refId}/copy`, {})).status === 400, 'referans kontrollü belge kopyalanamaz (400)')
 // A tarafı KONTROLSÜZ çıkış da olabilir: boş aç → okut → onay → bağlı giriş yine doğar
+// (bu op tabloda YOK → operasyondaki linkedEntryOperationTypeId FALLBACK'i test edilir)
 const opRCik2 = await findOrMakeOp('BLG-RCK2', 'Ref Çıkış Kontrolsüz', 'OUTBOUND', 'UNCONTROLLED', { sourceStatusId: STA })
 await req('PATCH', '/api/operation-types/' + opRCik2.id, { linkedEntryOperationTypeId: opRGir.id })
 const dR2 = (await mkDoc(opRCik2.id)).d; trash.push(dR2.id)

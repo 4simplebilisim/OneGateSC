@@ -684,7 +684,13 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     // A tesisi çıkışı onaylar → B tesisinin GİRİŞ belgesi içeriğiyle (5 elma, 3 armut) hazır oluşur;
     // B serbest toplamaz, bu plana karşı toplar (giriş op'u REFERENCE_CONTROLLED → tam-toplama kapısı işler).
     let referenceDocument: { id: number; documentNo: string } | null = null
-    const linkedOpId = doc.operationType.linkedEntryOperationTypeId
+    // Eşleme kaynağı: 1) Otomatik Ref. Kontrollü Belge tanımı (kaynak op → hedef op; tesis kırılımlı ekran)
+    //                 2) operasyondaki linkedEntryOperationTypeId (API-uyumluluk fallback)
+    const autoRefRow = await tx.tBLAUTOREFERENCEDOCUMENT.findFirst({
+      where: { companyId: doc.companyId, sourceOperationTypeId: op.id, isActive: true },
+      orderBy: { id: 'asc' }, select: { targetOperationTypeId: true },
+    })
+    const linkedOpId = autoRefRow?.targetOperationTypeId ?? doc.operationType.linkedEntryOperationTypeId
     if (linkedOpId != null) {
       // idempotent: reverse→yeniden onay durumunda ikinci belge üretme (bu belgeden türeyen zaten varsa onu bildir)
       const existing = await tx.tBLDOCUMENT.findFirst({

@@ -32,7 +32,7 @@ const SECTIONS: Sec[] = [
     fields: [
       { n: 'controlMode', l: 'Kontrollü İşlem', t: 'select', opts: [{ value: 'UNCONTROLLED', label: 'Kontrolsüz' }, { value: 'CONTROLLED', label: 'Kontrollü İşlem' }, { value: 'REFERENCE_CONTROLLED', label: 'Referans Kontrollü' }] },
       { n: 'reverseOperationTypeId', l: 'Ters Operasyon', t: 'ref', ref: 'operation-types' },
-      { n: 'linkedEntryOperationTypeId', l: 'Bağlı Giriş Operasyonu (Referans)', t: 'ref', ref: 'operation-types' }, // onayda karşı GİRİŞ belgesi otomatik doğar (tesisler-arası)
+      // Referans Kontrollü eşleme TEK yerden tanımlanır: Uyarlamalar › Otomatik Ref. Kontrollü Belge (kaynak/hedef tesis+operasyon)
       { n: 'reasonRequired', l: 'Neden Girişi Zorunlu', t: 'bool' },
       { n: 'reasonInHeader', l: 'Neden Girişi Başlıkta', t: 'bool' },
       { n: 'materialBasedCollection', l: 'Mal Bazında Toplama', t: 'bool' },

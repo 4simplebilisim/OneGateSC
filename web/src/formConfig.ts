@@ -593,16 +593,14 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'spName', label: 'SP Adı', type: 'text' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Referans Kontrollü eşleme — SADE: Firma › Kaynak Tesis › Kaynak Operasyon › (Tesis İçi | Hedef Tesis) › Hedef Operasyon.
+  // "Tesis İçi" tikli → hareket aynı tesiste (hedef tesis kapalı, kaynakla aynı); tikli değilse hedef tesis ZORUNLU (backend zorlar).
   'auto-reference-documents': [
-    { name: 'sourcePartnerId', label: 'Kaynak Cari', type: 'ref', required: true, refResource: 'partners' },
-    { name: 'sourceOperationTypeId', label: 'Kaynak Operasyon', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'sourceLocLinkType', label: 'Kaynak Lok. Bağ. Tipi', type: 'number' },
-    { name: 'sourceLocLinkId', label: 'Kaynak Lok. Bağ. Kodu', type: 'number' },
-    { name: 'targetPartnerId', label: 'Hedef Cari', type: 'ref', required: true, refResource: 'partners' },
-    { name: 'targetOperationTypeId', label: 'Hedef Operasyon', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ. Tipi', type: 'number' },
-    { name: 'targetLocLinkId', label: 'Hedef Lok. Bağ. Kodu', type: 'number' },
-    { name: 'facility', label: 'Tesis', type: 'bool' },
+    { name: 'sourceFacilityId', label: 'Kaynak Tesis', type: 'ref', required: true, refResource: 'facilities' },
+    { name: 'sourceOperationTypeId', label: 'Kaynak Operasyon (Çıkış)', type: 'ref', required: true, refResource: 'operation-types', refFilter: (x) => x.direction === 'OUTBOUND' },
+    { name: 'facility', label: 'Tesis İçi (aynı tesiste hareket)', type: 'bool' },
+    { name: 'targetFacilityId', label: 'Hedef Tesis (tesis içi değilse zorunlu)', type: 'ref', refResource: 'facilities', disabledWhen: { field: 'facility', equals: true } },
+    { name: 'targetOperationTypeId', label: 'Hedef Operasyon (Giriş)', type: 'ref', required: true, refResource: 'operation-types', refFilter: (x) => x.direction === 'INBOUND' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'product-additional-groups': [
