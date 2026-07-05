@@ -622,11 +622,50 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       }
     }
 
-    return tx.tBLDOCUMENT.update({
+    // ── REFERANS KONTROLLÜ: operasyonda bağlı giriş operasyonu tanımlıysa karşı belge OTOMATİK doğar ──
+    // A tesisi çıkışı onaylar → B tesisinin GİRİŞ belgesi içeriğiyle (5 elma, 3 armut) hazır oluşur;
+    // B serbest toplamaz, bu plana karşı toplar (giriş op'u REFERENCE_CONTROLLED → tam-toplama kapısı işler).
+    let referenceDocument: { id: number; documentNo: string } | null = null
+    const linkedOpId = doc.operationType.linkedEntryOperationTypeId
+    if (linkedOpId != null) {
+      // idempotent: reverse→yeniden onay durumunda ikinci belge üretme (bu belgeden türeyen zaten varsa onu bildir)
+      const existing = await tx.tBLDOCUMENT.findFirst({
+        where: { companyId: doc.companyId, referenceDocumentId: doc.id },
+        select: { id: true, documentNo: true },
+      })
+      if (existing) {
+        referenceDocument = existing
+      } else {
+        const linkedOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: linkedOpId, companyId: doc.companyId }, select: { id: true } })
+        const srcLines = doc.lines.filter((l) => l.quantity.gt(0))
+        if (linkedOp && srcLines.length > 0) {
+          const refNo = `${doc.documentNo.slice(0, 37)}-R` // kaynak belge no türevi (unique: kaynak başına tek üretim)
+          const created = await tx.tBLDOCUMENT.create({
+            data: {
+              companyId: doc.companyId, documentNo: refNo, operationTypeId: linkedOp.id, status: 'DRAFT',
+              createdById: doc.createdById, partnerId: doc.partnerId, referenceDocumentId: doc.id,
+              note: `Referans belge: ${doc.documentNo}`,
+              lines: {
+                create: srcLines.map((l, i) => ({
+                  companyId: doc.companyId, lineNo: i + 1, productId: l.productId, unitId: l.unitId,
+                  quantity: l.quantity, batchNo: l.batchNo, serialNo: l.serialNo, collectedQty: 0,
+                })),
+              },
+            },
+            select: { id: true, documentNo: true },
+          })
+          await refreshDocStatus(tx, created.id, { source: 'reference-create', userId: breakOpts.userId ?? null }) // → Bekliyor
+          referenceDocument = created
+        }
+      }
+    }
+
+    const updated = await tx.tBLDOCUMENT.update({
       where: { id: documentId },
       data: { status: 'COMPLETED', completedAt: new Date() },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
+    return Object.assign(updated, { referenceDocument })
   })
 }
 

@@ -3,7 +3,7 @@
 
 // FK alan adı → API kaynağı: ham id yerine ilgili tablodan "kod — ad" göster (formConfig olmasa da)
 export const FK_RESOURCE: Record<string, string> = {
-  operationTypeId: 'operation-types', reverseOperationTypeId: 'operation-types',
+  operationTypeId: 'operation-types', reverseOperationTypeId: 'operation-types', linkedEntryOperationTypeId: 'operation-types',
   sourceOperationTypeId: 'operation-types', targetOperationTypeId: 'operation-types',
   entryOperationTypeId: 'operation-types', exitOperationTypeId: 'operation-types', transferOperationTypeId: 'operation-types',
   firstOperationId: 'operation-types', secondOperationId: 'operation-types',
@@ -25,7 +25,7 @@ export const FK_RESOURCE: Record<string, string> = {
   sequenceId: 'sequences', operationSequenceId: 'sequences', groupSequenceId: 'sequences',
   facilityId: 'facilities', regionId: 'regions',
   userId: 'users', createdById: 'users',
-  documentId: 'documents', extraFieldId: 'extra-fields',
+  documentId: 'documents', referenceDocumentId: 'documents', extraFieldId: 'extra-fields',
   productGroupId: 'product-groups', productSubGroupId: 'product-subgroups',
   productTypeId: 'product-types', detailTypeId: 'product-detail-types',
   labelTypeId: 'label-types', barcodeTypeId: 'barcode-types',
@@ -46,7 +46,8 @@ export const FK_LABEL: Record<string, string> = {
   documentStatusId: 'Belge Durumu',
   palletTypeId: 'Palet Tipi', innerPalletTypeId: 'İç Palet Tipi', operationGroupId: 'Operasyon Grubu',
   sequenceId: 'Sayaç', facilityId: 'Tesis', regionId: 'Bölge', userId: 'Kullanıcı', createdById: 'Oluşturan',
-  documentId: 'Belge', parentId: 'Üst', extraFieldId: 'Ek Saha', productGroupId: 'Ürün Grubu',
+  documentId: 'Belge', referenceDocumentId: 'Referans Belge', linkedEntryOperationTypeId: 'Bağlı Giriş Operasyonu',
+  parentId: 'Üst', extraFieldId: 'Ek Saha', productGroupId: 'Ürün Grubu',
   productSubGroupId: 'Alt Grup', productTypeId: 'Ürün Tipi', detailTypeId: 'Detay Tipi',
   // FK değil ama paylaşılan etiket (kod alanları — FK_RESOURCE'da yok, id çözümü denenmez)
   productGroupCode: 'Grup Kodu', manufacturerCode: 'Üretici Kodu',

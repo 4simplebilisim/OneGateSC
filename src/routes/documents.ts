@@ -332,7 +332,9 @@ export async function documentRoutes(app: FastifyInstance) {
     try {
       const done = await completeDocument(id, { breakPassword: body.breakPassword, breakReasonCode: body.breakReasonCode, userId })
       await refreshDocStatus(prisma, id, { source: 'complete', userId: userId ?? null }) // → ONY
-      return await prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true, lines: { orderBy: { lineNo: 'asc' } } } }) ?? done
+      const fresh = await prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true, lines: { orderBy: { lineNo: 'asc' } } } })
+      // Referans Kontrollü: motor bağlı giriş belgesi ürettiyse yanıtla bildir (UI "referans belge doğdu" gösterebilsin)
+      return fresh ? Object.assign(fresh, { referenceDocument: done.referenceDocument ?? null }) : done
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err

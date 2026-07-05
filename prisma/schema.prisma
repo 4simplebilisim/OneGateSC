@@ -967,6 +967,7 @@ model TBLOPERATIONTYPE {
   groupSequenceId  Int? // legacy LNGGRUPSAYACKOD
   operationGroupId Int? // legacy LNGKONTROLGRUPKOD
   reverseOperationTypeId Int? // legacy LNGTERSOPERASYONKOD — ters/iptal operasyonu
+  linkedEntryOperationTypeId Int? // Referans Kontrollü: onayda bağlı GİRİŞ belgesini otomatik üretir (legacy TXTREFERANSBASLIKSSP/DETAYSSP SSP mekanizmasının yerleşik karşılığı; tesisler-arası çıkış→giriş)
   cancelLocationId Int? // legacy LNGIPTALLOKASYONKOD
   logControlDays   Int? // legacy LNGLOGKONTROLGUNSAYISI
 
@@ -1035,6 +1036,7 @@ model TBLDOCUMENT {
   createdById     Int
   partnerId       Int?
   reasonId        Int? // legacy LNGOPERASYONNEDENKOD
+  referenceDocumentId Int? // legacy LNGREFBELGENO — referans zinciri: bu belge hangi belgeden üredi (Referans Kontrollü oto-giriş)
   documentDate    DateTime       @default(now())
   completedAt     DateTime?
   note            String?        @db.VarChar(500)
@@ -1057,6 +1059,7 @@ model TBLDOCUMENT {
   @@index([operationTypeId])
   @@index([partnerId])
   @@index([status])
+  @@index([referenceDocumentId])
   @@schema("wms")
 }
 

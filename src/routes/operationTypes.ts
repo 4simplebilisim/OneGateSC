@@ -27,6 +27,7 @@ const baseShape = {
   groupSequenceId: z.number().int().positive().optional(),
   operationGroupId: z.number().int().positive().optional(),
   reverseOperationTypeId: z.number().int().positive().optional(),
+  linkedEntryOperationTypeId: z.number().int().positive().nullable().optional(), // Referans Kontrollü: onayda otomatik doğacak GİRİŞ operasyonu
   cancelLocationId: z.number().int().positive().optional(),
   logControlDays: z.number().int().optional(),
   ...boolShape,
@@ -51,6 +52,15 @@ async function reverseDirectionError(companyId: number, direction: string | unde
   return null
 }
 
+// Bağlı giriş operasyonu (Referans Kontrollü): aynı firmaya ait + GİRİŞ (INBOUND) yönlü olmalı
+async function linkedEntryError(companyId: number, linkedOpId: number | null | undefined): Promise<string | null> {
+  if (linkedOpId == null) return null
+  const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: linkedOpId, companyId }, select: { direction: true } })
+  if (!op) return 'Bağlı giriş operasyonu bulunamadı (başka firmaya ait veya geçersiz)'
+  if (op.direction !== 'INBOUND') return 'Bağlı giriş operasyonu GİRİŞ (INBOUND) yönlü olmalı — onayda karşı tarafta giriş belgesi doğar'
+  return null
+}
+
 export async function operationTypeRoutes(app: FastifyInstance) {
   app.get('/', async (request) =>
     prisma.tBLOPERATIONTYPE.findMany({ where: { ...companyListFilter(request) }, orderBy: { code: 'asc' } }),
@@ -70,6 +80,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const revErr = await reverseDirectionError(companyId, parsed.data.direction, parsed.data.reverseOperationTypeId)
     if (revErr) return reply.code(400).send({ error: revErr })
+    const lnkErr = await linkedEntryError(companyId, parsed.data.linkedEntryOperationTypeId)
+    if (lnkErr) return reply.code(400).send({ error: lnkErr })
     try {
       const opType = await prisma.tBLOPERATIONTYPE.create({ data: { ...parsed.data, companyId } })
       return reply.code(201).send(opType)
@@ -92,6 +104,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     const reverseOpId = parsed.data.reverseOperationTypeId ?? existing.reverseOperationTypeId
     const revErr = await reverseDirectionError(companyId, direction, reverseOpId)
     if (revErr) return reply.code(400).send({ error: revErr })
+    const lnkErr = await linkedEntryError(companyId, parsed.data.linkedEntryOperationTypeId ?? existing.linkedEntryOperationTypeId)
+    if (lnkErr) return reply.code(400).send({ error: lnkErr })
     return prisma.tBLOPERATIONTYPE.update({ where: { id }, data: parsed.data })
   })
 

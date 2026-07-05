@@ -208,6 +208,39 @@ ok((await req('POST', `/api/documents/${dtr.id}/complete`, {})).status === 200, 
 ok((await stAt(LOC, PID)) === srcB - 10, 'kaynak lok −10', `${srcB}→${await stAt(LOC, PID)}`)
 ok((await stAt(LOC2, PID)) === tgtB + 10, 'hedef lok +10 (palet taşındı)', `${tgtB}→${await stAt(LOC2, PID)}`)
 
+// ── S13: REFERANS KONTROLLÜ — A çıkışı onaylanınca bağlı GİRİŞ belgesi otomatik doğar, B plana karşı toplar ──
+section('S13 — Referans Kontrollü: çıkış onayı → bağlı giriş belgesi otomatik + plana karşı toplama')
+const opRGir = await findOrMakeOp('BLG-RGIR', 'Ref Giriş (oto)', 'INBOUND', 'REFERENCE_CONTROLLED', { targetStatusId: STA })
+const opRCik = await findOrMakeOp('BLG-RCK', 'Ref Çıkış (bağlı)', 'OUTBOUND', 'CONTROLLED', { sourceStatusId: STA })
+ok((await req('PATCH', '/api/operation-types/' + opRCik.id, { linkedEntryOperationTypeId: opRGir.id })).status === 200, 'çıkışa bağlı giriş operasyonu tanımlandı')
+// yanlış yön reddi: bağlı op ÇIKIŞ olamaz
+ok((await req('PATCH', '/api/operation-types/' + opRCik.id, { linkedEntryOperationTypeId: opCik.id })).status === 400, 'bağlı op GİRİŞ değilse 400')
+// A tarafı: çıkış belgesi 5 → okut → onayla
+const sSrc = await stockAt(LOC, STA)
+const dR = (await mkDoc(opRCik.id, [{ productId: PROD, unitId: UNIT, quantity: 5, sourceLocationId: LOC, sourceStatusId: STA }])).d; trash.push(dR.id)
+await okut(dR.lines[0].id, 5)
+await req('POST', `/api/documents/${dR.id}/confirm`, {})
+const cmp = await req('POST', `/api/documents/${dR.id}/complete`, {})
+ok(cmp.status === 200 && cmp.d?.referenceDocument?.id, 'çıkış onaylandı + referans belge doğdu', cmp.d?.referenceDocument?.documentNo)
+ok((await stockAt(LOC, STA)) === sSrc - 5, 'A stoğu −5', `${sSrc}→${await stockAt(LOC, STA)}`)
+// B tarafı: otomatik giriş belgesi — içerik belli (5), referans linki, Bekliyor
+const refId = cmp.d.referenceDocument.id; trash.push(refId)
+const dRef = (await req('GET', `/api/documents/${refId}`)).d
+ok(dRef.operationTypeId === opRGir.id && dRef.referenceDocumentId === dR.id, 'giriş belgesi bağlı op + referans linkli')
+ok(dRef.lines.length === 1 && Number(dRef.lines[0].quantity) === 5 && Number(dRef.lines[0].collectedQty) === 0, 'içerik hazır: 5 (toplanmamış)')
+// referans kontrollü = plana karşı toplama: okutmasız onaya gidemez
+ok((await req('POST', `/api/documents/${refId}/confirm`, {})).status === 409, 'B okutmasız confirm ENGELLİ (plana karşı toplama şart)')
+const tgtRef = await stockAt(LOC2, STA)
+ok((await req('POST', '/api/document-line-scopes', { documentLineId: dRef.lines[0].id, unitId: UNIT, quantity: 5, targetLocationId: LOC2, targetStatusId: STA })).status === 201, 'B okutma 5 (plana karşı)')
+ok((await req('POST', `/api/documents/${refId}/confirm`, {})).status === 200, 'B confirm')
+ok((await req('POST', `/api/documents/${refId}/complete`, {})).status === 200, 'B complete')
+ok((await stockAt(LOC2, STA)) === tgtRef + 5, 'B stoğu +5 (mal teslim alındı)', `${tgtRef}→${await stockAt(LOC2, STA)}`)
+// idempotent: A'nın onayı geri alınıp yeniden onaylanırsa İKİNCİ giriş belgesi doğmaz
+await req('POST', `/api/documents/${dR.id}/reverse`, {})
+await req('POST', `/api/documents/${dR.id}/confirm`, {})
+const cmp2 = await req('POST', `/api/documents/${dR.id}/complete`, {})
+ok(cmp2.status === 200 && cmp2.d?.referenceDocument?.id === refId, 'yeniden onay → ikinci belge YOK (aynı referans)', String(cmp2.d?.referenceDocument?.id))
+
 // ── TEMİZLİK: test belgelerini iptal et (op'lar sabit kod, kalır) ──
 section('TEMİZLİK')
 for (const id of trash) { await cancel(id) }
