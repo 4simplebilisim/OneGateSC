@@ -240,6 +240,24 @@ await req('POST', `/api/documents/${dR.id}/reverse`, {})
 await req('POST', `/api/documents/${dR.id}/confirm`, {})
 const cmp2 = await req('POST', `/api/documents/${dR.id}/complete`, {})
 ok(cmp2.status === 200 && cmp2.d?.referenceDocument?.id === refId, 'yeniden onay → ikinci belge YOK (aynı referans)', String(cmp2.d?.referenceDocument?.id))
+// REFERANS KONTROLLÜ belge ELLE AÇILAMAZ — tanımlara göre (referanstan) doğmuş olması beklenir
+const man1 = await mkDoc(opRGir.id, [{ productId: PROD, unitId: UNIT, quantity: 2, targetLocationId: LOC, targetStatusId: STA }])
+ok(man1.status === 400 && /elle açılamaz/i.test(man1.d?.error || ''), 'referans kontrollü op ile elle belge 400', man1.d?.error?.slice(0, 45))
+ok((await mkDoc(opRGir.id)).status === 400, 'satırsız denemede de 400')
+ok((await req('POST', `/api/documents/${refId}/copy`, {})).status === 400, 'referans kontrollü belge kopyalanamaz (400)')
+// A tarafı KONTROLSÜZ çıkış da olabilir: boş aç → okut → onay → bağlı giriş yine doğar
+const opRCik2 = await findOrMakeOp('BLG-RCK2', 'Ref Çıkış Kontrolsüz', 'OUTBOUND', 'UNCONTROLLED', { sourceStatusId: STA })
+await req('PATCH', '/api/operation-types/' + opRCik2.id, { linkedEntryOperationTypeId: opRGir.id })
+const dR2 = (await mkDoc(opRCik2.id)).d; trash.push(dR2.id)
+ok((await req('POST', '/api/document-line-scopes', { documentId: dR2.id, productId: PROD, unitId: UNIT, quantity: 4, sourceLocationId: LOC, sourceStatusId: STA })).status === 201, 'kontrolsüz çıkış okutması (satır-yaratan)')
+await req('POST', `/api/documents/${dR2.id}/confirm`, {})
+const cmp3 = await req('POST', `/api/documents/${dR2.id}/complete`, {})
+ok(cmp3.status === 200 && cmp3.d?.referenceDocument?.id, 'KONTROLSÜZ çıkış da bağlı giriş üretti', cmp3.d?.referenceDocument?.documentNo)
+if (cmp3.d?.referenceDocument?.id) {
+  trash.push(cmp3.d.referenceDocument.id)
+  const dRef2 = (await req('GET', `/api/documents/${cmp3.d.referenceDocument.id}`)).d
+  ok(Number(dRef2.lines?.[0]?.quantity) === 4 && dRef2.referenceDocumentId === dR2.id, 'içerik okutulandan geldi (4) + referans link')
+}
 
 // ── TEMİZLİK: test belgelerini iptal et (op'lar sabit kod, kalır) ──
 section('TEMİZLİK')

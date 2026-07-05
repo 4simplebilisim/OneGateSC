@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
-import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, MovementError } from '../lib/movement.js'
+import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, referenceGate, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
@@ -139,6 +139,10 @@ export async function documentRoutes(app: FastifyInstance) {
     })
     if (!opType) return reply.code(400).send({ error: 'Geçersiz operasyon tipi' })
 
+    // REFERANS KONTROLLÜ operasyonun belgesi ELLE AÇILAMAZ — bağlı çıkış onayıyla, tanımlara göre otomatik oluşur.
+    if (opType.controlMode === 'REFERENCE_CONTROLLED') {
+      return reply.code(400).send({ error: 'Referans kontrollü operasyonun belgesi elle açılamaz — referans (bağlı çıkış) onayıyla otomatik oluşur' })
+    }
     // Kontrollü belge = içerik plandan belli (belge ekranı/Excel/entegrasyon) → satırlar zorunlu.
     // Kontrolsüz belge = BOŞ açılır, içerik el terminali okutmalarıyla dolar (satırsız oluşturma serbest).
     if (lines.length === 0 && opType.controlMode !== 'UNCONTROLLED') {
@@ -316,6 +320,9 @@ export async function documentRoutes(app: FastifyInstance) {
     // Kontrolsüz op: belge okutmayla oluşur — hiç okutma yoksa onaya gönderilemez
     const scanErr = await uncontrolledScanGate(prisma, id)
     if (scanErr) return reply.code(409).send({ error: scanErr })
+    // Referans kontrollü op: belge referanstan doğmuş olmalı
+    const refErr = await referenceGate(prisma, id)
+    if (refErr) return reply.code(409).send({ error: refErr })
     await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
     await refreshDocStatus(prisma, id, { source: 'confirm', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → OBK
     return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
@@ -408,6 +415,8 @@ export async function documentRoutes(app: FastifyInstance) {
           if (short) throw new MovementError(`Satır ${short.lineNo}: toplama eksik (${short.collected}/${short.quantity})`)
           const scanErr = await uncontrolledScanGate(prisma, id)
           if (scanErr) throw new MovementError(scanErr)
+          const refErr = await referenceGate(prisma, id)
+          if (refErr) throw new MovementError(refErr)
           await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
           await refreshDocStatus(prisma, id) // → OBK
         } else if (action === 'complete') {
@@ -450,6 +459,10 @@ export async function documentRoutes(app: FastifyInstance) {
       include: { operationType: { include: { sequence: true } }, lines: { orderBy: { lineNo: 'asc' } } },
     })
     if (!source) return reply.code(404).send({ error: 'Kaynak belge bulunamadı' })
+    // Referans kontrollü belge kopyalanamaz — kopya referanssız (elle) belge doğururdu
+    if (source.operationType.controlMode === 'REFERENCE_CONTROLLED') {
+      return reply.code(400).send({ error: 'Referans kontrollü belge kopyalanamaz — referans (bağlı çıkış) onayıyla otomatik oluşur' })
+    }
 
     let documentNo = body.data.documentNo
     if (!documentNo) {

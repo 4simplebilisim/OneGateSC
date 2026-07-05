@@ -59,8 +59,9 @@ export const DocumentCreate = () => {
       setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
   }, [facilityId])
 
-  // Operasyonlar: seçili tesise ait (veya tesis-bağımsız) + yöne göre
-  const visibleOps = ops.filter((o) => (o.facilityId == null || o.facilityId === facilityId) && (!direction || o.direction === direction))
+  // Operasyonlar: seçili tesise ait (veya tesis-bağımsız) + yöne göre.
+  // REFERANS KONTROLLÜ operasyon listelenmez — belgesi elle açılamaz (bağlı çıkış onayıyla otomatik doğar).
+  const visibleOps = ops.filter((o) => (o.facilityId == null || o.facilityId === facilityId) && (!direction || o.direction === direction) && o.controlMode !== 'REFERENCE_CONTROLLED')
 
   // Kontrolsüz operasyon: belge BOŞ oluşturulur — içerik el terminali okutmalarıyla dolar (satır girişi yok)
   const selectedOpId = Form.useWatch('operationTypeId', form) as number | undefined

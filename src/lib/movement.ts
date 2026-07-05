@@ -128,6 +128,19 @@ export async function uncontrolledScanGate(client: Prisma.TransactionClient, doc
   return null
 }
 
+/**
+ * REFERANS KONTROLLÜ kapısı — bu operasyonun belgesi referanstan (bağlı çıkış onayı) doğmuş olmalı.
+ * Elle/serbest açılmış (referanssız) belge onay akışına giremez → hata mesajı döner (uygunsa null).
+ */
+export async function referenceGate(client: Prisma.TransactionClient, documentId: number): Promise<string | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    select: { referenceDocumentId: true, operationType: { select: { controlMode: true } } },
+  })
+  if (!doc || doc.operationType.controlMode !== 'REFERENCE_CONTROLLED' || doc.referenceDocumentId != null) return null
+  return 'Referans kontrollü belge referanssız onaylanamaz — bağlı çıkış onayıyla otomatik oluşmalıdır'
+}
+
 // Giriş/Çıkış koşulu kontrol tipi — SSP yerine yerleşik kontroller
 type CtrlType = 'MANUAL' | 'REQUIRE_BATCH' | 'REQUIRE_SERIAL' | 'REQUIRE_REASON' | 'CONTROL_FIELD_REQUIRED' | 'MIN_SHELF_LIFE'
 /** Sync koşul SAĞLANMADI mı? (true → gate). MIN_SHELF_LIFE async olduğu için burada değil. */
@@ -355,6 +368,10 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     if (doc.operationType.affectsStock && op.controlMode === 'UNCONTROLLED') {
       const totalScopes = doc.lines.reduce((n, l) => n + (l.scopes?.length ?? 0), 0)
       if (totalScopes === 0) throw new MovementError('Kontrolsüz belge okutmayla oluşur — el terminalinden okutma yapılmadan onaylanamaz')
+    }
+    // REFERANS KONTROLLÜ kapısı: belge referanstan doğmuş olmalı (elle/serbest belge stok işleyemez)
+    if (op.controlMode === 'REFERENCE_CONTROLLED' && doc.referenceDocumentId == null) {
+      throw new MovementError('Referans kontrollü belge referanssız onaylanamaz — bağlı çıkış onayıyla otomatik oluşmalıdır')
     }
 
     if (doc.operationType.affectsStock) {
