@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { refreshDocStatus } from '../lib/documentStatus.js'
 import { validateScopeAgainstOperation } from '../lib/movement.js'
+import { firstBadRef } from '../lib/refGuard.js'
 
 // Sadece-tarih alanı (üretim/SKT): "YYYY-MM-DD" → UTC ÖĞLE Date (timezone gün-kayması önlenir; @db.Date günü korur)
 const dateOnly = z.preprocess(
@@ -13,8 +14,12 @@ const dateOnly = z.preprocess(
 )
 
 // Belge Satır Kapsamı (okutma) — legacy TBLSBBELGEKAPSAM. Bir DETAY satırına N okutma.
+// İki mod: (a) documentLineId → mevcut satıra okutma (kontrollü: plan satırına toplama)
+//          (b) documentId + productId → SATIR-YARATAN okutma (kontrolsüz: belge boş açılır, okutma satırı bul-veya-yaratır)
 const scopeSchema = z.object({
-  documentLineId: z.number().int().positive(),
+  documentLineId: z.number().int().positive().optional(),
+  documentId: z.number().int().positive().optional(),
+  productId: z.number().int().positive().optional(),
   quantity: z.number().positive(),
   unitId: z.number().int().positive(),
   sourceLocationId: z.number().int().positive().nullable().optional(),
@@ -46,15 +51,22 @@ async function draftLineGuard(companyId: number, documentLineId: number): Promis
   return null
 }
 
-// Okutma değişince satırın collectedQty'sini (Σ kapsam) yeniden hesapla + belge durumunu tazele (BKL→TPL→OBK otomatik)
+// Okutma değişince satırın collectedQty'sini (Σ kapsam) yeniden hesapla + belge durumunu tazele (BKL→TPL→OBK otomatik).
+// KONTROLSÜZ op'ta satır MİKTARI da Σ okutma olur (plan yok — belge okutmayla dolar/oluşur; legacy).
 async function recomputeCollected(documentLineId: number, userId?: number | null) {
   const agg = await prisma.tBLDOCUMENTLINESCOPE.aggregate({ where: { documentLineId }, _sum: { quantity: true } })
-  const line = await prisma.tBLDOCUMENTLINE.update({
+  const sum = agg._sum.quantity ?? new Prisma.Decimal(0)
+  const info = await prisma.tBLDOCUMENTLINE.findUnique({
     where: { id: documentLineId },
-    data: { collectedQty: agg._sum.quantity ?? new Prisma.Decimal(0) },
-    select: { documentId: true },
+    select: { documentId: true, document: { select: { operationType: { select: { controlMode: true } } } } },
   })
-  await refreshDocStatus(prisma, line.documentId, { source: 'collect', userId: userId ?? null })
+  if (!info) return
+  const uncontrolled = info.document.operationType.controlMode === 'UNCONTROLLED'
+  await prisma.tBLDOCUMENTLINE.update({
+    where: { id: documentLineId },
+    data: { collectedQty: sum, ...(uncontrolled ? { quantity: sum } : {}) },
+  })
+  await refreshDocStatus(prisma, info.documentId, { source: 'collect', userId: userId ?? null })
 }
 
 export async function documentScopeRoutes(app: FastifyInstance) {
@@ -73,24 +85,53 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     const parsed = scopeSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
-    const g = await draftLineGuard(companyId, parsed.data.documentLineId)
-    if (g) return reply.code(g.code).send({ error: g.error })
-    const last = await prisma.tBLDOCUMENTLINESCOPE.findFirst({ where: { documentLineId: parsed.data.documentLineId }, orderBy: { scopeNo: 'desc' }, select: { scopeNo: true } })
+    // documentId/productId scope kolonu değil — satır çözümlemesinde kullanılır, create'e spread edilmez
+    const { documentLineId: givenLineId, documentId, productId, ...scopeData } = parsed.data
+
+    let documentLineId = givenLineId
+    if (!documentLineId) {
+      // SATIR-YARATAN okutma (kontrolsüz): belge boş açılır, her okutma ürün satırını bul-veya-yaratır
+      if (!documentId || !productId) return reply.code(400).send({ error: 'documentLineId ya da (documentId + productId) gerekli' })
+      const doc = await prisma.tBLDOCUMENT.findFirst({
+        where: { id: documentId, companyId },
+        select: { status: true, operationType: { select: { controlMode: true } } },
+      })
+      if (!doc) return reply.code(404).send({ error: 'Belge bulunamadı' })
+      if (doc.status !== 'DRAFT') return reply.code(409).send({ error: 'Sadece DRAFT belgede okutma düzenlenebilir' })
+      if (doc.operationType.controlMode !== 'UNCONTROLLED') {
+        return reply.code(400).send({ error: 'Kontrollü belgede okutma plan satırına yapılır (documentLineId verin) — içerik plandan bellidir' })
+      }
+      const bad = await firstBadRef(companyId, [['Ürün', 'product', productId], ['Birim', 'unit', scopeData.unitId]])
+      if (bad) return reply.code(400).send({ error: `${bad}: başka firmaya ait veya geçersiz` })
+      let line = await prisma.tBLDOCUMENTLINE.findFirst({ where: { documentId, productId, unitId: scopeData.unitId } })
+      if (!line) {
+        const maxNo = await prisma.tBLDOCUMENTLINE.aggregate({ where: { documentId }, _max: { lineNo: true } })
+        line = await prisma.tBLDOCUMENTLINE.create({
+          data: { companyId, documentId, lineNo: (maxNo._max.lineNo ?? 0) + 1, productId, unitId: scopeData.unitId, quantity: 0, collectedQty: 0 },
+        })
+      }
+      documentLineId = line.id
+    } else {
+      const g = await draftLineGuard(companyId, documentLineId)
+      if (g) return reply.code(g.code).send({ error: g.error })
+    }
+    const last = await prisma.tBLDOCUMENTLINESCOPE.findFirst({ where: { documentLineId }, orderBy: { scopeNo: 'desc' }, select: { scopeNo: true } })
     // Kaynak/hedef lokasyon+statü verilmezse SATIRDAN miras al (operatör tek tek girmesin; complete bunları kullanır)
     const ln = await prisma.tBLDOCUMENTLINE.findUnique({
-      where: { id: parsed.data.documentLineId },
+      where: { id: documentLineId },
       select: {
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
+        batchNo: true, serialNo: true,
         product: { select: { productGroupId: true } },
         document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true } } } },
       },
     })
     // Okutulan (miras dahil) kaynak/hedef lokasyon+statü
     const eff = {
-      sourceLocationId: parsed.data.sourceLocationId ?? ln?.sourceLocationId ?? null,
-      sourceStatusId: parsed.data.sourceStatusId ?? ln?.sourceStatusId ?? null,
-      targetLocationId: parsed.data.targetLocationId ?? ln?.targetLocationId ?? null,
-      targetStatusId: parsed.data.targetStatusId ?? ln?.targetStatusId ?? null,
+      sourceLocationId: scopeData.sourceLocationId ?? ln?.sourceLocationId ?? null,
+      sourceStatusId: scopeData.sourceStatusId ?? ln?.sourceStatusId ?? null,
+      targetLocationId: scopeData.targetLocationId ?? ln?.targetLocationId ?? null,
+      targetStatusId: scopeData.targetStatusId ?? ln?.targetStatusId ?? null,
     }
     // Operasyon ↔ statü/lokasyon kuralı: okutulan statü/lokasyon tanıma uymuyorsa okutma reddedilir (uyumsuz hatası)
     if (ln?.document.operationType) {
@@ -103,11 +144,14 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       if (vErr) return reply.code(400).send({ error: vErr })
     }
     const created = await prisma.tBLDOCUMENTLINESCOPE.create({ data: {
-      ...parsed.data, companyId, scopeNo: (last?.scopeNo ?? 0) + 1,
+      ...scopeData, documentLineId, companyId, scopeNo: (last?.scopeNo ?? 0) + 1,
       sourceLocationId: eff.sourceLocationId, sourceStatusId: eff.sourceStatusId,
       targetLocationId: eff.targetLocationId, targetStatusId: eff.targetStatusId,
+      // Parti/seri okutmada verilmezse plan satırından miras (complete scope'u gerçek kaynak alır)
+      batchNo: scopeData.batchNo ?? ln?.batchNo ?? null,
+      serialNo: scopeData.serialNo ?? ln?.serialNo ?? null,
     } })
-    await recomputeCollected(parsed.data.documentLineId, Number((request.user as { sub?: number | string })?.sub) || null)
+    await recomputeCollected(documentLineId, Number((request.user as { sub?: number | string })?.sub) || null)
     return reply.code(201).send(created)
   })
 
@@ -121,7 +165,9 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     if (!sc) return reply.code(404).send({ error: 'Okutma bulunamadı' })
     const g = await draftLineGuard(companyId, sc.documentLineId)
     if (g) return reply.code(g.code).send({ error: g.error })
-    const updated = await prisma.tBLDOCUMENTLINESCOPE.update({ where: { id }, data: parsed.data })
+    // documentLineId/documentId/productId PATCH ile değiştirilemez (okutma satırına bağlıdır; taşıma = sil + yeniden okut)
+    const { documentLineId: _l, documentId: _d, productId: _p, ...patch } = parsed.data
+    const updated = await prisma.tBLDOCUMENTLINESCOPE.update({ where: { id }, data: patch })
     await recomputeCollected(sc.documentLineId, Number((request.user as { sub?: number | string })?.sub) || null)
     return updated
   })

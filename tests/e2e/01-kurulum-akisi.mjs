@@ -74,6 +74,9 @@ export default async function run() {
     const doc = await api('POST', '/api/documents', { ...co, body: { documentNo: 'K-GR-0001', operationTypeId: opId, warehouseId: whId, partnerId: partner.data.id, lines: [{ productId: prodId, unitId, quantity: QTY, batchNo: 'KB1', targetLocationId: locId, targetStatusId: statusId }] } })
     r.ok(doc.status === 201 && !!doc.data.id, 'belge oluştu (DRAFT)', msg(doc))
     if (doc.data.id) {
+      // Kontrolsüz belge okutmayla gerçeklenir (okutma ŞART) → onaydan önce satırı okut
+      const scan = await api('POST', '/api/document-line-scopes', { ...co, body: { documentLineId: doc.data.lines[0].id, unitId, quantity: QTY } })
+      r.ok(scan.status === 201, 'okutma (kontrolsüzde şart)', msg(scan))
       const confirm = await api('POST', `/api/documents/${doc.data.id}/confirm`, co)
       r.ok(confirm.status === 200 || confirm.status === 201, 'confirm', msg(confirm))
       const complete = await api('POST', `/api/documents/${doc.data.id}/complete`, co)

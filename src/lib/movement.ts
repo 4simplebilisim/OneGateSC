@@ -112,6 +112,22 @@ export async function collectionShortfall(client: Prisma.TransactionClient, docu
   return null
 }
 
+/**
+ * KONTROLSÜZ okutma kapısı — legacy: kontrolsüz belge BOŞ açılır, içerik el terminali okutmalarıyla
+ * oluşur (okutma ŞART). Hiç okutma yoksa onaya gönderilemez/onaylanamaz → hata mesajı döner (yoksa null).
+ * (Kontrollü = içerik plandan belli, o taraf collectionShortfall ile satır-bazlı denetlenir.)
+ */
+export async function uncontrolledScanGate(client: Prisma.TransactionClient, documentId: number): Promise<string | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    include: { operationType: { select: { controlMode: true, affectsStock: true } }, lines: { select: { _count: { select: { scopes: true } } } } },
+  })
+  if (!doc || !doc.operationType.affectsStock || doc.operationType.controlMode !== 'UNCONTROLLED') return null
+  const totalScopes = doc.lines.reduce((n, l) => n + l._count.scopes, 0)
+  if (totalScopes === 0) return 'Kontrolsüz belge okutmayla oluşur — el terminalinden okutma yapılmadan onaya gönderilemez/onaylanamaz'
+  return null
+}
+
 // Giriş/Çıkış koşulu kontrol tipi — SSP yerine yerleşik kontroller
 type CtrlType = 'MANUAL' | 'REQUIRE_BATCH' | 'REQUIRE_SERIAL' | 'REQUIRE_REASON' | 'CONTROL_FIELD_REQUIRED' | 'MIN_SHELF_LIFE'
 /** Sync koşul SAĞLANMADI mı? (true → gate). MIN_SHELF_LIFE async olduğu için burada değil. */
@@ -335,8 +351,16 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       breakOk = !!pw
     }
 
+    // KONTROLSÜZ okutma kapısı: kontrolsüz belge okutmayla oluşur — hiç okutma yoksa stok işlenemez (legacy)
+    if (doc.operationType.affectsStock && op.controlMode === 'UNCONTROLLED') {
+      const totalScopes = doc.lines.reduce((n, l) => n + (l.scopes?.length ?? 0), 0)
+      if (totalScopes === 0) throw new MovementError('Kontrolsüz belge okutmayla oluşur — el terminalinden okutma yapılmadan onaylanamaz')
+    }
+
     if (doc.operationType.affectsStock) {
       for (const line of doc.lines) {
+        // Okutmasız + sıfır-miktar satır (okutması silinmiş kontrolsüz satır): işlenecek bir şey yok — atla
+        if ((!line.scopes || line.scopes.length === 0) && line.quantity.lte(0)) continue
         // Pasif ürün: operasyon izin vermiyorsa (passiveProductUse=false) pasif ürün hareket edemez
         const product = await tx.tBLPRODUCT.findUnique({ where: { id: line.productId }, select: { isActive: true, code: true, productGroupId: true, shelfLifeDays: true } })
         if (product && !product.isActive && !op.passiveProductUse) {

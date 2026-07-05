@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
-import { completeDocument, reverseDocument, splitDocument, collectionShortfall, MovementError } from '../lib/movement.js'
+import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
@@ -34,7 +34,8 @@ const createSchema = z.object({
   reasonId: z.number().int().positive().optional(),
   documentDate: z.string().optional(),
   note: z.string().max(500).optional(),
-  lines: z.array(lineSchema).min(1),
+  // Kontrollü op: satırlar zorunlu (içerik plandan belli). Kontrolsüz: BOŞ açılır, okutmayla dolar (handler'da doğrulanır).
+  lines: z.array(lineSchema).optional(),
 })
 
 const lineInclude = {
@@ -128,7 +129,8 @@ export async function documentRoutes(app: FastifyInstance) {
     }
 
     const companyId = getCompanyId(request)
-    const { lines, documentDate, documentNo: providedNo, ...header } = parsed.data
+    const { lines: rawLines, documentDate, documentNo: providedNo, ...header } = parsed.data
+    const lines = rawLines ?? []
 
     // Operasyon tipini bir kez çek (yön + sayaç)
     const opType = await prisma.tBLOPERATIONTYPE.findFirst({
@@ -136,6 +138,12 @@ export async function documentRoutes(app: FastifyInstance) {
       include: { sequence: true },
     })
     if (!opType) return reply.code(400).send({ error: 'Geçersiz operasyon tipi' })
+
+    // Kontrollü belge = içerik plandan belli (belge ekranı/Excel/entegrasyon) → satırlar zorunlu.
+    // Kontrolsüz belge = BOŞ açılır, içerik el terminali okutmalarıyla dolar (satırsız oluşturma serbest).
+    if (lines.length === 0 && opType.controlMode !== 'UNCONTROLLED') {
+      return reply.code(400).send({ error: 'Kontrollü operasyonda belge içeriği (satırlar) zorunlu — kontrolsüz belge boş açılıp okutmayla dolar' })
+    }
 
     // Cross-tenant koruması: header (depo/cari/neden) + satır referansları (ürün/birim/lokasyon/statü/palet)
     // bu firmaya ait olmalı — aksi halde A firması belgesi B'nin ürün/lokasyonunu referans edip stok yazabiliyordu.
@@ -305,6 +313,9 @@ export async function documentRoutes(app: FastifyInstance) {
     // Kontrollü op: her satır TAM toplanmadan onaya gönderilemez (eksikse tamamla ya da BÖL)
     const short = await collectionShortfall(prisma, id)
     if (short) return reply.code(409).send({ error: `Satır ${short.lineNo}: toplama eksik (${short.collected}/${short.quantity}) — onaya gönderilemez. Tamamlayın ya da belgeyi bölün (Böl).` })
+    // Kontrolsüz op: belge okutmayla oluşur — hiç okutma yoksa onaya gönderilemez
+    const scanErr = await uncontrolledScanGate(prisma, id)
+    if (scanErr) return reply.code(409).send({ error: scanErr })
     await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
     await refreshDocStatus(prisma, id, { source: 'confirm', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → OBK
     return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
@@ -390,6 +401,11 @@ export async function documentRoutes(app: FastifyInstance) {
       try {
         if (action === 'confirm') {
           if (doc.status !== 'DRAFT') throw new MovementError(`DRAFT değil (${doc.status})`)
+          // Tekil confirm ile aynı kapılar: kontrollü=tam toplama, kontrolsüz=en az bir okutma
+          const short = await collectionShortfall(prisma, id)
+          if (short) throw new MovementError(`Satır ${short.lineNo}: toplama eksik (${short.collected}/${short.quantity})`)
+          const scanErr = await uncontrolledScanGate(prisma, id)
+          if (scanErr) throw new MovementError(scanErr)
           await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
           await refreshDocStatus(prisma, id) // → OBK
         } else if (action === 'complete') {

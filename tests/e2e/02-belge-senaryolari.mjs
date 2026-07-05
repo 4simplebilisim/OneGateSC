@@ -1,7 +1,9 @@
 // BELGE TEST SENARYOLARI — standart suite. Her belge testinde bu kurallar uygulanır.
 // Kurallar: (1) satır bazlı TAM toplama olmadan onaya gönderilemez (kontrollü op).
 //          (2) eksik toplamada BÖLmeden onaya gidilemez → böl → toplanan kısım onaylanır, kalan Bekliyor.
-//          (3) kontrolsüz op toplama gerektirmez. (4) Onay İptal → Bekliyor'a döner. (5) okutma statü/lokasyon kuralı.
+//          (3) KONTROLSÜZ belge BOŞ açılır, içerik el terminali okutmalarıyla dolar — okutma ŞART (okutmasız onay yok).
+//              KONTROLLÜ belge içeriği belli (belge ekranı/Excel/entegrasyon) — toplama plana karşı yapılır.
+//          (4) Onay İptal → Bekliyor'a döner. (5) okutma statü/lokasyon kuralı.
 // Çalıştır: node tests/e2e/belge-senaryolari.mjs   (API :3000 açık olmalı)
 const B = process.env.API || 'http://127.0.0.1:3000'
 const CO = '2'
@@ -49,18 +51,29 @@ let PT = norm(await req('GET', '/api/pallet-types?pageSize=100').then(r => r.d))
 if (!PT) PT = (await req('POST', '/api/pallet-types', { code: 'BLG-PT', name: 'Test Palet Tipi', facilityId: FAC, mixingType: 'SINGLE_PRODUCT' })).d
 
 let docN = 0
-const mkDoc = (opId, lines) => req('POST', '/api/documents', { operationTypeId: opId, documentNo: 'BSN' + Date.now().toString().slice(-7) + '-' + (++docN), lines })
+const mkDoc = (opId, lines) => req('POST', '/api/documents', { operationTypeId: opId, documentNo: 'BSN' + Date.now().toString().slice(-7) + '-' + (++docN), ...(lines ? { lines } : {}) })
 const okut = (lineId, qty) => req('POST', '/api/document-line-scopes', { documentLineId: lineId, unitId: UNIT, quantity: qty })
 const cancel = (id) => req('POST', `/api/documents/${id}/cancel`, {})
 const trash = []
 
-// ── S1: KONTROLSÜZ giriş — okutmasız onaya gönder + onayla (toplama gerekmez) + stok kur ──
-section('S1 — Kontrolsüz giriş: okutmasız onay geçer (toplama gerekmez)')
+// ── S1: KONTROLSÜZ — legacy semantik: belge BOŞ açılır, içerik OKUTMAYLA dolar, okutma ŞART ──
+section('S1 — Kontrolsüz: boş açılır → okutmasız onay ENGELLİ → okutma doldurur → onay')
 const s0 = await stockAt(LOC, STA)
-const d1 = (await mkDoc(opGir.id, [{ productId: PROD, unitId: UNIT, quantity: 40, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(d1.id)
-ok((await req('POST', `/api/documents/${d1.id}/confirm`, {})).status === 200, 'kontrolsüz confirm (okutmasız)')
-ok((await req('POST', `/api/documents/${d1.id}/complete`, {})).status === 200, 'kontrolsüz complete')
-ok((await stockAt(LOC, STA)) === s0 + 40, 'stok +40', `${s0}→${await stockAt(LOC, STA)}`)
+const d1 = (await mkDoc(opGir.id)).d; trash.push(d1.id)
+ok(d1.id != null && (d1.lines?.length ?? 0) === 0, 'boş belge açıldı (satırsız)')
+const c1a = await req('POST', `/api/documents/${d1.id}/confirm`, {})
+ok(c1a.status === 409 && /okutma/i.test(c1a.d?.error || ''), 'okutmasız confirm ENGELLİ (okutma şart)', c1a.d?.error?.slice(0, 50))
+// satır-yaratan okutma: documentId+productId → satır otomatik oluşur; satır miktarı = Σ okutma
+ok((await req('POST', '/api/document-line-scopes', { documentId: d1.id, productId: PROD, unitId: UNIT, quantity: 25, targetLocationId: LOC, targetStatusId: STA })).status === 201, 'okutma 1 → satır otomatik oluştu')
+ok((await req('POST', '/api/document-line-scopes', { documentId: d1.id, productId: PROD, unitId: UNIT, quantity: 15, targetLocationId: LOC, targetStatusId: STA })).status === 201, 'okutma 2 → aynı satıra birikti')
+const d1b = (await req('GET', `/api/documents/${d1.id}`)).d
+ok((d1b.lines?.length ?? 0) === 1 && Number(d1b.lines[0].quantity) === 40, 'tek satır, miktar=Σokutma (40)', `${d1b.lines?.length} satır, qty=${d1b.lines?.[0]?.quantity}`)
+ok((await req('POST', `/api/documents/${d1.id}/confirm`, {})).status === 200, 'okutma sonrası confirm geçer')
+ok((await req('POST', `/api/documents/${d1.id}/complete`, {})).status === 200, 'complete')
+ok((await stockAt(LOC, STA)) === s0 + 40, 'stok +40 (okutulan kadar)', `${s0}→${await stockAt(LOC, STA)}`)
+// elle satır girilmiş kontrolsüz bile okutmasız onaylanamaz (içerik ancak okutmayla gerçeklenir)
+const d1c = (await mkDoc(opGir.id, [{ productId: PROD, unitId: UNIT, quantity: 5, targetLocationId: LOC, targetStatusId: STA }])).d; trash.push(d1c.id)
+ok((await req('POST', `/api/documents/${d1c.id}/confirm`, {})).status === 409, 'elle satırlı kontrolsüz de okutmasız ENGELLİ')
 
 // ── S2: KONTROLLÜ çıkış — HİÇ toplama → onaya GÖNDERİLEMEZ ──
 section('S2 — Kontrollü çıkış: toplama YOK → onaya gönderilemez')

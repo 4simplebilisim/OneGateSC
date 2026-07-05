@@ -25,7 +25,7 @@ export const DocumentCreate = () => {
 
   const [facilityId, setFacilityId] = useState<number>() // Tesis — operasyonları + lokasyonları süzer
   const [facilities, setFacilities] = useState<Opt[]>([])
-  const [ops, setOps] = useState<(Opt & { direction: string; facilityId: number | null })[]>([])
+  const [ops, setOps] = useState<(Opt & { direction: string; facilityId: number | null; controlMode?: string })[]>([])
   const [partners, setPartners] = useState<Opt[]>([])
   const [products, setProducts] = useState<Opt[]>([])
   const [productUnits, setProductUnits] = useState<Record<number, (Opt & { isBase?: boolean })[]>>({})
@@ -43,7 +43,7 @@ export const DocumentCreate = () => {
   // Firma bağlamına göre kaynaklar (super-admin firma değiştirince yeniden çekilir; header x-company-id og_company'den)
   useEffect(() => {
     axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) =>
-      setOps((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}`, direction: x.direction as string, facilityId: (x.facilityId as number) ?? null }))))
+      setOps((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}`, direction: x.direction as string, facilityId: (x.facilityId as number) ?? null, controlMode: x.controlMode as string | undefined }))))
     axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) =>
       setFacilities((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
     axiosInstance.get('/api/products', { params: { pageSize: 300 } }).then((r) =>
@@ -61,6 +61,10 @@ export const DocumentCreate = () => {
 
   // Operasyonlar: seçili tesise ait (veya tesis-bağımsız) + yöne göre
   const visibleOps = ops.filter((o) => (o.facilityId == null || o.facilityId === facilityId) && (!direction || o.direction === direction))
+
+  // Kontrolsüz operasyon: belge BOŞ oluşturulur — içerik el terminali okutmalarıyla dolar (satır girişi yok)
+  const selectedOpId = Form.useWatch('operationTypeId', form) as number | undefined
+  const uncontrolled = ops.find((o) => o.value === selectedOpId)?.controlMode === 'UNCONTROLLED'
 
   const onFirmaChange = (v: number) => {
     setCompanyId(v)
@@ -94,7 +98,8 @@ export const DocumentCreate = () => {
     setSubmitting(true)
     try {
       // warehouseId GÖNDERİLMEZ — belge tesise/operasyona bağlı (backend operationType.facilityId'den türetir)
-      const res = await axiosInstance.post('/api/documents', values)
+      // Kontrolsüzde satırlar GÖNDERİLMEZ — belge boş açılır, okutmayla dolar
+      const res = await axiosInstance.post('/api/documents', uncontrolled ? { ...values, lines: undefined } : values)
       const auto = res.data?.autoRoutedLines ?? 0
       message.success(auto > 0 ? `Belge oluşturuldu — ${auto} satır otomatik yönlendirildi` : 'Belge oluşturuldu')
       navigate(backTo)
@@ -140,6 +145,15 @@ export const DocumentCreate = () => {
           </Space>
         </Card>
 
+        {uncontrolled ? (
+          <Card className="og-section-card" size="small" title="Satırlar">
+            <Alert
+              type="warning"
+              showIcon
+              title="Kontrolsüz operasyon — belge BOŞ oluşturulur. İçerik (ürün + miktar) el terminali okutmalarıyla dolar; okutma yapılmadan onaylanamaz."
+            />
+          </Card>
+        ) : (
         <Card className="og-section-card" size="small" title="Satırlar">
           <Alert
             type="info"
@@ -204,6 +218,7 @@ export const DocumentCreate = () => {
             )}
           </Form.List>
         </Card>
+        )}
 
         <div className="og-formbar">
           <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={submitting}>Kaydet</Button>
