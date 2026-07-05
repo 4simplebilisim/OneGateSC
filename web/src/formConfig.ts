@@ -291,14 +291,11 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'palletTypeId', label: 'Palet Tipi', type: 'ref', required: true, refResource: 'pallet-types' },
     { name: 'innerPalletTypeId', label: 'İç Palet Tipi', type: 'ref', refResource: 'pallet-types' },
   ],
-  'operation-conversions': [OP_TYPE_REF, TESIS_REF,
-    { name: 'conversionCode', label: 'Dönüşüm Kodu', type: 'text', required: true },
-    { name: 'statusId', label: 'Statü', type: 'ref', refResource: 'statuses' },
+  // Dönüşüm — ticari pakete/entegrasyona hangi HAREKET TİPİ koduyla bilgi gönderileceği eşlemesi.
+  // Örn. SAP'de Dönüşüm Kodu "MO" → entegrasyon bacağında Move Order'a tekabül eder.
+  'operation-conversions': [TESIS_REF, OP_TYPE_REF,
+    { name: 'conversionCode', label: 'Dönüşüm Kodu (entegrasyon hareket tipi — ör. SAP "MO")', type: 'text', required: true },
     { name: 'outgoing', label: 'Giden', type: 'bool' },
-    { name: 'sourceLocLinkType', label: 'Kaynak Lok. Bağ.', type: 'select', options: SCOPE_OPTS },
-    { name: 'sourceLocLinkId', label: 'Kaynak Lokasyon', type: 'ref', refResource: 'locations' },
-    { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ.', type: 'select', options: SCOPE_OPTS },
-    { name: 'targetLocLinkId', label: 'Hedef Lokasyon', type: 'ref', refResource: 'locations' },
   ],
   'operation-bulk-actions': [OP_TYPE_REF, TESIS_REF,
     { name: 'bulkActionType', label: 'Toplu İşlem Tipi', type: 'select', options: BULK_ACTION_OPTS },
@@ -637,11 +634,18 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'priority', label: 'Öncelik (küçük önce)', type: 'number' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
+  // Belge Onay Tipi — StokBar birebir, SADECE bu 3 alan (ekstra yok):
+  // Toplama Ekranından Onay = okutma bitince İleri→"onay verilsin mi?" (genelde kontrolsüz)
+  // Tek Aşamalı = kontrollüde kısmi toplama; İleri→Onayla/Böl seçenekleri
+  // İki Aşamalı = önce mobilden onay, en sonda Gözlem ekranından son onay
   'document-approval-types': [
+    { name: 'facilityId', label: 'Tesis', type: 'ref', required: true, refResource: 'facilities' },
     { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', required: true, refResource: 'operation-types' },
-    { name: 'approvalType', label: 'Onay Tipi', type: 'number', required: true },
-    { name: 'controlCollection', label: 'Toplama Kontrolü', type: 'bool' },
-    { name: 'isActive', label: 'Aktif', type: 'bool' },
+    { name: 'approvalType', label: 'Onay Tipi', type: 'select', required: true, options: [
+      { value: 1, label: 'Toplama Ekranından Onay' },
+      { value: 2, label: 'Tek Aşamalı Onay' },
+      { value: 3, label: 'İki Aşamalı Onay' },
+    ] },
   ],
   'label-types': [
     { name: 'code', label: 'Kod', type: 'text', required: true },

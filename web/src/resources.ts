@@ -35,8 +35,9 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'location-groups', label: 'Lokasyon Grupları', section: 'Tanımlamalar', group: 'Lokasyon' },
   { name: 'location-capacities', label: 'Lokasyon Kapasite', section: 'Tanımlamalar', group: 'Lokasyon' },
   // Statü / Neden / Palet Tipi = master tanımlar → grupsuz, doğrudan Tanımlamalar altında (tek tek)
-  { name: 'statuses', label: 'Statüler', section: 'Tanımlamalar', group: '' },
-  { name: 'pallet-types', label: 'Palet Tipleri', section: 'Tanımlamalar', group: '' },
+  // Statüler + Palet Tipleri: Tanımlamalar'dan Uyarlamalar › Genel'e taşındı (operasyon uyarlamasının parçası)
+  { name: 'statuses', label: 'Statüler', section: 'Uyarlamalar', group: 'Genel' },
+  { name: 'pallet-types', label: 'Palet Tipleri', section: 'Uyarlamalar', group: 'Genel' },
   // NOT: Neden (reasons) → Uyarlamalar > Operasyon altına taşındı (StokBar yerleşimi).
 
   // ── İşlemler (transaction) — StokBar gibi: Giriş/Çıkış/Transfer her biri GRUP. Her grupta TEK "Belgeler"
@@ -120,7 +121,7 @@ export const RESOURCES: ResourceDef[] = [
   // Sıralı Operasyon: ayrı menü değil — Operasyon Tipi formunun "Sıralı Operasyon" sekmesi (API: sequential-operations)
   { name: 'auto-reference-documents', label: 'Otomatik Ref. Kontrollü Belge', section: 'Uyarlamalar', group: 'Operasyon' },
   // Toplu İşlem Bağlantı: ayrı ekran değil — Operasyon Tipi tanımındaki 'Toplu İşlem'/'Rezervasyon' parametreleri
-  { name: 'product-based-collections', label: 'Ürün Bazında Toplama Bağlantı', section: 'Uyarlamalar', group: 'Operasyon' },
+  // Ürün Bazında Toplama: menüden kaldırıldı (kullanılmıyor) — API/kod durur (product-based-collections)
   // Belge Tipleri
   { name: 'document-statuses', label: 'Belge Durumları', section: 'Uyarlamalar', group: 'Belge Tipleri' },
   { name: 'document-status-actions', label: 'Belge Durum İşlem', section: 'Uyarlamalar', group: 'Belge Tipleri' },

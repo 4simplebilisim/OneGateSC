@@ -82,6 +82,7 @@ const docCondition = z.enum(['CANCELLED', 'COMPLETED', 'CONFIRMED', 'NONE_COLLEC
 const dsCriteria = z.object({ operationTypeId: pInt, businessPartnerId: pInt.nullable().optional(), condition: docCondition.optional(), targetStatusId: pInt.nullable().optional(), priority: z.number().int().optional(), criteria: z.string().optional(), isActive: z.boolean().optional() })
 export const documentStatusCriteriaRoutes = simpleCrud(prisma.tBLDOCUMENTSTATUSCRITERIA as unknown as Delegate, dsCriteria, dsCriteria.partial(), 'Document status criteria not found')
 
-// Belge Onay Tipi
-const docApproval = z.object({ operationTypeId: pInt, approvalType: z.number().int(), controlCollection: z.boolean().optional(), isActive: z.boolean().optional() })
+// Belge Onay Tipi — BYTONAYTIPI: 1=Toplama Ekranından Onay (okutma bitince İleri→onay; genelde kontrolsüz)
+// 2=Tek Aşamalı (kontrollüde kısmi toplama; İleri→Onayla/Böl) · 3=İki Aşamalı (mobil onay + Gözlem'den son onay)
+const docApproval = z.object({ facilityId: pInt.optional(), operationTypeId: pInt, approvalType: z.number().int().min(1).max(3), controlCollection: z.boolean().optional(), isActive: z.boolean().optional() })
 export const documentApprovalTypeRoutes = simpleCrud(prisma.tBLDOCUMENTAPPROVALTYPE as unknown as Delegate, docApproval, docApproval.partial(), 'Document approval type not found')

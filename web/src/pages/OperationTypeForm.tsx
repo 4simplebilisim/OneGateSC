@@ -114,14 +114,10 @@ const PALLET_FIELDS: LF[] = [
 // Kurallar sekmesi (operasyona ait config)
 const TOLERANCE_FIELDS: LF[] = [...CARI, ...MALZEME, { name: 'ignoreSplit', label: 'Bölme Dikkate Alınsın', type: 'bool' }]
 const FORBIDDEN_FIELDS: LF[] = [...CARI, ...MALZEME]
+// Dönüşüm: entegrasyona gidecek HAREKET TİPİ kodu eşlemesi (ör. SAP "MO" = Move Order)
 const CONVERSION_FIELDS: LF[] = [
-  { name: 'conversionCode', label: 'Dönüşüm Kodu', type: 'text', required: true },
-  { name: 'statusId', label: 'Statü', type: 'ref', ref: 'statuses' },
+  { name: 'conversionCode', label: 'Dönüşüm Kodu (entegrasyon hareket tipi)', type: 'text', required: true },
   { name: 'outgoing', label: 'Giden', type: 'bool' },
-  { name: 'sourceLocLinkType', label: 'Kaynak Lok. Bağ.', type: 'select', options: SCOPE },
-  { name: 'sourceLocLinkId', label: 'Kaynak Lokasyon', type: 'ref', ref: 'locations' },
-  { name: 'targetLocLinkType', label: 'Hedef Lok. Bağ.', type: 'select', options: SCOPE },
-  { name: 'targetLocLinkId', label: 'Hedef Lokasyon', type: 'ref', ref: 'locations' },
 ]
 // Sıralı Operasyon — bu operasyondan SONRA hangi operasyonla devam edilir (aynı tesis altındaki 2 operasyon)
 const SEQ_FIELDS: LF[] = [

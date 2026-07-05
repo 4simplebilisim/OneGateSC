@@ -2299,8 +2299,12 @@ model TBLDOCUMENTSTATUSHISTORY {
 model TBLDOCUMENTAPPROVALTYPE {
   id                Int      @id @default(autoincrement())
   companyId         Int
+  facilityId        Int? // Tesis (legacy LNGDISTKOD) — StokBar Belge Onay Tipi ekranında zorunlu
   operationTypeId   Int // LNGOPERASYONTIPKOD
-  approvalType      Int // BYTONAYTIPI
+  // BYTONAYTIPI: 1=Toplama Ekranından Onay (okutma bitince İleri→onay sorusu; genelde kontrolsüz)
+  //              2=Tek Aşamalı Onay (kontrollüde kısmi toplama; İleri→Onayla/Böl seçenekleri)
+  //              3=İki Aşamalı Onay (önce mobilden onay, en sonda Gözlem ekranından son onay)
+  approvalType      Int
   controlCollection Boolean  @default(false) // BYTKONTROLTOPLAMA
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
