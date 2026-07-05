@@ -700,10 +700,13 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       if (existing) {
         referenceDocument = existing
       } else {
-        const linkedOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: linkedOpId, companyId: doc.companyId }, select: { id: true } })
+        const linkedOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: linkedOpId, companyId: doc.companyId }, include: { sequence: true } })
         const srcLines = doc.lines.filter((l) => l.quantity.gt(0))
         if (linkedOp && srcLines.length > 0) {
-          const refNo = `${doc.documentNo.slice(0, 37)}-R` // kaynak belge no türevi (unique: kaynak başına tek üretim)
+          // Belge no: bağlı operasyonun SAYACINDAN (tx içinde — atomik); sayaç yoksa kaynak-no türevi (-R)
+          const refNo = linkedOp.sequence
+            ? (await nextSequence(doc.companyId, linkedOp.sequence.code, tx)).formatted
+            : `${doc.documentNo.slice(0, 37)}-R`
           const created = await tx.tBLDOCUMENT.create({
             data: {
               companyId: doc.companyId, documentNo: refNo, operationTypeId: linkedOp.id, status: 'DRAFT',

@@ -220,6 +220,10 @@ ok(arow?.id != null && arow.facility === true && arow.targetFacilityId == null, 
 // doğrulamalar: tesis-içi değilse hedef tesis ZORUNLU; hedef op GİRİŞ olmalı
 ok((await req('POST', '/api/auto-reference-documents', { sourceFacilityId: FAC, sourceOperationTypeId: opRCik.id, targetOperationTypeId: opRGir.id })).status === 400, 'tesis içi değil + hedef tesis yok → 400')
 ok((await req('POST', '/api/auto-reference-documents', { sourceFacilityId: FAC, sourceOperationTypeId: opRCik.id, facility: true, targetOperationTypeId: opCik.id })).status === 400, 'hedef op GİRİŞ değilse 400')
+// bağlı giriş operasyonuna SAYAÇ bağla → oto-belge numarası sayaçtan üretilir (yoksa kaynak-no-R fallback)
+let rseq = norm(await req('GET', '/api/sequences?pageSize=300').then(r => r.d)).find(s => s.code === 'BLGRSEQ' && s.companyId === Number(CO))
+if (!rseq) rseq = (await req('POST', '/api/sequences', { code: 'BLGRSEQ', name: 'Ref Giriş Sayacı', prefix: 'RG-', padLength: 6, startNo: 1 })).d
+await req('PATCH', '/api/operation-types/' + opRGir.id, { sequenceId: rseq.id })
 // A tarafı: çıkış belgesi 5 → okut → onayla
 const sSrc = await stockAt(LOC, STA)
 const dR = (await mkDoc(opRCik.id, [{ productId: PROD, unitId: UNIT, quantity: 5, sourceLocationId: LOC, sourceStatusId: STA }])).d; trash.push(dR.id)
@@ -227,6 +231,7 @@ await okut(dR.lines[0].id, 5)
 await req('POST', `/api/documents/${dR.id}/confirm`, {})
 const cmp = await req('POST', `/api/documents/${dR.id}/complete`, {})
 ok(cmp.status === 200 && cmp.d?.referenceDocument?.id, 'çıkış onaylandı + referans belge doğdu', cmp.d?.referenceDocument?.documentNo)
+ok(/^RG-\d{6}$/.test(cmp.d?.referenceDocument?.documentNo || ''), 'oto belge no bağlı op SAYACINDAN (RG-######)', cmp.d?.referenceDocument?.documentNo)
 ok((await stockAt(LOC, STA)) === sSrc - 5, 'A stoğu −5', `${sSrc}→${await stockAt(LOC, STA)}`)
 // B tarafı: otomatik giriş belgesi — içerik belli (5), referans linki, Bekliyor
 const refId = cmp.d.referenceDocument.id; trash.push(refId)
