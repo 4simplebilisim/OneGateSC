@@ -12,6 +12,33 @@ export async function docStatusId(companyId: number, code: string, client: Prism
 // Belge yaşam döngüsü kodları
 export const DOC_STATUS = { WAITING: 'BKL', PICKING: 'TPL', PENDING_APPROVAL: 'OBK', APPROVED: 'ONY', CANCELLED: 'IPT' } as const
 
+/** Kanonik belge durumu kayıtlarından (BKL/TPL/OBK/ONY/IPT) firmada EKSİK olanların kodları.
+ *  Eksikse durum türetme sessizce null bırakırdı — belge açılışında KAPI olarak kullanılır (net hata). */
+export async function missingDocStatuses(companyId: number, client: Prisma.TransactionClient = prisma): Promise<string[]> {
+  const codes = Object.values(DOC_STATUS)
+  const rows = await client.tBLDOCUMENTSTATUS.findMany({ where: { companyId, code: { in: [...codes] } }, select: { code: true } })
+  const have = new Set(rows.map((r) => r.code))
+  return codes.filter((c) => !have.has(c))
+}
+
+/** Kanonik belge durumlarını firmaya seed'ler (idempotent) — firma-create'e bağlı (yeni firma hazır doğar). */
+export async function seedDocStatuses(companyId: number): Promise<void> {
+  const defs = [
+    { code: DOC_STATUS.WAITING, name: 'Bekliyor', color: '#9ca3af' },
+    { code: DOC_STATUS.PICKING, name: 'Toplanıyor', color: '#ca8a04' },
+    { code: DOC_STATUS.PENDING_APPROVAL, name: 'Onay Bekliyor', color: '#84cc16' },
+    { code: DOC_STATUS.APPROVED, name: 'Onaylandı', color: '#16a34a' },
+    { code: DOC_STATUS.CANCELLED, name: 'İptal', color: '#ef4444' },
+  ]
+  for (const s of defs) {
+    await prisma.tBLDOCUMENTSTATUS.upsert({
+      where: { companyId_code: { companyId, code: s.code } },
+      update: {},
+      create: { companyId, ...s },
+    })
+  }
+}
+
 // ───────────────────────────────────────────────────────────────────────────
 // Faz 1 — Belge Durumu TÜRETME MOTORU (tek doğru kaynağı)
 // StokBar'ın iki SP'sini (SSP_SBKONTROLLUBELGEDURUM kontrollü + SSP_SBKONTROLSUZBELGEDURUM

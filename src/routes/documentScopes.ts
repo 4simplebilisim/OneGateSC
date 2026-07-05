@@ -133,6 +133,33 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       targetLocationId: scopeData.targetLocationId ?? ln?.targetLocationId ?? null,
       targetStatusId: scopeData.targetStatusId ?? ln?.targetStatusId ?? null,
     }
+    // Statü çözümü: okutma → satır → OPERASYONUN STATÜ GEÇİŞİ (otomatik doldurma).
+    // Hiçbirinde yoksa → operasyonda statü tanımı EKSİK: okutma net hatayla reddedilir (sessiz statüsüz stok oluşmaz).
+    if (ln?.document.operationType) {
+      const dirn = ln.document.operationType.direction
+      const opId = ln.document.operationType.id
+      if (!eff.targetStatusId && (dirn === 'INBOUND' || dirn === 'INTERNAL')) {
+        const tr = await prisma.tBLOPERATIONTYPESTATUS.findFirst({
+          where: { companyId, operationTypeId: opId, targetStatusId: { not: null } },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], select: { targetStatusId: true },
+        })
+        eff.targetStatusId = tr?.targetStatusId ?? null
+      }
+      if (!eff.sourceStatusId && (dirn === 'OUTBOUND' || dirn === 'INTERNAL')) {
+        const tr = await prisma.tBLOPERATIONTYPESTATUS.findFirst({
+          where: { companyId, operationTypeId: opId, sourceStatusId: { not: null } },
+          orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], select: { sourceStatusId: true },
+        })
+        eff.sourceStatusId = tr?.sourceStatusId ?? null
+      }
+      if ((dirn === 'INBOUND' || dirn === 'INTERNAL') && !eff.targetStatusId) {
+        return reply.code(400).send({ error: 'Operasyonda statü tanımı eksik — hedef statü çözülemedi. Operasyon Tipi › Statü sekmesinden geçiş tanımlayın' })
+      }
+      if ((dirn === 'OUTBOUND' || dirn === 'INTERNAL') && !eff.sourceStatusId) {
+        return reply.code(400).send({ error: 'Operasyonda statü tanımı eksik — kaynak statü çözülemedi. Operasyon Tipi › Statü sekmesinden geçiş tanımlayın' })
+      }
+    }
+
     // Operasyon ↔ statü/lokasyon kuralı: okutulan statü/lokasyon tanıma uymuyorsa okutma reddedilir (uyumsuz hatası)
     if (ln?.document.operationType) {
       const partnerId = ln.document.partnerId ?? null

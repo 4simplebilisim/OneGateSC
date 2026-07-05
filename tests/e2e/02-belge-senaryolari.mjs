@@ -301,6 +301,22 @@ const dt4 = (await mkDoc(opTol.id, [{ productId: PROD, unitId: UNIT, quantity: 1
 await okut(dt4.lines[0].id, 7)
 ok((await req('POST', `/api/documents/${dt4.id}/confirm`, {})).status === 409, 'alt tolerans dışı: 7/10 confirm 409')
 
+// ── S15: KONFİG KAPILARI — okutmada statü tanımı zorunlu (tanımlıysa op geçişinden OTOMATİK dolar) ──
+section('S15 — Konfig kapıları: statü tanımı yoksa okutma 400; varsa otomatik dolar')
+// (a) statü geçişli op (BLG-GIR): STATÜSÜZ okutma → op geçişinden otomatik statü → onay → stok DOĞRU statüde
+const sAuto = await stockAt(LOC, STA)
+const dAuto = (await mkDoc(opGir.id)).d; trash.push(dAuto.id)
+ok((await req('POST', '/api/document-line-scopes', { documentId: dAuto.id, productId: PROD, unitId: UNIT, quantity: 3, targetLocationId: LOC })).status === 201, 'statüsüz okutma 201 (op geçişinden otomatik)')
+await req('POST', `/api/documents/${dAuto.id}/confirm`, {})
+ok((await req('POST', `/api/documents/${dAuto.id}/complete`, {})).status === 200, 'onay geçti')
+ok((await stockAt(LOC, STA)) === sAuto + 3, 'stok +3 otomatik çözülen statüde', `${sAuto}→${await stockAt(LOC, STA)}`)
+// (b) statü geçişi OLMAYAN op: statüsüz okutma → 400 "statü tanımı eksik"
+let opNoSt = norm(await req('GET', '/api/operation-types?pageSize=300').then(r => r.d)).find(o => o.code === 'BLG-NOST' && o.companyId === Number(CO))
+if (!opNoSt) opNoSt = (await req('POST', '/api/operation-types', { code: 'BLG-NOST', name: 'Statü Geçişsiz Giriş', direction: 'INBOUND', facilityId: FAC, affectsStock: true })).d
+const dNoSt = (await mkDoc(opNoSt.id)).d; trash.push(dNoSt.id)
+const rNoSt = await req('POST', '/api/document-line-scopes', { documentId: dNoSt.id, productId: PROD, unitId: UNIT, quantity: 2, targetLocationId: LOC })
+ok(rNoSt.status === 400 && /statü tanımı eksik/i.test(rNoSt.d?.error || ''), 'statü geçişsiz op: okutma 400 (tanım eksik)', rNoSt.d?.error?.slice(0, 55))
+
 // ── TEMİZLİK: test belgelerini iptal et (op'lar sabit kod, kalır) ──
 section('TEMİZLİK')
 for (const id of trash) { await cancel(id) }

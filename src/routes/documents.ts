@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, referenceGate, MovementError } from '../lib/movement.js'
-import { docStatusId, DOC_STATUS, refreshDocStatus } from '../lib/documentStatus.js'
+import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
@@ -142,6 +142,12 @@ export async function documentRoutes(app: FastifyInstance) {
     // REFERANS KONTROLLÜ operasyonun belgesi ELLE AÇILAMAZ — bağlı çıkış onayıyla, tanımlara göre otomatik oluşur.
     if (opType.controlMode === 'REFERENCE_CONTROLLED') {
       return reply.code(400).send({ error: 'Referans kontrollü operasyonun belgesi elle açılamaz — referans (bağlı çıkış) onayıyla otomatik oluşur' })
+    }
+
+    // Belge durumu tanımları (BKL/TPL/OBK/ONY/IPT) eksikse belge AÇILAMAZ — durum türetme sessiz null bırakır, akış körleşir
+    const missingSt = await missingDocStatuses(companyId)
+    if (missingSt.length) {
+      return reply.code(400).send({ error: `Belge durumu tanımları eksik: ${missingSt.join(', ')} — Uyarlamalar › Belge Durumları'ndan tanımlayın` })
     }
     // Kontrollü belge = içerik plandan belli (belge ekranı/Excel/entegrasyon) → satırlar zorunlu.
     // Kontrolsüz belge = BOŞ açılır, içerik el terminali okutmalarıyla dolar (satırsız oluşturma serbest).
@@ -462,6 +468,11 @@ export async function documentRoutes(app: FastifyInstance) {
     // Referans kontrollü belge kopyalanamaz — kopya referanssız (elle) belge doğururdu
     if (source.operationType.controlMode === 'REFERENCE_CONTROLLED') {
       return reply.code(400).send({ error: 'Referans kontrollü belge kopyalanamaz — referans (bağlı çıkış) onayıyla otomatik oluşur' })
+    }
+    // Belge durumu tanımları eksikse kopya da açılamaz (create ile aynı kapı)
+    const missingSt = await missingDocStatuses(companyId)
+    if (missingSt.length) {
+      return reply.code(400).send({ error: `Belge durumu tanımları eksik: ${missingSt.join(', ')} — Uyarlamalar › Belge Durumları'ndan tanımlayın` })
     }
 
     let documentNo = body.data.documentNo

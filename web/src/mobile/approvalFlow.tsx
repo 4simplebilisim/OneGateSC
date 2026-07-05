@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Modal } from 'antd'
+import { Alert, Button, Modal } from 'antd'
 import { axiosInstance } from '../providers/dataProvider'
 
 // ── Belge Onay Tipi (BYTONAYTIPI) — el terminali "İleri" akışı ──
@@ -83,8 +83,12 @@ export const IleriModal = ({ open, docId, docNo, approvalType, onClose, onOutcom
       )}
       {approvalType === null && (
         <>
-          <p style={{ fontSize: 15 }}>Bu operasyon için <b>Belge Onay Tipi tanımlı değil</b> — belge taslak kalır; onay Gözlem/masaüstü ekranından verilir. (Uyarlamalar › Belge Onay Tipi)</p>
-          <Button type="primary" block style={btn} onClick={() => onOutcome('draft')}>Tamam</Button>
+          <Alert
+            type="error" showIcon style={{ marginBottom: 12 }}
+            message="Onay tipi tanımlı değil — onay verilemez"
+            description="Bu operasyon için Belge Onay Tipi tanımlanmadan el terminalinden onay verilemez. Belge taslak kalır. Tanım: Uyarlamalar › Belge Onay Tipi (Tesis + Operasyon + Onay Tipi)."
+          />
+          <Button danger block style={btn} onClick={() => onOutcome('draft')}>Tamam — Taslak Kalsın</Button>
         </>
       )}
     </Modal>
