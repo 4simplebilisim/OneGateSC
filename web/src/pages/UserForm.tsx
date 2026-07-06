@@ -17,6 +17,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(mode === 'edit')
   const isAdmin = Form.useWatch('isAdmin', form) // süper-admin (tüm firmalar) → Firma opsiyonel
+  const selectedCompanyId = Form.useWatch('companyId', form) // grup listesi bu firmaya göre yüklenir (og_company değil)
 
   useEffect(() => {
     axiosInstance.get('/api/companies').then((r) => {
@@ -24,10 +25,16 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       setCompanies(list)
       if (mode === 'create' && list.length === 1) form.setFieldValue('companyId', list[0].id)
     }).catch(() => { /* yetki yoksa boş */ })
-    axiosInstance.get('/api/user-groups').then((r) => {
-      setGroups((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])
-    }).catch(() => { /* boş */ })
   }, [mode, form])
+
+  // Kullanıcı grupları DÜZENLENEN kullanıcının firmasından yüklenir (global seçili firmadan DEĞİL).
+  // Aksi halde başka firmadaki bir kullanıcı düzenlenirken grup listede olmaz → Select ham id gösterir ("15").
+  useEffect(() => {
+    const cfg = selectedCompanyId ? { headers: { 'x-company-id': String(selectedCompanyId) } } : undefined
+    axiosInstance.get('/api/user-groups', cfg).then((r) => {
+      setGroups((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])
+    }).catch(() => setGroups([]))
+  }, [selectedCompanyId])
 
   useEffect(() => {
     if (mode !== 'edit' || !id) return
