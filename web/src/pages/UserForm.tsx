@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, DatePicker, Form, Input, Select, Spin, Switch } from 'antd'
-import dayjs from 'dayjs'
+import { App, Button, Card, Form, Input, Select, Spin, Switch } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -38,10 +37,9 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         username: u.username, email: u.email, fullName: u.fullName,
         companyId: u.companyId, isActive: u.isActive,
         isAdmin: u.isSuperAdmin === true, // Yönetici (Admin) = firma-bağımsız süper-admin
+        isMobileUser: u.isMobileUser === true,
         groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
-        userType: u.userType ?? undefined, isApproved: u.isApproved,
-        phone: u.phone ?? undefined, alias: u.alias ?? undefined,
-        validUntil: u.validUntil ? dayjs(u.validUntil) : undefined,
+        isApproved: u.isApproved, phone: u.phone ?? undefined,
         passwordNeverExpires: u.passwordNeverExpires,
         mustChangePassword: u.mustChangePassword,
         cannotChangePassword: u.cannotChangePassword,
@@ -57,12 +55,6 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     values.roles = admin ? ['ADMIN'] : ['OPERATOR']
     delete values.isAdmin
     if (admin && !values.companyId) values.companyId = undefined // süper-admin firma-bağımsız (companyId boş bırakılabilir)
-    // DatePicker dayjs nesnesi döner → backend'e 'YYYY-MM-DD' string gönder
-    if (values.validUntil && dayjs.isDayjs(values.validUntil)) {
-      values.validUntil = (values.validUntil as dayjs.Dayjs).format('YYYY-MM-DD')
-    } else {
-      delete values.validUntil
-    }
     try {
       if (mode === 'create') {
         await axiosInstance.post('/api/users', values)
@@ -116,18 +108,12 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             <Select mode="multiple" placeholder="Grup seçin — gruptan yetki miras alınır" optionFilterProp="label" showSearch allowClear
               options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} />
           </Form.Item>
-          <Form.Item name="userType" label="Tip">
-            <Select allowClear placeholder="Tip seçin"
-              options={[{ value: 'CENTRAL', label: 'Merkez' }, { value: 'BRANCH', label: 'Şube' }]} />
+          <Form.Item name="isMobileUser" label="Mobil Kullanıcı" valuePropName="checked"
+            tooltip="Açık: bu kullanıcı el terminali (mobil) kullanıcısıdır.">
+            <Switch checkedChildren="El Terminali" unCheckedChildren="Hayır" />
           </Form.Item>
           <Form.Item name="phone" label="Cep Tel">
             <Input placeholder="05xx xxx xx xx" />
-          </Form.Item>
-          <Form.Item name="alias" label="Alias">
-            <Input placeholder="Kısa ad / takma ad" />
-          </Form.Item>
-          <Form.Item name="validUntil" label="Geçerlilik Tarihi">
-            <DatePicker format="DD.MM.YYYY" placeholder="GG.AA.YYYY" style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item name="isApproved" label="Onay" valuePropName="checked">
             <Switch />

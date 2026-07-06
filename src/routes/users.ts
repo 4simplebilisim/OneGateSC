@@ -14,6 +14,7 @@ const createSchema = z.object({
   roles: z.array(z.string()).optional(),
   groups: z.array(z.number().int().positive()).optional(), // üye olduğu kullanıcı grupları
   isActive: z.boolean().optional(),
+  isMobileUser: z.boolean().optional(), // El terminali (mobil) kullanıcısı
   userType: z.enum(['CENTRAL', 'BRANCH']).optional(),
   isApproved: z.boolean().optional(),
   phone: z.string().max(30).optional(),
@@ -30,6 +31,7 @@ const updateSchema = z.object({
   password: z.string().min(6).max(100).optional(), // verilirse şifre sıfırlanır
   companyId: z.number().int().positive().optional(),
   isSuperAdmin: z.boolean().optional(), // yalnız süper-admin değiştirebilir (aşağıda enforce)
+  isMobileUser: z.boolean().optional(), // El terminali (mobil) kullanıcısı
   roles: z.array(z.string()).optional(),
   groups: z.array(z.number().int().positive()).optional(),
   isActive: z.boolean().optional(),
@@ -65,6 +67,7 @@ const userSelect = {
   fullName: true,
   isActive: true,
   isSuperAdmin: true,
+  isMobileUser: true,
   lastLoginAt: true,
   createdAt: true,
   userType: true,
