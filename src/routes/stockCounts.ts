@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, countDifferences, CountingError } from '../lib/counting.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
@@ -55,9 +55,20 @@ export async function stockCountRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const count = await prisma.tBLSTOCKCOUNT.findUnique({ where: { id }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+    // tenant: yalnız kendi firmasının sayımı (findUnique yerine findFirst + companyListFilter — sızıntı kapandı)
+    const count = await prisma.tBLSTOCKCOUNT.findFirst({ where: { id, ...companyListFilter(request) }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
     if (!count) return reply.code(404).send({ error: 'Stock count not found' })
-    return count
+    // Satır ürün/lokasyon/birim KODLARINI çöz (TBLSTOCKCOUNTLINE'da relation yok — manuel join, sayım giriş ekranı için)
+    const pick = <K extends string>(arr: { productId: number; locationId: number; unitId: number }[], k: 'productId' | 'locationId' | 'unitId') => [...new Set(arr.map((l) => l[k]))]
+    const [products, locations, units] = await Promise.all([
+      prisma.tBLPRODUCT.findMany({ where: { id: { in: pick(count.lines, 'productId') } }, select: { id: true, code: true, name: true } }),
+      prisma.tBLLOCATION.findMany({ where: { id: { in: pick(count.lines, 'locationId') } }, select: { id: true, code: true } }),
+      prisma.tBLUNIT.findMany({ where: { id: { in: pick(count.lines, 'unitId') } }, select: { id: true, code: true } }),
+    ])
+    const pMap = new Map(products.map((p) => [p.id, p])), lMap = new Map(locations.map((l) => [l.id, l.code])), uMap = new Map(units.map((u) => [u.id, u.code]))
+    const lines = count.lines.map((l) => ({ ...l, productCode: pMap.get(l.productId)?.code, productName: pMap.get(l.productId)?.name, locationCode: lMap.get(l.locationId), unitCode: uMap.get(l.unitId) }))
+    const warehouse = await prisma.tBLWAREHOUSE.findUnique({ where: { id: count.warehouseId }, select: { code: true, name: true } })
+    return { ...count, lines, warehouseCode: warehouse?.code, warehouseName: warehouse?.name }
   })
 
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

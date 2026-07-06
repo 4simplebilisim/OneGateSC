@@ -19,6 +19,7 @@ import { ProductForm } from './pages/ProductForm'
 import { PartnerForm } from './pages/PartnerForm'
 import { LabelDesigner } from './pages/LabelDesigner'
 import { StockCountCreate } from './pages/StockCountCreate'
+import { StockCountEntry } from './pages/StockCountEntry'
 import { WorkOrderCreate } from './pages/WorkOrderCreate'
 import { PalletCreate } from './pages/PalletCreate'
 import { PalletBulkUpdate } from './pages/PalletBulkUpdate'
@@ -128,6 +129,7 @@ export default function App() {
           <Route path="partners/new" element={<PartnerForm mode="create" />} />
           <Route path="partners/:id/edit" element={<PartnerForm mode="edit" />} />
           <Route path="stock-counts/new" element={<StockCountCreate />} />
+          <Route path="stock-counts/:id" element={<StockCountEntry />} />
           <Route path="work-orders/new" element={<WorkOrderCreate />} />
           <Route path="pallets/new" element={<PalletCreate />} />
           <Route path="pallets/:id/edit" element={<GenericForm resource="pallets" mode="edit" />} />
