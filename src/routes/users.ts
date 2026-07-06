@@ -10,6 +10,7 @@ const createSchema = z.object({
   password: z.string().min(6).max(100),
   fullName: z.string().min(1).max(150),
   companyId: z.number().int().positive().optional(), // yalnız super-admin başka firmaya kullanıcı açabilir
+  isSuperAdmin: z.boolean().optional(), // "Yönetici (Admin)" = firma-bağımsız süper-admin (tüm firmalar) — yalnız süper-admin verebilir
   roles: z.array(z.string()).optional(),
   groups: z.array(z.number().int().positive()).optional(), // üye olduğu kullanıcı grupları
   isActive: z.boolean().optional(),
@@ -28,6 +29,7 @@ const updateSchema = z.object({
   fullName: z.string().min(1).max(150).optional(),
   password: z.string().min(6).max(100).optional(), // verilirse şifre sıfırlanır
   companyId: z.number().int().positive().optional(),
+  isSuperAdmin: z.boolean().optional(), // yalnız süper-admin değiştirebilir (aşağıda enforce)
   roles: z.array(z.string()).optional(),
   groups: z.array(z.number().int().positive()).optional(),
   isActive: z.boolean().optional(),
@@ -47,9 +49,9 @@ function resolveTargetCompany(request: { user?: { isSuperAdmin?: boolean } }, bo
   return ownCompanyId
 }
 
-// Sadece bu firmaya ait grup id'lerini döndür (cross-tenant koruması)
-async function validGroupIds(companyId: number, groups: number[] | undefined): Promise<number[]> {
-  if (!groups?.length) return []
+// Sadece bu firmaya ait grup id'lerini döndür (cross-tenant koruması). companyId null = firma-bağımsız süper → grup uygulanmaz
+async function validGroupIds(companyId: number | null, groups: number[] | undefined): Promise<number[]> {
+  if (!groups?.length || companyId == null) return []
   const rows = await prisma.tBLUSERGROUP.findMany({ where: { companyId, id: { in: groups } }, select: { id: true } })
   return rows.map((r) => r.id)
 }
@@ -99,8 +101,13 @@ export async function userRoutes(app: FastifyInstance) {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
 
-    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, ...rest } = parsed.data
-    const companyId = resolveTargetCompany(request, bodyCompanyId, getCompanyId(request))
+    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, isSuperAdmin: bodySuper, ...rest } = parsed.data
+    // "Yönetici (Admin)" = firma-bağımsız süper-admin → YALNIZ süper-admin verebilir (cross-tenant ayrıcalık)
+    const requesterSuper = (request.user as { isSuperAdmin?: boolean }).isSuperAdmin === true
+    const wantSuper = bodySuper === true
+    if (wantSuper && !requesterSuper) return reply.code(403).send({ error: 'Süper-admin (tüm firmalar) yetkisini yalnız süper-admin verebilir' })
+    // süper-admin firma-bağımsız olabilir (companyId null → tüm firmalar); normal kullanıcı bir firmaya kilitli
+    const companyId: number | null = wantSuper ? (bodyCompanyId ?? null) : resolveTargetCompany(request, bodyCompanyId, getCompanyId(request))
     const roles = await prisma.tBLROLE.findMany({ where: { code: { in: roleCodes ?? ['VIEWER'] } } })
     if (roles.length === 0) return reply.code(400).send({ error: 'Geçerli rol bulunamadı' })
     const passwordHash = await bcrypt.hash(password, 10)
@@ -109,7 +116,7 @@ export async function userRoutes(app: FastifyInstance) {
 
     try {
       const user = await prisma.tBLUSER.create({
-        data: { ...rest, validUntil: validUntilDate, companyId, passwordHash, userRoles: { create: roles.map((r) => ({ roleId: r.id, companyId })) }, groupMemberships: { create: gids.map((g) => ({ groupId: g, companyId })) } },
+        data: { ...rest, isSuperAdmin: wantSuper, validUntil: validUntilDate, companyId, passwordHash, userRoles: { create: roles.map((r) => ({ roleId: r.id, companyId })) }, groupMemberships: { create: gids.map((g) => ({ groupId: g, companyId })) } },
         select: userSelect,
       })
       return reply.code(201).send(user)
@@ -127,12 +134,22 @@ export async function userRoutes(app: FastifyInstance) {
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const ownCompanyId = getCompanyId(request)
-    const existing = await prisma.tBLUSER.findFirst({ where: { id, companyId: ownCompanyId } })
+    const requesterSuper = (request.user as { isSuperAdmin?: boolean }).isSuperAdmin === true
+    const selfId = (request.user as { sub?: number }).sub
+    // süper-admin requester tüm firmalardaki kullanıcıyı bulur; normal admin kendi firmasına kilitli (companyListFilter)
+    const existing = await prisma.tBLUSER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'User not found' })
-    if (existing.isSuperAdmin) return reply.code(403).send({ error: 'Super-admin kullanıcı düzenlenemez' })
+    // süper-admin bir kullanıcıyı yalnız başka süper-admin düzenleyebilir (normal admin dokunamaz)
+    if (existing.isSuperAdmin && !requesterSuper) return reply.code(403).send({ error: 'Süper-admin kullanıcıyı yalnız süper-admin düzenleyebilir' })
 
-    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, ...rest } = parsed.data
+    const { password, roles: roleCodes, companyId: bodyCompanyId, groups, validUntil, isSuperAdmin: bodySuper, ...rest } = parsed.data
     const data: Record<string, unknown> = { ...rest }
+    // süper-admin bayrağını (Yönetici toggle) yalnız süper-admin değiştirebilir; kendi yetkini kaldıramazsın (kilitlenme koruması)
+    if (bodySuper !== undefined) {
+      if (!requesterSuper) return reply.code(403).send({ error: 'Süper-admin yetkisini yalnız süper-admin değiştirebilir' })
+      if (existing.id === selfId && bodySuper === false) return reply.code(403).send({ error: 'Kendi süper-admin yetkinizi kaldıramazsınız' })
+      data.isSuperAdmin = bodySuper
+    }
     if (validUntil !== undefined) data.validUntil = validUntil ? new Date(validUntil) : null // boş string → null
     if (bodyCompanyId !== undefined) data.companyId = resolveTargetCompany(request, bodyCompanyId, ownCompanyId)
     if (password) data.passwordHash = await bcrypt.hash(password, 10)
@@ -162,7 +179,10 @@ export async function userRoutes(app: FastifyInstance) {
     if ((request.user as { sub?: number }).sub === id) return reply.code(400).send({ error: 'Kendi hesabınızı silemezsiniz' })
     const existing = await prisma.tBLUSER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'User not found' })
-    if (existing.isSuperAdmin) return reply.code(403).send({ error: 'Super-admin kullanıcı silinemez' })
+    // süper-admin kullanıcıyı yalnız başka süper-admin silebilir (normal admin dokunamaz)
+    if (existing.isSuperAdmin && !(request.user as { isSuperAdmin?: boolean }).isSuperAdmin) {
+      return reply.code(403).send({ error: 'Süper-admin kullanıcıyı yalnız süper-admin silebilir' })
+    }
     try {
       await prisma.tBLUSER.delete({ where: { id } })
     } catch (err) {

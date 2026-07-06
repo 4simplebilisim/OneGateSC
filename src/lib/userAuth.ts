@@ -43,16 +43,9 @@ export async function getEffectiveAuthMap(userId: number): Promise<Record<Entity
   return out
 }
 
-/** god-mode kullanıcı: platform SÜPER-ADMİN'i (isSuperAdmin) VEYA firma YÖNETİCİSİ'ni (ADMIN rolü) kapsar.
- *  YETKİ'yi (tesis/depo/operasyon/ekran) bypass eder — ama TENANT'ı ETMEZ: cross-tenant yalnız isSuperAdmin'e açıktır
- *  (getCompanyId/companyListFilter değişmez). Firma yöneticisi kendi firmasında tam yetkilidir, başka firmayı GÖRMEZ. */
-export function isAdminUser(user?: { isSuperAdmin?: boolean; roles?: string[] } | null): boolean {
-  return !!user && (user.isSuperAdmin === true || (user.roles ?? []).includes('ADMIN'))
-}
-
-/** Kullanıcının izinli operasyon-tipi id'leri. null = kısıt yok. Süper-admin/firma-yöneticisi (bypass=true) → null. */
-export async function allowedOperationTypeIds(userId: number | undefined, bypass?: boolean): Promise<Set<number> | null> {
-  if (bypass || !userId) return null
+/** Kullanıcının izinli operasyon-tipi id'leri. null = kısıt yok. Süper-admin → null (tüm firmalarda god-mode). */
+export async function allowedOperationTypeIds(userId: number | undefined, isSuperAdmin?: boolean): Promise<Set<number> | null> {
+  if (isSuperAdmin || !userId) return null
   return (await getEffectiveAuthMap(userId)).OPERATION_TYPE
 }
 
@@ -72,9 +65,9 @@ export async function getUserCompanies(userId: number, ownCompanyId: number | nu
 }
 
 export async function assertUserAuthorized(request: FastifyRequest, scopes: CheckScopes): Promise<void> {
-  const user = request.user as { sub?: number; isSuperAdmin?: boolean; roles?: string[] } | undefined
-  if (isAdminUser(user)) return // süper-admin VEYA firma yöneticisi (ADMIN) → yetki bypass (tenant getCompanyId'de korunur)
-  const userId = user?.sub
+  const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
+  if (!user || user.isSuperAdmin) return // süper-admin → tüm firmalarda yetki bypass (firma-bağımsız god-mode)
+  const userId = user.sub
   if (!userId) return
 
   const eff = await getEffectiveAuthMap(userId)

@@ -17,6 +17,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [groups, setGroups] = useState<{ id: number; code: string; name: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(mode === 'edit')
+  const isAdmin = Form.useWatch('isAdmin', form) // süper-admin (tüm firmalar) → Firma opsiyonel
 
   useEffect(() => {
     axiosInstance.get('/api/companies').then((r) => {
@@ -36,7 +37,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       form.setFieldsValue({
         username: u.username, email: u.email, fullName: u.fullName,
         companyId: u.companyId, isActive: u.isActive,
-        isAdmin: (u.userRoles ?? []).some((ur: { role: { code: string } }) => ur.role.code === 'ADMIN'),
+        isAdmin: u.isSuperAdmin === true, // Yönetici (Admin) = firma-bağımsız süper-admin
         groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
         userType: u.userType ?? undefined, isApproved: u.isApproved,
         phone: u.phone ?? undefined, alias: u.alias ?? undefined,
@@ -50,9 +51,12 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSaving(true)
-    // Yönetici toggle → rol: açık = ADMIN (firma içi tam yetki), kapalı = OPERATOR (yalnız tanımlı yetkiler)
-    values.roles = values.isAdmin ? ['ADMIN'] : ['OPERATOR']
+    // Yönetici toggle → firma-BAĞIMSIZ süper-admin (tüm firmalar, god-mode). Kapalı = normal kullanıcı (firmaya kilitli).
+    const admin = !!values.isAdmin
+    values.isSuperAdmin = admin
+    values.roles = admin ? ['ADMIN'] : ['OPERATOR']
     delete values.isAdmin
+    if (admin && !values.companyId) values.companyId = undefined // süper-admin firma-bağımsız (companyId boş bırakılabilir)
     // DatePicker dayjs nesnesi döner → backend'e 'YYYY-MM-DD' string gönder
     if (values.validUntil && dayjs.isDayjs(values.validUntil)) {
       values.validUntil = (values.validUntil as dayjs.Dayjs).format('YYYY-MM-DD')
@@ -98,13 +102,15 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             rules={mode === 'create' ? [{ required: true, min: 6, message: 'En az 6 karakter' }] : [{ min: 6, message: 'En az 6 karakter' }]}>
             <Input.Password placeholder="••••••" autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="companyId" label="Firma" rules={[{ required: true, message: 'Zorunlu' }]}>
-            <Select placeholder="Firma seçin" disabled={companies.length <= 1}
-              options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
-          </Form.Item>
           <Form.Item name="isAdmin" label="Yönetici (Admin)" valuePropName="checked"
-            tooltip="Açık: firma içinde tüm tesis/depo/operasyon ve ekranlara TAM yetki (god-mode) — ayrı yetki tanımı gerekmez. Kapalı: yalnız tanımlı yetki ve haklar geçerli.">
-            <Switch checkedChildren="Admin — tam yetki" unCheckedChildren="Normal kullanıcı" />
+            tooltip="Açık: TÜM firmalar için tam yetkili süper-admin (firma-bağımsız god-mode) — tesis/depo/operasyon yetki tanımı gerekmez. Kapalı: yalnız kendi firmasında, tanımlı yetki ve haklarla sınırlı.">
+            <Switch checkedChildren="Admin — tüm firmalar" unCheckedChildren="Normal kullanıcı" />
+          </Form.Item>
+          <Form.Item name="companyId" label="Firma" rules={[{ required: !isAdmin, message: 'Zorunlu' }]}
+            tooltip={isAdmin ? 'Süper-admin firma-bağımsızdır — boş bırakılabilir (tüm firmalara erişir). İsterseniz varsayılan firma seçin.' : undefined}>
+            <Select placeholder={isAdmin ? 'Tüm firmalar (opsiyonel)' : 'Firma seçin'} allowClear={isAdmin}
+              disabled={!isAdmin && companies.length <= 1}
+              options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
           </Form.Item>
           <Form.Item name="groups" label="Kullanıcı Grupları (yetki miras alınır)">
             <Select mode="multiple" placeholder="Grup seçin — gruptan yetki miras alınır" optionFilterProp="label" showSearch allowClear
