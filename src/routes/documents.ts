@@ -8,6 +8,7 @@ import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '.
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
 import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
+import { codeMap, resolveCode, str } from '../lib/importer.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
@@ -141,6 +142,67 @@ export async function documentRoutes(app: FastifyInstance) {
     const users = userIds.length ? await prisma.tBLUSER.findMany({ where: { id: { in: userIds } }, select: { id: true, username: true } }) : []
     const uname = new Map(users.map((u) => [u.id, u.username]))
     return rows.map((r) => ({ ...r, username: r.userId != null ? uname.get(r.userId) ?? null : null }))
+  })
+
+  // Excel içe aktarma: tek sayfa, "Belge No" ile GRUPLANIR (aynı no = tek belge). Başlık grubun ilk satırından.
+  // Kodlar (operasyon/cari/depo/ürün/birim/lokasyon/statü) id'ye çözülür → grup başına GERÇEK POST /api/documents (app.inject)
+  // ile oluşturulur → tüm kurallar (yetki, cross-tenant, controlMode, referans-kontrollü, sayaç, durum) OTOMATİK uygulanır.
+  const importRowSchema = z.object({
+    documentNo: z.any().optional(), operationCode: z.any().optional(), partnerCode: z.any().optional(), warehouseCode: z.any().optional(),
+    productCode: z.any().optional(), quantity: z.any().optional(), unitCode: z.any().optional(),
+    targetLocationCode: z.any().optional(), targetStatusCode: z.any().optional(), batchNo: z.any().optional(), serialNo: z.any().optional(), note: z.any().optional(),
+  }).passthrough()
+  app.post('/import', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const body = z.object({ rows: z.array(importRowSchema).min(1).max(5000) }).safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'Geçersiz veri (rows dizisi gerekli, en fazla 5000)' })
+    const companyId = getCompanyId(request)
+    const [ops, partners, whs, products, units, locations, statuses] = await Promise.all([
+      codeMap(prisma.tBLOPERATIONTYPE, companyId), codeMap(prisma.tBLBUSINESSPARTNER, companyId), codeMap(prisma.tBLWAREHOUSE, companyId),
+      codeMap(prisma.tBLPRODUCT, companyId), codeMap(prisma.tBLUNIT, companyId), codeMap(prisma.tBLLOCATION, companyId), codeMap(prisma.tBLSTATUS, companyId),
+    ])
+    // Belge No'ya göre grupla (sıra korunur); Belge No boş satırlar atlanır (gruplama anahtarı)
+    const groups = new Map<string, Record<string, unknown>[]>()
+    let noDocNo = 0
+    for (const r of body.data.rows) {
+      const dn = str(r.documentNo)
+      if (!dn) { noDocNo++; continue }
+      if (!groups.has(dn)) groups.set(dn, [])
+      groups.get(dn)!.push(r)
+    }
+    const errors: { row: string; error: string }[] = []
+    if (noDocNo) errors.push({ row: '(boş)', error: `${noDocNo} satırda Belge No boş — atlandı (gruplama için zorunlu)` })
+    const authHeader = request.headers.authorization ?? ''
+    let created = 0
+    for (const [docNo, rows] of groups) {
+      try {
+        const first = rows[0] as Record<string, unknown>
+        const operationTypeId = resolveCode(ops, first.operationCode, 'Operasyon', true)
+        const partnerId = resolveCode(partners, first.partnerCode, 'Cari')
+        const warehouseId = resolveCode(whs, first.warehouseCode, 'Depo')
+        const lines = rows.map((r, i) => {
+          const qty = Number(str(r.quantity))
+          if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Miktar geçersiz (satır ${i + 1}): "${str(r.quantity)}"`)
+          return {
+            productId: resolveCode(products, r.productCode, `Ürün (satır ${i + 1})`, true),
+            unitId: resolveCode(units, r.unitCode, `Birim (satır ${i + 1})`, true),
+            quantity: qty,
+            targetLocationId: resolveCode(locations, r.targetLocationCode, `Hedef Lokasyon (satır ${i + 1})`),
+            targetStatusId: resolveCode(statuses, r.targetStatusCode, `Hedef Statü (satır ${i + 1})`),
+            batchNo: str(r.batchNo) || undefined, serialNo: str(r.serialNo) || undefined, note: str(r.note) || undefined,
+          }
+        })
+        const res = await app.inject({
+          method: 'POST', url: '/api/documents',
+          headers: { authorization: authHeader, 'x-company-id': String(companyId), 'content-type': 'application/json' },
+          payload: { documentNo: docNo, operationTypeId, partnerId, warehouseId, lines },
+        })
+        if (res.statusCode === 201) created++
+        else errors.push({ row: docNo, error: (res.json() as { error?: string })?.error ?? `Oluşturulamadı (${res.statusCode})` })
+      } catch (e) {
+        errors.push({ row: docNo, error: e instanceof Error ? e.message : 'Bilinmeyen hata' })
+      }
+    }
+    return { created, total: groups.size, errors }
   })
 
   // Belge oluştur (DRAFT)

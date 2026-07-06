@@ -289,7 +289,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Yenile</Button>
             {canCreate && IMPORT_CONFIGS[resource] && (
               <ImportModal resource={resource} title={IMPORT_CONFIGS[resource].title}
-                columns={IMPORT_CONFIGS[resource].columns} templateName={IMPORT_CONFIGS[resource].templateName} onDone={load} />
+                columns={IMPORT_CONFIGS[resource].columns} templateName={IMPORT_CONFIGS[resource].templateName}
+                note={IMPORT_CONFIGS[resource].note} onDone={load} />
             )}
             {canCreate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new${filter ? '?' + new URLSearchParams(filter as Record<string, string>).toString() : ''}`)}>

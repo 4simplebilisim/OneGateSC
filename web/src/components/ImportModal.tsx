@@ -11,8 +11,8 @@ const norm = (s: unknown) => String(s ?? '').trim().toLocaleLowerCase('tr')
 
 // Yeniden-kullanılabilir Excel içe aktarma: şablon indir → doldur → yükle → önizle → içe aktar → satır-bazlı sonuç.
 // Excel FRONTEND'de parse edilir (SheetJS), KANONİK anahtarlı satırlar /api/<resource>/import'a gider.
-export const ImportModal = ({ resource, title, columns, templateName, onDone }: {
-  resource: string; title: string; columns: ImportColumn[]; templateName: string; onDone?: () => void
+export const ImportModal = ({ resource, title, columns, templateName, note, onDone }: {
+  resource: string; title: string; columns: ImportColumn[]; templateName: string; note?: string; onDone?: () => void
 }) => {
   const { message } = App.useApp()
   const [open, setOpen] = useState(false)
@@ -78,7 +78,7 @@ export const ImportModal = ({ resource, title, columns, templateName, onDone }: 
         <Space orientation="vertical" style={{ width: '100%' }} size="middle">
           <Alert type="info" showIcon
             title="1) Şablonu indir → doldur → 2) Excel yükle → önizle → 3) İçe Aktar"
-            description={<>Zorunlu sütunlar: <b>{req || '—'}</b>. Birim/Grup/Tip <b>KOD</b> ile yazılır (ör. birim=AD). Kod zaten varsa o satır atlanır ve hata listesinde görünür. Boş bırakılan opsiyonel sütunlar dikkate alınmaz.</>} />
+            description={<>Zorunlu sütunlar: <b>{req || '—'}</b>. {note ?? <>Referans alanlar (Birim/Grup/Tip) <b>KOD</b> ile yazılır; kod zaten varsa o satır atlanır ve hata listesinde görünür.</>} Boş bırakılan opsiyonel sütunlar dikkate alınmaz.</>} />
           <Space wrap>
             <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Şablon İndir</Button>
             <Upload beforeUpload={parseFile} accept=".xlsx,.xls" showUploadList={false} maxCount={1}>
@@ -107,7 +107,7 @@ export const ImportModal = ({ resource, title, columns, templateName, onDone }: 
 }
 
 // Kaynak-bazlı içe aktarma sütun tanımları (Excel başlığı → kanonik anahtar). Backend /import kanonik anahtar bekler.
-export const IMPORT_CONFIGS: Record<string, { title: string; templateName: string; columns: ImportColumn[] }> = {
+export const IMPORT_CONFIGS: Record<string, { title: string; templateName: string; columns: ImportColumn[]; note?: string }> = {
   products: {
     title: 'Ürün İçe Aktar (Excel)', templateName: 'urun-sablon.xlsx',
     columns: [
@@ -125,6 +125,18 @@ export const IMPORT_CONFIGS: Record<string, { title: string; templateName: strin
       { key: 'type', header: 'Tip' }, { key: 'taxNumber', header: 'Vergi No' },
       { key: 'phone', header: 'Telefon' }, { key: 'email', header: 'E-posta' },
       { key: 'city', header: 'Şehir' }, { key: 'address', header: 'Adres' }, { key: 'groupCode', header: 'Cari Grubu' },
+    ],
+  },
+  documents: {
+    title: 'Belge İçe Aktar (Excel)', templateName: 'belge-sablon.xlsx',
+    note: 'Aynı Belge No\'lu satırlar TEK belge olur; başlık (Operasyon/Cari/Depo) grubun ilk satırından alınır. Kodlar (Operasyon/Ürün/Birim/Lokasyon/Statü) ile yazılır. Belgeler TASLAK oluşur; sonra normal akışla onaylanır.',
+    columns: [
+      { key: 'documentNo', header: 'Belge No', required: true }, { key: 'operationCode', header: 'Operasyon', required: true },
+      { key: 'partnerCode', header: 'Cari' }, { key: 'warehouseCode', header: 'Depo' },
+      { key: 'productCode', header: 'Ürün', required: true }, { key: 'quantity', header: 'Miktar', required: true },
+      { key: 'unitCode', header: 'Birim', required: true }, { key: 'targetLocationCode', header: 'Hedef Lokasyon' },
+      { key: 'targetStatusCode', header: 'Hedef Statü' }, { key: 'batchNo', header: 'Parti' },
+      { key: 'serialNo', header: 'Seri No' }, { key: 'note', header: 'Açıklama' },
     ],
   },
 }
