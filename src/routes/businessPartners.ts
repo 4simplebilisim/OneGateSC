@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { firstBadRef, partnerParentIssue } from '../lib/refGuard.js'
+import { importRows, codeMap, resolveCode, str, norm } from '../lib/importer.js'
 
 const partnerTypes = ['CUSTOMER', 'SUPPLIER', 'BOTH'] as const
 
@@ -98,6 +99,44 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     const partner = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, ...companyListFilter(request) }, include: { facilities: { select: { facilityId: true } } } })
     if (!partner) return reply.code(404).send({ error: 'Partner not found' })
     return partner
+  })
+
+  // Excel içe aktarma: kanonik anahtarlı satırlar → toplu cari oluştur. Cari Grubu KOD ile; Tip Türkçe (Müşteri/Tedarikçi/Her İkisi).
+  const typeOf = (v: unknown): 'CUSTOMER' | 'SUPPLIER' | 'BOTH' => {
+    const s = norm(v)
+    if (['tedarikçi', 'tedarikci', 'supplier', 's'].includes(s)) return 'SUPPLIER'
+    if (['her ikisi', 'ikisi', 'both', 'her iki'].includes(s)) return 'BOTH'
+    return 'CUSTOMER' // varsayılan (boş dahil)
+  }
+  const importRowSchema = z.object({
+    code: z.any().optional(), name: z.any().optional(), type: z.any().optional(),
+    taxNumber: z.any().optional(), phone: z.any().optional(), email: z.any().optional(),
+    city: z.any().optional(), address: z.any().optional(), groupCode: z.any().optional(),
+  }).passthrough()
+  app.post('/import', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const body = z.object({ rows: z.array(importRowSchema).min(1).max(5000) }).safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'Geçersiz veri (rows dizisi gerekli, en fazla 5000)' })
+    const companyId = getCompanyId(request)
+    const groups = await codeMap(prisma.tBLPARTNERGROUP, companyId)
+    const result = await importRows(body.data.rows, async (r) => {
+      const code = str(r.code), name = str(r.name)
+      if (!code) throw new Error('Kod zorunlu')
+      if (!name) throw new Error('Ad zorunlu')
+      const partnerGroupId = resolveCode(groups, r.groupCode, 'Cari Grubu')
+      const email = str(r.email)
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`Geçersiz e-posta: ${email}`)
+      try {
+        await prisma.tBLBUSINESSPARTNER.create({ data: {
+          companyId, code, name, type: typeOf(r.type), partnerGroupId,
+          taxNumber: str(r.taxNumber) || undefined, phone: str(r.phone) || undefined,
+          email: email || undefined, city: str(r.city) || undefined, address: str(r.address) || undefined,
+        } })
+      } catch (e) {
+        if ((e as { code?: string }).code === 'P2002') throw new Error(`Kod zaten var: ${code}`)
+        throw e
+      }
+    })
+    return result
   })
 
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

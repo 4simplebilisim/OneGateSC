@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { firstBadRef } from '../lib/refGuard.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
+import { importRows, codeMap, resolveCode, str, parseBool } from '../lib/importer.js'
 
 const createSchema = z.object({
   code: z.string().min(1).max(40),
@@ -108,6 +109,44 @@ export async function productRoutes(app: FastifyInstance) {
       }
       throw err
     }
+  })
+
+  // Excel içe aktarma: kanonik anahtarlı satırlar (frontend Türkçe başlıkları çözer) → toplu ürün oluştur.
+  // Birim/Grup/Tip KOD ile verilir (id değil), firma-scope çözülür. Satır-bazlı hata döner (kısmi import).
+  const importRowSchema = z.object({
+    code: z.any().optional(), name: z.any().optional(), shortName: z.any().optional(),
+    unitCode: z.any().optional(), groupCode: z.any().optional(), typeCode: z.any().optional(),
+    manufacturerCode: z.any().optional(), shelfLifeDays: z.any().optional(), isActive: z.any().optional(),
+  }).passthrough()
+  app.post('/import', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const body = z.object({ rows: z.array(importRowSchema).min(1).max(5000) }).safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'Geçersiz veri (rows dizisi gerekli, en fazla 5000)' })
+    const companyId = getCompanyId(request)
+    const [units, groups, types] = await Promise.all([
+      codeMap(prisma.tBLUNIT, companyId), codeMap(prisma.tBLPRODUCTGROUP, companyId), codeMap(prisma.tBLPRODUCTTYPE, companyId),
+    ])
+    const result = await importRows(body.data.rows, async (r) => {
+      const code = str(r.code), name = str(r.name)
+      if (!code) throw new Error('Kod zorunlu')
+      if (!name) throw new Error('Ad zorunlu')
+      const unitId = resolveCode(units, r.unitCode, 'Birim')
+      const productGroupId = resolveCode(groups, r.groupCode, 'Ürün Grubu')
+      const productTypeId = resolveCode(types, r.typeCode, 'Ürün Tipi')
+      const daysRaw = str(r.shelfLifeDays)
+      const shelfLifeDays = daysRaw ? Number(daysRaw) : undefined
+      if (shelfLifeDays != null && !Number.isFinite(shelfLifeDays)) throw new Error(`Raf ömrü sayı olmalı: ${daysRaw}`)
+      try {
+        await prisma.tBLPRODUCT.create({ data: {
+          companyId, code, name, shortName: str(r.shortName) || undefined,
+          unitId, productGroupId, productTypeId, manufacturerCode: str(r.manufacturerCode) || undefined,
+          shelfLifeDays, shelfLifeControl: (shelfLifeDays ?? 0) > 0, isActive: parseBool(r.isActive, true),
+        } })
+      } catch (e) {
+        if ((e as { code?: string }).code === 'P2002') throw new Error(`Kod zaten var: ${code}`)
+        throw e
+      }
+    })
+    return result
   })
 
   app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

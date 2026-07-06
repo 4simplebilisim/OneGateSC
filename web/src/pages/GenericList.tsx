@@ -6,6 +6,7 @@ import { screenRight } from '../screenRight'
 import { useNavigate } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
+import { ImportModal, IMPORT_CONFIGS } from '../components/ImportModal'
 import { hasForm, canWrite, FORM_CONFIG } from '../formConfig'
 import { hasDetail } from '../detailActions'
 import { hasTxnCreate } from '../txnConfig'
@@ -286,6 +287,10 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
         extra={
           <Space size={8} wrap>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Yenile</Button>
+            {canCreate && IMPORT_CONFIGS[resource] && (
+              <ImportModal resource={resource} title={IMPORT_CONFIGS[resource].title}
+                columns={IMPORT_CONFIGS[resource].columns} templateName={IMPORT_CONFIGS[resource].templateName} onDone={load} />
+            )}
             {canCreate && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new${filter ? '?' + new URLSearchParams(filter as Record<string, string>).toString() : ''}`)}>
                 Yeni
