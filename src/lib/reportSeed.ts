@@ -41,6 +41,18 @@ const MOVEMENT_FIELDS: FieldDef[] = [
   { fieldCode: 'kullanici', label: 'Kullanıcı', sortOrder: 14 },
 ]
 
+// Belge listesi ortak saha (Açık Belge / Sevkiyat / İade)
+const DOC_FIELDS: FieldDef[] = [
+  { fieldCode: 'belgeNo', label: 'Belge No', sortOrder: 1 },
+  { fieldCode: 'operasyon', label: 'Operasyon', sortOrder: 2 },
+  { fieldCode: 'yon', label: 'Yön', sortOrder: 3 },
+  { fieldCode: 'cari', label: 'Cari', sortOrder: 4 },
+  { fieldCode: 'durum', label: 'Durum', sortOrder: 5 },
+  { fieldCode: 'tarih', label: 'Belge Tarihi', sortOrder: 6 },
+  { fieldCode: 'satir', label: 'Satır', align: 'right', sortOrder: 7 },
+]
+const DOC_STATUS_OPT = 'DRAFT:Taslak,CONFIRMED:Onaylı,COMPLETED:Tamamlandı,CANCELLED:İptal'
+
 const REPORTS: ReportDef[] = [
   {
     code: 'ACIK-BELGE', name: 'Açık Belge Listesi', sourceKey: 'OPEN_DOCUMENTS', category: 'Belge',
@@ -116,6 +128,62 @@ const REPORTS: ReportDef[] = [
       { fieldCode: 'kullanici', label: 'Kullanıcı', sortOrder: 12 },
     ],
   },
+  // Doluluk — lokasyon bazlı Dolu/Boş + mevcut miktar/kalem (kapsamdaki tüm lokasyonlar).
+  {
+    code: 'DOLULUK', name: 'Doluluk (Lokasyon)', sourceKey: 'OCCUPANCY', category: 'Stok',
+    criteria: [
+      { fieldCode: 'facilityId', label: 'Tesis', type: 'REF', refResource: 'facilities', required: true, sortOrder: 1 },
+      { fieldCode: 'warehouseId', label: 'Depo', type: 'REF', refResource: 'warehouses', sortOrder: 2 },
+      { fieldCode: 'areaId', label: 'Alan', type: 'REF', refResource: 'areas', sortOrder: 3 },
+      { fieldCode: 'locationId', label: 'Lokasyon', type: 'REF', refResource: 'locations', sortOrder: 4 },
+      { fieldCode: 'fill', label: 'Doluluk', type: 'SELECT', options: 'DOLU:Dolu,BOS:Boş', sortOrder: 5 },
+    ],
+    fields: [
+      { fieldCode: 'tesis', label: 'Tesis', sortOrder: 1 }, { fieldCode: 'depo', label: 'Depo', sortOrder: 2 },
+      { fieldCode: 'alan', label: 'Alan', sortOrder: 3 }, { fieldCode: 'lokasyon', label: 'Lokasyon', sortOrder: 4 },
+      { fieldCode: 'kalem', label: 'Kalem', align: 'right', sortOrder: 5 }, { fieldCode: 'miktar', label: 'Miktar', align: 'right', sortOrder: 6 },
+      { fieldCode: 'durum', label: 'Durum', sortOrder: 7 },
+    ],
+  },
+  // Sevkiyat — ÇIKIŞ (OUTBOUND) belgeleri.
+  {
+    code: 'SEVKIYAT', name: 'Sevkiyat', sourceKey: 'SHIPMENTS', category: 'Belge',
+    criteria: [
+      { fieldCode: 'operationTypeId', label: 'Operasyon Tipi', type: 'REF', refResource: 'operation-types', sortOrder: 1 },
+      { fieldCode: 'status', label: 'Durum', type: 'SELECT', options: DOC_STATUS_OPT, sortOrder: 2 },
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', sortOrder: 3 },
+    ],
+    fields: DOC_FIELDS,
+  },
+  // İade — seçilen (iade) operasyonun belgeleri. İade özel bir bayrakla modellenmediği için operasyon seçimiyle süzülür.
+  {
+    code: 'IADE', name: 'İade', sourceKey: 'RETURNS', category: 'Belge',
+    criteria: [
+      { fieldCode: 'operationTypeId', label: 'İade Operasyonu', type: 'REF', refResource: 'operation-types', required: true, sortOrder: 1 },
+      { fieldCode: 'status', label: 'Durum', type: 'SELECT', options: DOC_STATUS_OPT, sortOrder: 2 },
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', sortOrder: 3 },
+    ],
+    fields: DOC_FIELDS,
+  },
+  // Log / Belge Hareketleri — belge durum geçiş logu (audit: kimden→kime, olay, kullanıcı).
+  {
+    code: 'LOG-BELGE', name: 'Log / Belge Hareketleri', sourceKey: 'DOC_LOG', category: 'Belge',
+    criteria: [
+      { fieldCode: 'documentNo', label: 'Belge No', type: 'TEXT', sortOrder: 1 },
+      { fieldCode: 'operationTypeId', label: 'Operasyon Tipi', type: 'REF', refResource: 'operation-types', sortOrder: 2 },
+      { fieldCode: 'userId', label: 'Kullanıcı', type: 'REF', refResource: 'users', sortOrder: 3 },
+      { fieldCode: 'dateFrom', label: 'Tarih Baş.', type: 'DATE', sortOrder: 4 },
+      { fieldCode: 'dateTo', label: 'Tarih Bit.', type: 'DATE', sortOrder: 5 },
+      { fieldCode: 'limit', label: 'Kayıt Sayısı', type: 'NUMBER', sortOrder: 6 },
+    ],
+    fields: [
+      { fieldCode: 'tarih', label: 'Tarih', sortOrder: 1 }, { fieldCode: 'belgeNo', label: 'Belge No', sortOrder: 2 },
+      { fieldCode: 'operasyon', label: 'Operasyon', sortOrder: 3 }, { fieldCode: 'gecis', label: 'Durum Geçişi', sortOrder: 4 },
+      { fieldCode: 'olay', label: 'Olay', sortOrder: 5 }, { fieldCode: 'kullanici', label: 'Kullanıcı', sortOrder: 6 },
+    ],
+  },
+  // Operasyon Hareketi — tüm yönlerdeki ledger hareketleri (operasyon/ürün/tarih ile süzülür).
+  { code: 'OP-HAREKET', name: 'Operasyon Hareketi', sourceKey: 'OPERATION_MOVEMENTS', category: 'Hareket', criteria: MOVEMENT_CRITERIA, fields: MOVEMENT_FIELDS },
 ]
 
 /** Bir firmaya kanonik raporları seed'ler (idempotent — kriter/saha sil-yeniden). Döner: seed'lenen rapor sayısı. */
