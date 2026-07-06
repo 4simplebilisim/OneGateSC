@@ -32,7 +32,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   const menuItems = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr')
     const match = (label: string) => !q || label.toLocaleLowerCase('tr').includes(q)
-    const pano = match('Pano') ? [{ key: 'dashboard', label: <Link to="/dashboard">Pano</Link> }] : []
+    const pano = match('Dashboard') ? [{ key: 'dashboard', label: <Link to="/dashboard">Dashboard</Link> }] : []
     const sections = SECTIONS.map((section) => {
       const inSection = RESOURCES.filter((r) => r.section === section && !r.hidden && screenAllowed(r.name))
       const groups = [...new Set(inSection.filter((r) => r.group).map((r) => r.group))]

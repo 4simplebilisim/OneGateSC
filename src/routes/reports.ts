@@ -36,6 +36,22 @@ export async function reportRoutes(app: FastifyInstance) {
       .sort((a, b) => (a.productCode ?? '').localeCompare(b.productCode ?? ''))
   })
 
+  // Depo panosu (Dashboard) özeti — depoya hizmet eden KPI'lar (satınalma/finans DEĞİL)
+  app.get('/warehouse-summary', async (request) => {
+    const companyId = getCompanyId(request)
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+    const today = { gte: todayStart }
+    const [openDocs, activeUsers, approvedToday, receiptsToday, shipmentsToday, transfersToday] = await Promise.all([
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: { in: ['DRAFT', 'CONFIRMED'] } } }), // açık belge (tamamlanmamış)
+      prisma.tBLUSER.count({ where: { companyId, isActive: true } }), // aktif (etkin) kullanıcı
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: { in: ['CONFIRMED', 'COMPLETED'] }, updatedAt: today } }), // bugün onaylanan/tamamlanan
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'INBOUND' } } }), // bugün mal kabul
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'OUTBOUND' } } }), // bugün sevkiyat/çıkış
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'INTERNAL' } } }), // bugün transfer
+    ])
+    return { openDocs, activeUsers, approvedToday, receiptsToday, shipmentsToday, transfersToday }
+  })
+
   // Açık siparişler — tamamlanmamış PO/SO + kalan miktar
   app.get('/open-orders', async (request) => {
     const companyId = getCompanyId(request)
