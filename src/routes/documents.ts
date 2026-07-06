@@ -7,7 +7,7 @@ import { completeDocument, reverseDocument, splitDocument, collectionShortfall, 
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
-import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
+import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds, isAdminUser } from '../lib/userAuth.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
@@ -69,9 +69,9 @@ export async function documentRoutes(app: FastifyInstance) {
     // kapalıysa serbest. Ayrıca (varsa) yalnız operasyon-yetkim olan belgeler. Süper-admin/yetkisiz kullanıcı → kısıtsız.
     const andClauses: Prisma.TBLDOCUMENTWhereInput[] = []
     if (q.assignedFor === 'me') {
-      const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
+      const user = request.user as { sub?: number; isSuperAdmin?: boolean; roles?: string[] } | undefined
       const uid = user?.sub
-      if (uid && !user?.isSuperAdmin) {
+      if (uid && !isAdminUser(user)) {
         const gids = await userGroupIds(uid)
         const assigns = await prisma.tBLDOCUMENTASSIGNMENT.findMany({
           where: { companyId, isActive: true, OR: [{ userId: uid }, ...(gids.length ? [{ userGroupId: { in: gids } }] : [])] },
@@ -81,7 +81,7 @@ export async function documentRoutes(app: FastifyInstance) {
         // applyAssignment=false operasyonlar serbest; true olanlar YALNIZ atanmışsa
         andClauses.push({ OR: [{ operationType: { applyAssignment: false } }, { id: { in: assignedIds } }] })
         // operasyon yetkisi (kısıt varsa)
-        const allowedOps = await allowedOperationTypeIds(uid, user?.isSuperAdmin)
+        const allowedOps = await allowedOperationTypeIds(uid, isAdminUser(user))
         if (allowedOps) andClauses.push({ operationTypeId: { in: [...allowedOps] } })
       }
     }

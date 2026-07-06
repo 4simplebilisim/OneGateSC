@@ -6,12 +6,6 @@ import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 
-const ROLE_OPTS = [
-  { value: 'ADMIN', label: 'Yönetici (ADMIN)' },
-  { value: 'OPERATOR', label: 'Operatör (OPERATOR)' },
-  { value: 'VIEWER', label: 'İzleyici (VIEWER)' },
-]
-
 type Company = { id: number; code: string; name: string }
 
 export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
@@ -42,7 +36,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       form.setFieldsValue({
         username: u.username, email: u.email, fullName: u.fullName,
         companyId: u.companyId, isActive: u.isActive,
-        roles: (u.userRoles ?? []).map((ur: { role: { code: string } }) => ur.role.code),
+        isAdmin: (u.userRoles ?? []).some((ur: { role: { code: string } }) => ur.role.code === 'ADMIN'),
         groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
         userType: u.userType ?? undefined, isApproved: u.isApproved,
         phone: u.phone ?? undefined, alias: u.alias ?? undefined,
@@ -56,6 +50,9 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSaving(true)
+    // Yönetici toggle → rol: açık = ADMIN (firma içi tam yetki), kapalı = OPERATOR (yalnız tanımlı yetkiler)
+    values.roles = values.isAdmin ? ['ADMIN'] : ['OPERATOR']
+    delete values.isAdmin
     // DatePicker dayjs nesnesi döner → backend'e 'YYYY-MM-DD' string gönder
     if (values.validUntil && dayjs.isDayjs(values.validUntil)) {
       values.validUntil = (values.validUntil as dayjs.Dayjs).format('YYYY-MM-DD')
@@ -82,12 +79,12 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     <div className="og-page" style={{ maxWidth: 640 }}>
       <PageHeader
         title={mode === 'create' ? 'Yeni Kullanıcı' : 'Kullanıcı Düzenle'}
-        subtitle="Kullanıcı bilgileri, firma ve roller"
+        subtitle="Kullanıcı bilgileri, firma ve yönetici yetkisi"
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/users')}>Liste</Button>}
       />
       <Card className="og-section-card" size="small">
         <Spin spinning={loading}>
-        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, roles: ['OPERATOR'], isApproved: true, passwordNeverExpires: true }}>
+        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, isAdmin: false, isApproved: true, passwordNeverExpires: true }}>
           <Form.Item name="username" label="Kullanıcı Adı" rules={[{ required: mode === 'create', message: 'Zorunlu' }]}>
             <Input disabled={mode === 'edit'} placeholder="kullanici01" />
           </Form.Item>
@@ -105,8 +102,9 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             <Select placeholder="Firma seçin" disabled={companies.length <= 1}
               options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
           </Form.Item>
-          <Form.Item name="roles" label="Roller" rules={[{ required: true, message: 'En az bir rol' }]}>
-            <Select mode="multiple" placeholder="Rol seçin" options={ROLE_OPTS} />
+          <Form.Item name="isAdmin" label="Yönetici (Admin)" valuePropName="checked"
+            tooltip="Açık: firma içinde tüm tesis/depo/operasyon ve ekranlara TAM yetki (god-mode) — ayrı yetki tanımı gerekmez. Kapalı: yalnız tanımlı yetki ve haklar geçerli.">
+            <Switch checkedChildren="Admin — tam yetki" unCheckedChildren="Normal kullanıcı" />
           </Form.Item>
           <Form.Item name="groups" label="Kullanıcı Grupları (yetki miras alınır)">
             <Select mode="multiple" placeholder="Grup seçin — gruptan yetki miras alınır" optionFilterProp="label" showSearch allowClear
