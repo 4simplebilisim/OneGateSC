@@ -10,15 +10,15 @@ const scope = z.enum(['ALL', 'GROUP', 'SPECIFIC']) // LinkScope: Hepsi/Grup/Beli
 const bulkType = z.enum(['CONTROLLED_BULK', 'BULK', 'RESERVATION', 'SELECTED_DOCUMENT', 'BATCH_CHANGE'])
 
 // Neden Kategori
-const reasonCategory = z.object({ code: z.string().min(1).max(10), name: z.string().max(100).optional(), businessPartnerId: pInt.optional(), isActive: z.boolean().optional() })
+const reasonCategory = z.object({ code: z.string().min(1).max(10), name: z.string().max(100).optional(), businessPartnerId: pInt.nullish(), isActive: z.boolean().optional() })
 export const reasonCategoryRoutes = simpleCrud(prisma.tBLREASONCATEGORY as unknown as Delegate, reasonCategory, reasonCategory.partial(), 'Reason category not found')
 
 // Operasyon Grup Bağlantı
-const opGroupLink = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), operationGroupId: pInt, businessPartnerId: pInt.optional(), isActive: z.boolean().optional() })
+const opGroupLink = z.object({ operationTypeId: pInt, facilityId: pInt.nullish(), operationGroupId: pInt, businessPartnerId: pInt.nullish(), isActive: z.boolean().optional() })
 export const operationGroupLinkRoutes = simpleCrud(prisma.tBLOPERATIONGROUPLINK as unknown as Delegate, opGroupLink, opGroupLink.partial(), 'Operation group link not found', 'operationTypeId')
 
 // Operasyon Tipi Tolerans (master — kademe detayları ayrı tabloda)
-const opTolerance = z.object({ operationTypeId: pInt.optional(), facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), ignoreSplit: z.boolean().optional(), isActive: z.boolean().optional() })
+const opTolerance = z.object({ operationTypeId: pInt.nullish(), facilityId: pInt.nullish(), businessPartnerId: pInt.nullish(), cariLinkType: scope.optional(), cariLinkId: pInt.nullish(), materialLinkType: scope.optional(), materialLinkId: pInt.nullish(), ignoreSplit: z.boolean().optional(), isActive: z.boolean().optional() })
 export const operationToleranceRoutes = simpleCrud(prisma.tBLOPERATIONTYPETOLERANCE as unknown as Delegate, opTolerance, opTolerance.partial(), 'Operation tolerance not found', 'operationTypeId')
 
 // Operasyon Tipi Tolerans DETAY — kademe bazında (StokBar Tolerans Detay). Bir toleransta N detay (ör. kg %10, adet %15).
@@ -28,16 +28,16 @@ const opToleranceDetail = z.object({ toleranceId: pInt, unitId: dInt, lowerPerce
 export const operationToleranceDetailRoutes = simpleCrud(prisma.tBLOPERATIONTYPETOLERANCEDETAIL as unknown as Delegate, opToleranceDetail, opToleranceDetail.partial().omit({ toleranceId: true }), 'Tolerance detail not found', 'toleranceId')
 
 // Operasyon Tipi Yasaklı Ürün
-const forbidden = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), businessPartnerId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), isActive: z.boolean().optional() })
+const forbidden = z.object({ operationTypeId: pInt, facilityId: pInt.nullish(), businessPartnerId: pInt.nullish(), cariLinkType: scope.optional(), cariLinkId: pInt.nullish(), materialLinkType: scope.optional(), materialLinkId: pInt.nullish(), isActive: z.boolean().optional() })
 export const forbiddenProductRoutes = simpleCrud(prisma.tBLOPERATIONTYPEFORBIDDENPRODUCT as unknown as Delegate, forbidden, forbidden.partial(), 'Forbidden product not found', 'operationTypeId')
 
 // Operasyon Tipi Dönüşüm
-const conversion = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), statusId: pInt.optional(), conversionCode: z.string().min(1).max(10), outgoing: z.boolean().optional(), sourceLocLinkType: scope.optional(), sourceLocLinkId: pInt.optional(), targetLocLinkType: scope.optional(), targetLocLinkId: pInt.optional(), isActive: z.boolean().optional() })
+const conversion = z.object({ operationTypeId: pInt, facilityId: pInt.nullish(), statusId: pInt.nullish(), conversionCode: z.string().min(1).max(10), outgoing: z.boolean().optional(), sourceLocLinkType: scope.optional(), sourceLocLinkId: pInt.nullish(), targetLocLinkType: scope.optional(), targetLocLinkId: pInt.nullish(), isActive: z.boolean().optional() })
 export const conversionRoutes = simpleCrud(prisma.tBLOPERATIONTYPECONVERSION as unknown as Delegate, conversion, conversion.partial(), 'Conversion not found', 'operationTypeId')
 
 // Sıralı Operasyon — bir işlemden sonra başka bir işlemle devam (operasyon tanımının "Sıralı Operasyon" sekmesi).
 // AYNI TESİS altındaki 2 operasyon için kullanılır — tesisler-arası akış Otomatik Ref. Kontrollü Belge'nin işidir.
-const sequential = z.object({ firstOperationId: pInt, secondOperationId: pInt, facilityId: pInt.optional(), cariLinkType: scope.optional(), cariLinkId: pInt.optional(), materialLinkType: scope.optional(), materialLinkId: pInt.optional(), locationLinkType: scope.optional(), locationLinkId: pInt.optional(), useInWorkOrder: z.boolean().optional(), spName: z.string().max(300).optional(), isActive: z.boolean().optional() })
+const sequential = z.object({ firstOperationId: pInt, secondOperationId: pInt, facilityId: pInt.nullish(), cariLinkType: scope.optional(), cariLinkId: pInt.nullish(), materialLinkType: scope.optional(), materialLinkId: pInt.nullish(), locationLinkType: scope.optional(), locationLinkId: pInt.nullish(), useInWorkOrder: z.boolean().optional(), spName: z.string().max(300).optional(), isActive: z.boolean().optional() })
 
 async function sequentialIssue(companyId: number, firstOperationId: number, secondOperationId: number): Promise<string | null> {
   if (firstOperationId === secondOperationId) return 'İlk ve ikinci operasyon aynı olamaz'
@@ -102,11 +102,11 @@ export async function sequentialOperationRoutes(app: FastifyInstance) {
 const autoRef = z.object({
   sourceFacilityId: pInt,
   sourceOperationTypeId: pInt,
-  sourceLocLinkType: oInt.optional(), sourceLocLinkId: oInt.optional(),
+  sourceLocLinkType: oInt.nullish(), sourceLocLinkId: oInt.nullish(),
   facility: z.boolean().optional(),
   targetFacilityId: pInt.nullable().optional(),
   targetOperationTypeId: pInt,
-  targetLocLinkType: oInt.optional(), targetLocLinkId: oInt.optional(),
+  targetLocLinkType: oInt.nullish(), targetLocLinkId: oInt.nullish(),
   isActive: z.boolean().optional(),
 })
 type AutoRefData = z.infer<typeof autoRef>
@@ -180,11 +180,11 @@ export async function autoReferenceDocumentRoutes(app: FastifyInstance) {
 }
 
 // Operasyon Tipi Toplu İşlem Bağlantı
-const bulkAction = z.object({ operationTypeId: pInt, facilityId: pInt.optional(), bulkActionType: bulkType.optional(), description: z.string().max(200).optional(), isActive: z.boolean().optional() })
+const bulkAction = z.object({ operationTypeId: pInt, facilityId: pInt.nullish(), bulkActionType: bulkType.optional(), description: z.string().max(200).optional(), isActive: z.boolean().optional() })
 export const bulkActionRoutes = simpleCrud(prisma.tBLOPERATIONTYPEBULKACTION as unknown as Delegate, bulkAction, bulkAction.partial(), 'Bulk action link not found', 'operationTypeId')
 
 // Ürün Ek Grup Bağlantı
-const productAddGroup = z.object({ productId: pInt, groupId: pInt, sortOrder: oInt.optional(), isActive: z.boolean().optional() })
+const productAddGroup = z.object({ productId: pInt, groupId: pInt, sortOrder: oInt.nullish(), isActive: z.boolean().optional() })
 export const productAdditionalGroupRoutes = simpleCrud(prisma.tBLPRODUCTADDITIONALGROUPLINK as unknown as Delegate, productAddGroup, productAddGroup.partial(), 'Product additional group link not found', 'productId')
 
 // Ürün Bazında Toplama Bağlantı

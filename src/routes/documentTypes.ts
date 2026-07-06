@@ -84,5 +84,5 @@ export const documentStatusCriteriaRoutes = simpleCrud(prisma.tBLDOCUMENTSTATUSC
 
 // Belge Onay Tipi — BYTONAYTIPI: 1=Toplama Ekranından Onay (okutma bitince İleri→onay; genelde kontrolsüz)
 // 2=Tek Aşamalı (kontrollüde kısmi toplama; İleri→Onayla/Böl) · 3=İki Aşamalı (mobil onay + Gözlem'den son onay)
-const docApproval = z.object({ facilityId: pInt.optional(), operationTypeId: pInt, approvalType: z.number().int().min(1).max(3), controlCollection: z.boolean().optional(), isActive: z.boolean().optional() })
+const docApproval = z.object({ facilityId: pInt.nullish(), operationTypeId: pInt, approvalType: z.number().int().min(1).max(3), controlCollection: z.boolean().optional(), isActive: z.boolean().optional() })
 export const documentApprovalTypeRoutes = simpleCrud(prisma.tBLDOCUMENTAPPROVALTYPE as unknown as Delegate, docApproval, docApproval.partial(), 'Document approval type not found')

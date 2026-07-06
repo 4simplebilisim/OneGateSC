@@ -9,10 +9,10 @@ const oInt = z.number().int()
 
 // El terminali menü GRUBU (Tesis bazlı sekme)
 const groupSchema = z.object({
-  facilityId: oInt.optional(),
+  facilityId: oInt.nullish(),
   code: z.string().min(1).max(40),
   name: z.string().min(1).max(100),
-  sortOrder: oInt.optional(),
+  sortOrder: oInt.nullish(),
   isActive: z.boolean().optional(),
 })
 export const handheldMenuGroupRoutes = simpleCrud(prisma.tBLHANDHELDMENUGROUP as unknown as Delegate, groupSchema, groupSchema.partial(), 'Menü grubu bulunamadı')
@@ -23,8 +23,8 @@ const itemSchema = z.object({
   code: z.string().min(1).max(40),
   name: z.string().min(1).max(100),
   screenType: z.enum(['RECEIPT', 'PICK', 'COUNT', 'STOCK']),
-  operationTypeId: oInt.optional(),
-  sortOrder: oInt.optional(),
+  operationTypeId: oInt.nullish(),
+  sortOrder: oInt.nullish(),
   isActive: z.boolean().optional(),
 })
 export const handheldMenuItemRoutes = simpleCrud(prisma.tBLHANDHELDMENUITEM as unknown as Delegate, itemSchema, itemSchema.partial(), 'Menü item bulunamadı', 'groupId')

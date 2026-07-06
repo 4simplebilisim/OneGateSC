@@ -11,8 +11,8 @@ const ctrl = z.enum(['MANUAL', 'REQUIRE_BATCH', 'REQUIRE_SERIAL', 'REQUIRE_REASO
 // Giriş Koşulu Parametresi (legacy TBLSBGIRISKOSULPARAMETRE)
 const entryParam = z.object({
   entryConditionTypeId: pInt,
-  cariLinkType: scope.optional(), cariLinkId: pInt.optional(),
-  materialLinkType: scope.optional(), materialLinkId: pInt.optional(),
+  cariLinkType: scope.optional(), cariLinkId: pInt.nullish(),
+  materialLinkType: scope.optional(), materialLinkId: pInt.nullish(),
   controlType: ctrl.optional(),
   conditionBreakAllowed: z.boolean().optional(),
   exclude: z.boolean().optional(),
@@ -24,10 +24,10 @@ export const entryConditionParameterRoutes = simpleCrud(prisma.tBLENTRYCONDITION
 // Çıkış Koşulu Parametresi (legacy TBLSBCIKISKOSULPARAMETRE)
 const exitParam = z.object({
   exitConditionTypeId: pInt,
-  cariLinkType: scope.optional(), cariLinkId: pInt.optional(),
-  materialLinkType: scope.optional(), materialLinkId: pInt.optional(),
+  cariLinkType: scope.optional(), cariLinkId: pInt.nullish(),
+  materialLinkType: scope.optional(), materialLinkId: pInt.nullish(),
   controlType: ctrl.optional(),
-  controlFieldId: pInt.optional(),
+  controlFieldId: pInt.nullish(),
   toleranceValue: z.number().optional(),
   percentValue: z.number().optional(),
   dayCount: z.number().int().optional(),
