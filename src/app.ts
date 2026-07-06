@@ -82,6 +82,7 @@ import { locationGroupLinkRoutes } from './routes/locationGroupLinks.js'
 import { palletRoutes } from './routes/pallets.js'
 import { workOrderRoutes } from './routes/workOrders.js'
 import { requireRole } from './lib/rbac.js'
+import { prisma } from './lib/prisma.js'
 
 // OneGate-assets/ proje kökünde (src/ -> ..)
 const assetsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'OneGate-assets')
@@ -149,6 +150,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
       await request.jwtVerify()
     } catch {
       return reply.code(401).send({ error: 'Unauthorized' })
+    }
+    // Tek oturum (single-session): JWT'deki sid, DB'deki aktif sessionId ile eşleşmeli.
+    // Aynı kullanıcı başka cihazda giriş yaptıysa sessionId değişmiştir → eski token 401 (SESSION_SUPERSEDED).
+    const u = request.user as { sub?: number; sid?: string }
+    if (u?.sub) {
+      const row = await prisma.tBLUSER.findUnique({ where: { id: u.sub }, select: { sessionId: true } })
+      if (!row || !u.sid || row.sessionId !== u.sid) {
+        return reply.code(401).send({ error: 'Oturumunuz başka bir cihazda açıldı', code: 'SESSION_SUPERSEDED' })
+      }
     }
   })
 

@@ -24,6 +24,10 @@ axiosInstance.interceptors.response.use(
     const status = error?.response?.status
     const url: string = error?.config?.url ?? ''
     if (status === 401 && !url.includes('/api/auth/')) {
+      // Tek oturum: başka cihazda giriş yapıldıysa Login ekranında açıklama göster
+      if (error?.response?.data?.code === 'SESSION_SUPERSEDED') {
+        localStorage.setItem('og_session_msg', 'Hesabınız başka bir cihazda/oturumda açıldığı için buradaki oturumunuz kapatıldı.')
+      }
       localStorage.removeItem('og_token')
       localStorage.removeItem('og_user')
       localStorage.removeItem('og_company')

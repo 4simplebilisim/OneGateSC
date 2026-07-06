@@ -80,6 +80,7 @@ model TBLUSER {
   isActive     Boolean   @default(true)
   isSuperAdmin Boolean   @default(false)
   lastLoginAt  DateTime?
+  sessionId    String?   @db.VarChar(64) // Tek oturum: aktif oturum kimliği (JWT sid ile eşleşmeli; yeni giriş eskisini düşürür)
   // StokBar Kullanıcı kartı alanları (B)
   isMobileUser         Boolean   @default(false) // El terminali (mobil) kullanıcısı
   userType             String?   @db.VarChar(20) // Tip: CENTRAL (Merkez) / BRANCH (Şube) — UI'dan kaldırıldı (dormant)

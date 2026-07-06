@@ -31,7 +31,12 @@ export const authProvider: AuthProvider = {
     return raw ? (JSON.parse(raw).roles ?? []) : []
   },
   onError: async (error) => {
-    if ((error as { response?: { status?: number } })?.response?.status === 401) {
+    const resp = (error as { response?: { status?: number; data?: { code?: string } } })?.response
+    if (resp?.status === 401) {
+      // Tek oturum: başka cihazda giriş yapıldıysa kullanıcıya açıkla (Login ekranı gösterir)
+      if (resp.data?.code === 'SESSION_SUPERSEDED') {
+        localStorage.setItem('og_session_msg', 'Hesabınız başka bir cihazda/oturumda açıldığı için buradaki oturumunuz kapatıldı.')
+      }
       return { logout: true, redirectTo: '/login' }
     }
     return {}

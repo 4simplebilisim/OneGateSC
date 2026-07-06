@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/prisma.js'
@@ -36,6 +37,9 @@ export async function authRoutes(app: FastifyInstance) {
     const roles = user.userRoles.map((ur) => ur.role.code)
     // Erişilebilir firmalar (kendi + COMPANY yetkileri) — JWT'ye gömülür; getCompanyId çok-firmalı geçişi buradan doğrular
     const companies = user.isSuperAdmin ? [] : await getUserCompanies(user.id, user.companyId)
+    // Tek oturum (single-session): bu girişin oturum kimliği. DB'ye yazılır + JWT'ye gömülür (sid).
+    // Aynı kullanıcı başka cihazda giriş yaparsa sessionId değişir → eski token'lar (eski sid) global hook'ta 401 olur.
+    const sessionId = randomUUID()
     const token = app.jwt.sign({
       sub: user.id,
       username: user.username,
@@ -43,11 +47,12 @@ export async function authRoutes(app: FastifyInstance) {
       companyId: user.companyId,
       isSuperAdmin: user.isSuperAdmin,
       companies,
+      sid: sessionId,
     })
 
     await prisma.tBLUSER.update({
       where: { id: user.id },
-      data: { lastLoginAt: new Date() },
+      data: { lastLoginAt: new Date(), sessionId },
     })
 
     // Ekran (mobil menü) + kolon + ekran-hakkı (web aksiyon) yetkileri — boş ise serbest (frontend süzer)

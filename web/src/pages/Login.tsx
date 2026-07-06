@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { useLogin } from '@refinedev/core'
-import { Button, Checkbox, Form, Input, Typography, ConfigProvider } from 'antd'
+import { Alert, Button, Checkbox, Form, Input, Typography, ConfigProvider } from 'antd'
 import { makeTheme } from '../theme'
 
 const GRADIENT = 'linear-gradient(140deg, #44d4e3 0%, #4e86ff 50%, #9b5cf6 100%)'
@@ -23,6 +24,12 @@ const Stat = ({ value, label }: { value: string; label: string }) => (
 
 export const Login = () => {
   const { mutate: login } = useLogin()
+  const [sessionMsg, setSessionMsg] = useState<string | null>(null)
+  // Tek oturum: başka cihazda giriş yüzünden atıldıysa authProvider mesaj bırakır → burada göster
+  useEffect(() => {
+    const m = localStorage.getItem('og_session_msg')
+    if (m) { setSessionMsg(m); localStorage.removeItem('og_session_msg') }
+  }, [])
 
   return (
     <ConfigProvider theme={makeTheme('light')}>
@@ -79,6 +86,8 @@ export const Login = () => {
           <Typography.Paragraph type="secondary" style={{ marginBottom: 30, fontSize: 15 }}>
             Hesabınızla giriş yapın
           </Typography.Paragraph>
+
+          {sessionMsg && <Alert type="warning" showIcon closable message={sessionMsg} style={{ marginBottom: 18 }} onClose={() => setSessionMsg(null)} />}
 
           <Form layout="vertical" size="large" requiredMark={false} initialValues={{ remember: true }} onFinish={(values) => login(values)}>
             <Form.Item name="username" label="Kullanıcı" rules={[{ required: true, message: 'Kullanıcı adı gerekli' }]}>
