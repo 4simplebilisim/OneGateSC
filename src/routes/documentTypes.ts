@@ -1,7 +1,11 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z, type ZodTypeAny } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+
+// Config CRUD'a özel iş-kuralı doğrulaması (ör. tesis başına tek kayıt). Hata mesajı döner → 400; null → geçer.
+// id verilirse UPDATE (kendini hariç tut), yoksa CREATE.
+export type BeforeWrite = (a: { request: FastifyRequest; data: Record<string, unknown>; companyId: number; id?: number }) => Promise<string | null>
 
 export interface Delegate {
   findMany(args: unknown): Promise<unknown[]>
@@ -15,7 +19,7 @@ export interface Delegate {
  * Code'suz config tablosu CRUD (Belge Tipleri / Operasyon config). id sırası, companyId scope.
  * ownerField verilirse GET o alana göre de filtreler (ör. ?operationTypeId=5) — sekme/master-detay için.
  */
-export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, notFound: string, ownerField?: string) {
+export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, notFound: string, ownerField?: string, beforeWrite?: BeforeWrite) {
   return async function (app: FastifyInstance) {
     app.get('/', async (request) => {
       const where: Record<string, unknown> = { companyId: getCompanyId(request) }
@@ -37,8 +41,13 @@ export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateS
     app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
       const parsed = createSchema.safeParse(request.body)
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+      const companyId = getCompanyId(request)
+      if (beforeWrite) {
+        const err = await beforeWrite({ request, data: parsed.data as Record<string, unknown>, companyId })
+        if (err) return reply.code(400).send({ error: err })
+      }
       try {
-        const row = await delegate.create({ data: { ...(parsed.data as Record<string, unknown>), companyId: getCompanyId(request) } })
+        const row = await delegate.create({ data: { ...(parsed.data as Record<string, unknown>), companyId } })
         return reply.code(201).send(row)
       } catch (err) {
         if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
@@ -53,6 +62,10 @@ export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateS
       if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
       const existing = await delegate.findFirst({ where: { id, ...companyListFilter(request) } })
       if (!existing) return reply.code(404).send({ error: notFound })
+      if (beforeWrite) {
+        const err = await beforeWrite({ request, data: parsed.data as Record<string, unknown>, companyId: getCompanyId(request), id })
+        if (err) return reply.code(400).send({ error: err })
+      }
       try {
         return await delegate.update({ where: { id }, data: parsed.data })
       } catch (err) {

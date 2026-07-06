@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { simpleCrud, type Delegate } from './documentTypes.js'
+import { simpleCrud, type Delegate, type BeforeWrite } from './documentTypes.js'
 
 const pInt = z.number().int().positive()
 const oInt = z.number().int()
@@ -79,4 +79,22 @@ const countParameter = z.object({
   stockMoveOnActiveCount: z.boolean().optional(), hideInnerPallets: z.boolean().optional(), hideMixedPallet: z.boolean().optional(), innerPalletCountCheck: z.boolean().optional(),
   hideInnerPalletStock: z.boolean().optional(), countDays: oInt.nullish(), dontRecountPallet: z.boolean().optional(), askLocationOnScan: z.boolean().optional(),
 })
-export const countParameterRoutes = simpleCrud(d(prisma.tBLCOUNTPARAMETER), countParameter, countParameter.partial(), 'Not found')
+// TESİS BAŞINA TEK sayım parametresi: parametre operasyona bağlı, operasyon bir tesise (facilityId) ait.
+// Aynı tesisteki başka bir operasyonun parametresi zaten varsa yeni tanım engellenir (kullanıcı kuralı).
+const countParamFacilityGuard: BeforeWrite = async ({ data, companyId, id }) => {
+  const opId = data.operationTypeId as number | undefined
+  if (opId == null) return null // update: operasyon değişmiyorsa tesis aynı → kontrol gereksiz
+  const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: opId, companyId }, select: { facilityId: true } })
+  if (!op) return null // geçersiz operasyon → FK/refGuard yakalar
+  const notSelf = id ? { id: { not: id } } : {}
+  if (op.facilityId != null) {
+    const ops = await prisma.tBLOPERATIONTYPE.findMany({ where: { companyId, facilityId: op.facilityId }, select: { id: true } })
+    const dup = await prisma.tBLCOUNTPARAMETER.findFirst({ where: { companyId, operationTypeId: { in: ops.map((o) => o.id) }, ...notSelf }, select: { id: true } })
+    if (dup) return 'Bu tesis için sayım parametresi zaten tanımlı — tesis başına yalnızca bir tanım olabilir'
+  } else {
+    const dup = await prisma.tBLCOUNTPARAMETER.findFirst({ where: { companyId, operationTypeId: opId, ...notSelf }, select: { id: true } })
+    if (dup) return 'Bu operasyon için sayım parametresi zaten tanımlı'
+  }
+  return null
+}
+export const countParameterRoutes = simpleCrud(d(prisma.tBLCOUNTPARAMETER), countParameter, countParameter.partial(), 'Not found', undefined, countParamFacilityGuard)
