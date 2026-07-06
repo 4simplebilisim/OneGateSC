@@ -54,6 +54,11 @@ import { hasForm } from './formConfig'
 import { hasDetail } from './detailActions'
 import { hasTxnCreate } from './txnConfig'
 
+// Mobil (el terminali) kullanıcı backoffice'i GÖREMEZ — her zaman /m'e yönlenir (URL ile bile).
+const currentUserIsMobile = (): boolean => {
+  try { return JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isMobileUser === true } catch { return false }
+}
+
 export default function App() {
   return (
     <Refine
@@ -82,9 +87,11 @@ export default function App() {
         <Route
           element={
             <Authenticated key="protected" fallback={<Navigate to="/login" />}>
-              <Shell>
-                <Outlet />
-              </Shell>
+              {currentUserIsMobile() ? <Navigate to="/m" replace /> : (
+                <Shell>
+                  <Outlet />
+                </Shell>
+              )}
             </Authenticated>
           }
         >

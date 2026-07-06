@@ -62,6 +62,7 @@ export async function authRoutes(app: FastifyInstance) {
         roles,
         companyId: user.companyId,
         isSuperAdmin: user.isSuperAdmin,
+        isMobileUser: user.isMobileUser, // el terminali kullanıcısı → frontend backoffice'e girmesin, /m'e yönlensin
         companies, // erişilebilir firmalar (çok-firmalı kullanıcıda >1) — frontend firma switcher'ı için
         screens,
         columnAuth,
