@@ -332,6 +332,57 @@ async function enforceCapacity(
   }
 }
 
+// AKTİF SAYIM DONMASI (stockMoveOnActiveCount): belge stok işlerken, dokunduğu (lokasyon, ürün) AKTİF bir
+// sayımın (COUNTING) kapsamındaysa VE o sayımın parametresinde "Aktif Sayımda Stok Hareketi" KAPALI ise → engellenir.
+// Kapsam sayımın AÇILDIĞI yere göre: tüm depo (locationId null) veya belirli lokasyon + malzeme kapsamı (Hepsi/Kod/Grup).
+async function assertNoActiveCountBlock(
+  tx: Prisma.TransactionClient,
+  doc: { companyId: number; warehouseId: number | null; lines: { productId: number; sourceLocationId: number | null; targetLocationId: number | null; scopes?: { sourceLocationId: number | null; targetLocationId: number | null }[] }[] },
+): Promise<void> {
+  // Hiç aktif sayım yoksa hızlı çık (yaygın durum — tek sayaç sorgusu)
+  if ((await tx.tBLSTOCKCOUNT.count({ where: { companyId: doc.companyId, status: 'COUNTING' } })) === 0) return
+  // Belgenin dokunduğu (lokasyon, ürün) çiftleri (satır + okutma scope'ları; lokasyon yoksa depo geneli = null)
+  const touched: { locationId: number | null; productId: number }[] = []
+  for (const line of doc.lines) {
+    const locs = new Set<number>()
+    if (line.sourceLocationId) locs.add(line.sourceLocationId)
+    if (line.targetLocationId) locs.add(line.targetLocationId)
+    for (const sc of line.scopes ?? []) { if (sc.sourceLocationId) locs.add(sc.sourceLocationId); if (sc.targetLocationId) locs.add(sc.targetLocationId) }
+    if (locs.size === 0) touched.push({ locationId: null, productId: line.productId })
+    else for (const l of locs) touched.push({ locationId: l, productId: line.productId })
+  }
+  if (!touched.length) return
+  const locIds = [...new Set(touched.map((t) => t.locationId).filter((x): x is number => x != null))]
+  const locWh = locIds.length ? await tx.tBLLOCATION.findMany({ where: { id: { in: locIds } }, select: { id: true, warehouseId: true } }) : []
+  const whByLoc = new Map(locWh.map((l) => [l.id, l.warehouseId]))
+  const whIds = new Set<number>(locWh.map((l) => l.warehouseId))
+  if (doc.warehouseId) whIds.add(doc.warehouseId)
+  if (!whIds.size) return
+  const counts = await tx.tBLSTOCKCOUNT.findMany({
+    where: { companyId: doc.companyId, status: 'COUNTING', warehouseId: { in: [...whIds] } },
+    select: { countNo: true, warehouseId: true, locationId: true, materialLinkType: true, materialLinkId: true, operationTypeId: true },
+  })
+  if (!counts.length) return
+  // Blok = sayımın operasyon parametresinde stockMoveOnActiveCount === false. Op/param yoksa bloklamaz.
+  const opIds = [...new Set(counts.map((c) => c.operationTypeId).filter((x): x is number => x != null))]
+  const params = opIds.length ? await tx.tBLCOUNTPARAMETER.findMany({ where: { companyId: doc.companyId, operationTypeId: { in: opIds } }, select: { operationTypeId: true, stockMoveOnActiveCount: true } }) : []
+  const blockByOp = new Map(params.map((p) => [p.operationTypeId, p.stockMoveOnActiveCount === false]))
+  const prodIds = [...new Set(touched.map((t) => t.productId))]
+  const prodGroup = new Map((await tx.tBLPRODUCT.findMany({ where: { id: { in: prodIds } }, select: { id: true, productGroupId: true } })).map((p) => [p.id, p.productGroupId]))
+  for (const count of counts) {
+    if (!(count.operationTypeId != null && (blockByOp.get(count.operationTypeId) ?? false))) continue // sayım bloklamıyor
+    for (const t of touched) {
+      const tWh = t.locationId != null ? whByLoc.get(t.locationId) : doc.warehouseId
+      if (tWh !== count.warehouseId) continue
+      if (count.locationId != null && count.locationId !== t.locationId) continue // lokasyon-scope sayım: yalnız o lokasyon
+      const mt = count.materialLinkType, mid = count.materialLinkId
+      const matCovers = !mt || mt === 'ALL' || (mt === 'SPECIFIC' && mid === t.productId) || (mt === 'GROUP' && mid != null && prodGroup.get(t.productId) === mid)
+      if (!matCovers) continue
+      throw new MovementError(`Aktif sayım (${count.countNo}) devam ediyor — sayım tamamlanana kadar bu ${count.locationId ? 'lokasyonda' : 'depoda'} stok hareketi yapılamaz`)
+    }
+  }
+}
+
 export async function completeDocument(documentId: number, breakOpts: CompleteOpts = {}) {
   return prisma.$transaction(async (tx) => {
     const doc = await tx.tBLDOCUMENT.findUniqueOrThrow({
@@ -413,6 +464,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     }
 
     if (doc.operationType.affectsStock) {
+      await assertNoActiveCountBlock(tx, doc) // Aktif sayım donması: sayım kapsamındaki stokta hareket engellenir (param kapalıysa)
       const tolerances = await loadTolerances(tx, doc.companyId, op.id) // kontrollü toplama alt/üst sınırları
       for (const line of doc.lines) {
         // Okutmasız + sıfır-miktar satır (okutması silinmiş kontrolsüz satır): işlenecek bir şey yok — atla

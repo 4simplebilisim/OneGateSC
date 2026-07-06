@@ -1569,6 +1569,7 @@ model TBLSTOCKCOUNT {
   companyId   Int
   countNo     String      @db.VarChar(40)
   warehouseId Int
+  locationId  Int?        // Sayım kapsam lokasyonu (null = tüm depo) — aktif-sayım donması kapsamı + snapshot filtresi
   countType   String?     @db.VarChar(20) // Sayım Tipi (ZSYM vb.)
   status      CountStatus @default(DRAFT)
   countDate   DateTime    @default(now())

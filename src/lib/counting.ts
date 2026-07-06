@@ -52,6 +52,7 @@ export async function createCount(
         companyId,
         countNo,
         warehouseId,
+        locationId: opts.locationId ?? undefined, // sayım kapsam lokasyonu (null=tüm depo) — aktif-sayım donması kapsamı
         countType: opts.countType,
         createdById: userId,
         note: opts.note,
