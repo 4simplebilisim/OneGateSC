@@ -286,8 +286,9 @@ function ColumnSection({ owner }: { owner: Owner }) {
   )
 }
 
-export const UserAuthorizations = ({ subject = 'user' }: { subject?: 'user' | 'group' }) => {
-  const { id } = useParams()
+export const UserAuthorizations = ({ subject = 'user', ownerId, embedded, defaultTab }: { subject?: 'user' | 'group'; ownerId?: number; embedded?: boolean; defaultTab?: string }) => {
+  const params = useParams()
+  const id = ownerId != null ? String(ownerId) : params.id // ayrı menü (Ekran Yetkileri) ownerId ile gömülü kullanır
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [owner, setOwner] = useState<{ name?: string; fullName?: string; username?: string; code?: string } | null>(null)
@@ -333,13 +334,15 @@ export const UserAuthorizations = ({ subject = 'user' }: { subject?: 'user' | 'g
     { key: 'columns', label: 'Kolonlar', children: <ColumnSection owner={ownerRef} /> },
   ]
 
-  return (
-    <div className="og-page" style={{ maxWidth: 760 }}>
-      <PageHeader
-        title={`${isGroup ? 'Grup Yetkileri' : 'Yetkiler'} — ${title}`}
-        subtitle="Yetki (ne yapabilir: firma/tesis/depo/operasyon) · Hak (hangi ekranları görür: backoffice + el terminali) · Kolonlar"
-        extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>Liste</Button>}
-      />
+  const body = (
+    <>
+      {!embedded && (
+        <PageHeader
+          title={`${isGroup ? 'Grup Yetkileri' : 'Yetkiler'} — ${title}`}
+          subtitle="Yetki (ne yapabilir: firma/tesis/depo/operasyon) · Hak (hangi ekranları görür: backoffice + el terminali) · Kolonlar"
+          extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>Liste</Button>}
+        />
+      )}
       <Alert type="info" showIcon style={{ marginBottom: 12 }}
         title="Yetki ≠ Hak — kısıtlama-listesi modeli"
         description={<>
@@ -347,8 +350,9 @@ export const UserAuthorizations = ({ subject = 'user' }: { subject?: 'user' | 'g
           {' '}Her boyut boş = kısıtsız; seçim = yalnız seçilenler. {isGroup ? 'Gruba verilenler üyelere miras geçer.' : 'Ekran/firma yetkisi yeni girişte yansır. Super-admin/ADMIN her şeye erişir.'}
         </>} />
       <div className="og-section-card" style={{ padding: '4px 14px 14px' }}>
-        <Tabs items={tabs} />
+        <Tabs items={tabs} defaultActiveKey={defaultTab} />
       </div>
-    </div>
+    </>
   )
+  return embedded ? body : <div className="og-page" style={{ maxWidth: 760 }}>{body}</div>
 }

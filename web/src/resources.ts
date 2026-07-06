@@ -160,6 +160,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'companies', label: 'Firma', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'users', label: 'Kullanıcılar', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'user-groups', label: 'Kullanıcı Grup', section: 'Uyarlamalar', group: 'Sistem' },
+  { name: 'auth-center', label: 'Ekran Yetkileri', section: 'Uyarlamalar', group: 'Sistem' },
 
   // ── Raporlar ──
   { name: 'stock-report', label: 'Stok Raporu', section: 'Raporlar', group: '' },

@@ -89,7 +89,7 @@ export const UserGroupForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   )
 
   const membersTab = mode === 'create' ? (
-    <Alert type="info" showIcon message="Önce grubu kaydedin, sonra bu sekmeden birden fazla kullanıcıyı aynı anda ekleyebilirsiniz." />
+    <Alert type="info" showIcon title="Önce grubu kaydedin, sonra bu sekmeden birden fazla kullanıcıyı aynı anda ekleyebilirsiniz." />
   ) : (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
       <Space.Compact style={{ width: '100%' }}>

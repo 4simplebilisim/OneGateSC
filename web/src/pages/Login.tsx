@@ -87,7 +87,7 @@ export const Login = () => {
             Hesabınızla giriş yapın
           </Typography.Paragraph>
 
-          {sessionMsg && <Alert type="warning" showIcon closable message={sessionMsg} style={{ marginBottom: 18 }} onClose={() => setSessionMsg(null)} />}
+          {sessionMsg && <Alert type="warning" showIcon closable title={sessionMsg} style={{ marginBottom: 18 }} onClose={() => setSessionMsg(null)} />}
 
           <Form layout="vertical" size="large" requiredMark={false} initialValues={{ remember: true }} onFinish={(values) => login(values)}>
             <Form.Item name="username" label="Kullanıcı" rules={[{ required: true, message: 'Kullanıcı adı gerekli' }]}>

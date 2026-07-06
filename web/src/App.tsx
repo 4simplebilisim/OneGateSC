@@ -43,6 +43,7 @@ import { LabelPrint } from './pages/LabelPrint'
 import { UserForm } from './pages/UserForm'
 import { UserGroupForm } from './pages/UserGroupForm'
 import { UserAuthorizations } from './pages/UserAuthorizations'
+import { AuthCenter } from './pages/AuthCenter'
 import { ShipmentCreate } from './pages/ShipmentCreate'
 import { MobileHome } from './mobile/MobileHome'
 import { MobileStockQuery } from './mobile/MobileStockQuery'
@@ -115,6 +116,7 @@ export default function App() {
           <Route path="user-groups/new" element={<UserGroupForm mode="create" />} />
           <Route path="user-groups/:id/edit" element={<UserGroupForm mode="edit" />} />
           <Route path="user-groups/:id/authorizations" element={<UserAuthorizations subject="group" />} />
+          <Route path="auth-center" element={<AuthCenter />} />
           <Route path="handheld-menu-groups/:id/items" element={<OwnerLines resource="handheld-menu-items" ownerField="groupId" ownerResource="handheld-menu-groups" backTo="/handheld-menu-groups" title="El Terminali Menüleri" subtitle="Gruba bağlı menü item'ları — her biri bir operasyon koduna ve mobil ekrana bağlı" />} />
 
           <Route path="locations/bulk" element={<LocationBulkGenerate />} />
