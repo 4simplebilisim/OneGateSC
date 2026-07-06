@@ -142,6 +142,8 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [form] = Form.useForm()
   // Operasyon yönü — Lokasyon alt-tab'ında kaynak/hedef alanlarını yöne göre filtrelemek için izlenir
   const direction = (Form.useWatch('direction', form) ?? 'INBOUND') as string
+  // COUNT (Sayım) operasyonu stok HAREKETİ postlamaz — stok sayım motoru (equalize) ile düzeltilir → "Stok Etkiler" otomatik kapanır (backend de zorlar)
+  useEffect(() => { if (direction === 'COUNT') form.setFieldValue('affectsStock', false) }, [direction, form])
   const [refOpts, setRefOpts] = useState<Record<string, Opt[]>>({})
   const [submitting, setSubmitting] = useState(false)
   const [tab, setTab] = useState('def')

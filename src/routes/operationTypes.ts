@@ -100,6 +100,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (lnkErr) return reply.code(400).send({ error: lnkErr })
     const refErr = await opRefsIssue(companyId, parsed.data)
     if (refErr) return reply.code(400).send({ error: refErr })
+    // COUNT (Sayım) operasyonu stok HAREKETİ postlamaz — stok yalnız sayım motoru (equalize) ile düzeltilir → affectsStock DAİMA kapalı (çift-düzeltme önlenir)
+    if (parsed.data.direction === 'COUNT') (parsed.data as Record<string, unknown>).affectsStock = false
     try {
       const opType = await prisma.tBLOPERATIONTYPE.create({ data: { ...parsed.data, companyId } })
       return reply.code(201).send(opType)
@@ -119,6 +121,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (!existing) return reply.code(404).send({ error: 'Operation type not found' })
     // Etkin yön + ters operasyon (payload'ta yoksa mevcut kayıttan) ile yön kuralını doğrula
     const direction = parsed.data.direction ?? existing.direction
+    // COUNT (Sayım) operasyonu stok hareketi postlamaz → affectsStock DAİMA kapalı (yanlışlıkla açılırsa düzeltilir)
+    if (direction === 'COUNT') (parsed.data as Record<string, unknown>).affectsStock = false
     const reverseOpId = parsed.data.reverseOperationTypeId ?? existing.reverseOperationTypeId
     const revErr = await reverseDirectionError(companyId, direction, reverseOpId)
     if (revErr) return reply.code(400).send({ error: revErr })
