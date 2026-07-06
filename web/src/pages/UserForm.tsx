@@ -46,7 +46,7 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         isAdmin: u.isSuperAdmin === true, // Yönetici (Admin) = firma-bağımsız süper-admin
         isMobileUser: u.isMobileUser === true,
         groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
-        isApproved: u.isApproved, phone: u.phone ?? undefined,
+        isApproved: u.isApproved,
         passwordNeverExpires: u.passwordNeverExpires,
         mustChangePassword: u.mustChangePassword,
         cannotChangePassword: u.cannotChangePassword,
@@ -118,9 +118,6 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Form.Item name="isMobileUser" label="Mobil Kullanıcı" valuePropName="checked"
             tooltip="Açık: bu kullanıcı el terminali (mobil) kullanıcısıdır.">
             <Switch checkedChildren="El Terminali" unCheckedChildren="Hayır" />
-          </Form.Item>
-          <Form.Item name="phone" label="Cep Tel">
-            <Input placeholder="05xx xxx xx xx" />
           </Form.Item>
           <Form.Item name="isApproved" label="Onay" valuePropName="checked">
             <Switch />
