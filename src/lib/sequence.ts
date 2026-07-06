@@ -27,3 +27,13 @@ export async function nextSequence(companyId: number, code: string, client?: Pri
   }
   return client ? run(client) : prisma.$transaction(run)
 }
+
+/** İş Emri sayacı ('WO') yoksa kurar (idempotent). WorkOrderCreate otomatik no + sales→iş emri için gerekli.
+ *  Firma-create'e bağlı + backfill script'iyle mevcut firmalara koşulur. */
+export async function ensureWorkOrderSequence(companyId: number): Promise<void> {
+  await prisma.tBLSEQUENCE.upsert({
+    where: { companyId_code: { companyId, code: 'WO' } },
+    update: {},
+    create: { companyId, code: 'WO', name: 'İş Emri', prefix: 'WO', padLength: 6, isAutomatic: true },
+  })
+}

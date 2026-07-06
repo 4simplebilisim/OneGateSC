@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 import { nextSequence } from '../lib/sequence.js'
+import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 import { assignWorkOrder, startWorkOrder, reportLine, completeWorkOrder, cancelWorkOrder, WorkOrderError } from '../lib/workOrder.js'
 
 const types = ['PICK', 'PUTAWAY', 'COUNT', 'TRANSFER', 'REPLENISH'] as const
@@ -66,6 +67,17 @@ export async function workOrderRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
     const { lines, orderNo: providedNo, ...header } = parsed.data
+
+    // Cross-tenant koruması: depo + atanan kullanıcı + satır referansları (ürün/birim/lokasyon/statü) bu firmaya ait olmalı
+    const uniq = (a: (number | null | undefined)[]) => [...new Set(a.filter((x): x is number => x != null))]
+    const refs: [string, RefModel, number][] = [['depo', 'warehouse', header.warehouseId]]
+    if (header.assignedToUserId) refs.push(['atanan kullanıcı', 'user', header.assignedToUserId])
+    for (const id of uniq(lines.map((l) => l.productId))) refs.push(['ürün', 'product', id])
+    for (const id of uniq(lines.map((l) => l.unitId))) refs.push(['birim', 'unit', id])
+    for (const id of uniq(lines.flatMap((l) => [l.sourceLocationId, l.targetLocationId]))) refs.push(['lokasyon', 'location', id])
+    for (const id of uniq(lines.flatMap((l) => [l.sourceStatusId, l.targetStatusId]))) refs.push(['statü', 'status', id])
+    const bad = await firstBadRef(companyId, refs)
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
 
     let orderNo = providedNo
     if (!orderNo) {

@@ -82,7 +82,7 @@ export const RESOURCES: ResourceDef[] = [
   // NOT: Kalite ayrı modül değil — statü (QUARANTINE/BLOCKED) + operasyon-statü geçişleriyle takip edilir.
   // RAFA KALDIRILDI (2026-06-20): "Diğer İşlemler" menüde fazla duruyordu → hidden:true (rota+backend durur, menüde gizli).
   // Geri açmak için hidden'ları kaldır. WMS-dışı modüller (İş Emri/Sipariş/Lojistik/Finans) demo sonrası geri gelebilir.
-  { name: 'work-orders', label: 'İş Emirleri', section: 'İşlemler', group: 'Diğer İşlemler', hidden: true },
+  { name: 'work-orders', label: 'İş Emirleri', section: 'İşlemler', group: 'Diğer İşlemler' },
   { name: 'purchase-orders', label: 'Satınalma Siparişleri', section: 'İşlemler', group: 'Diğer İşlemler', hidden: true },
   { name: 'sales-orders', label: 'Satış Siparişleri', section: 'İşlemler', group: 'Diğer İşlemler', hidden: true },
   { name: 'shipments', label: 'Sevkiyatlar', section: 'İşlemler', group: 'Diğer İşlemler', hidden: true },
