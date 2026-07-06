@@ -6,6 +6,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
 import { screenRight } from './screenRight'
+import { CompanySwitcher } from './components/CompanySwitcher'
 
 const NAVY = '#0f2238'
 const NAVY_DARK = '#0a1626'
@@ -82,7 +83,8 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           One<span style={{ color: '#44D4E3' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
         </Typography.Text>
         <div style={{ flex: 1 }} />
-        <Space size={4} style={{ marginRight: 8 }}>
+        <CompanySwitcher color={chrome.icon} />
+        <Space size={4} style={{ marginRight: 8, marginLeft: 8 }}>
           <Tooltip title="Pano"><Link to="/dashboard"><Button type="text" icon={<AppstoreOutlined />} style={{ color: chrome.icon }} /></Link></Tooltip>
           <Tooltip title={mode === 'dark' ? 'Açık mod' : 'Koyu mod'}>
             <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon }} aria-label="tema" />

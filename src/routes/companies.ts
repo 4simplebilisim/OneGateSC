@@ -25,9 +25,12 @@ function requireSuper(request: FastifyRequest, reply: FastifyReply): boolean {
 
 export async function companyRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: [app.authenticate] }, async (request) => {
-    const user = request.user as { isSuperAdmin?: boolean }
+    const user = request.user as { isSuperAdmin?: boolean; companyId?: number | null; companies?: number[] }
     if (user.isSuperAdmin) return prisma.tBLCOMPANY.findMany({ orderBy: { code: 'asc' }, select })
-    return prisma.tBLCOMPANY.findMany({ where: { id: getCompanyId(request) }, orderBy: { code: 'asc' }, select })
+    // Normal kullanıcı: erişebildiği firmalar (kendi + COMPANY yetkileri — JWT'deki companies). Çok-firmalı switcher bunu tüketir.
+    const own = getCompanyId(request)
+    const allowed = user.companies && user.companies.length ? user.companies : [own]
+    return prisma.tBLCOMPANY.findMany({ where: { id: { in: allowed } }, orderBy: { code: 'asc' }, select })
   })
 
   app.get('/:id', { preHandler: [app.authenticate] }, async (request, reply) => {

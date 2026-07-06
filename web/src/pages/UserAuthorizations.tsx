@@ -9,8 +9,9 @@ import { FORM_CONFIG } from '../formConfig'
 import { MOBILE_MENU } from '../mobile/mobileMenu'
 
 type Item = { id: number; code?: string; name?: string }
-type Scope = { type: 'FACILITY' | 'WAREHOUSE' | 'OPERATION_TYPE'; resource: string; noun: string }
+type Scope = { type: 'COMPANY' | 'FACILITY' | 'WAREHOUSE' | 'OPERATION_TYPE'; resource: string; noun: string }
 type Owner = { userId: number } | { groupId: number }
+const isSuperAdmin = () => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } }
 
 const labelOf = (x: Item) => x.code ? `${x.code}${x.name ? ' — ' + x.name : ''}` : (x.name ?? `#${x.id}`)
 const StatusTag = ({ n, noun }: { n: number; noun: string }) =>
@@ -262,12 +263,21 @@ export const UserAuthorizations = ({ subject = 'user' }: { subject?: 'user' | 'g
   const ownerRef: Owner = isGroup ? { groupId: uid } : { userId: uid }
   const title = owner?.fullName ?? owner?.name ?? owner?.username ?? owner?.code ?? `#${id}`
 
-  const tabs = [
-    { key: 'rights', label: 'Haklar', children: <RightsSection owner={ownerRef} /> },
-    { key: 'mobile', label: 'El Terminali', children: <CodeSection owner={ownerRef} options={mobileOpts} mine={isMobileCode} noun="menü" placeholder="Erişilebilecek el terminali menülerini seçin — boş = tümü" /> },
+  // YETKİ (ne YAPABİLİR — varlık erişimi): Firma(tenant) · Tesis · Depo · Operasyon. Firma yalnız super-admin (cross-tenant).
+  const yetkiTabs = [
+    ...(isSuperAdmin() ? [{ key: 'company', label: 'Firma (Tenant)', children: <ScopeSection owner={ownerRef} scope={{ type: 'COMPANY' as const, resource: 'companies', noun: 'firma' }} /> }] : []),
     { key: 'facility', label: 'Tesis', children: <ScopeSection owner={ownerRef} scope={{ type: 'FACILITY', resource: 'facilities', noun: 'tesis' }} /> },
     { key: 'warehouse', label: 'Depo', children: <ScopeSection owner={ownerRef} scope={{ type: 'WAREHOUSE', resource: 'warehouses', noun: 'depo' }} /> },
     { key: 'operation', label: 'Operasyon', children: <ScopeSection owner={ownerRef} scope={{ type: 'OPERATION_TYPE', resource: 'operation-types', noun: 'operasyon tipi' }} /> },
+  ]
+  // HAK (hangi EKRANLARI GÖRÜR): Backoffice ekranları (İzle/Yeni/Düzenle/Sil) · El Terminali menüleri
+  const hakTabs = [
+    { key: 'backoffice', label: 'Backoffice Ekranları', children: <RightsSection owner={ownerRef} /> },
+    { key: 'mobile', label: 'El Terminali', children: <CodeSection owner={ownerRef} options={mobileOpts} mine={isMobileCode} noun="menü" placeholder="Erişilebilecek el terminali menülerini seçin — boş = tümü" /> },
+  ]
+  const tabs = [
+    { key: 'yetki', label: 'Yetki', children: <Tabs items={yetkiTabs} /> },
+    { key: 'hak', label: 'Hak', children: <Tabs items={hakTabs} /> },
     { key: 'columns', label: 'Kolonlar', children: <ColumnSection owner={ownerRef} /> },
   ]
 
@@ -275,14 +285,15 @@ export const UserAuthorizations = ({ subject = 'user' }: { subject?: 'user' | 'g
     <div className="og-page" style={{ maxWidth: 760 }}>
       <PageHeader
         title={`${isGroup ? 'Grup Yetkileri' : 'Yetkiler'} — ${title}`}
-        subtitle="Haklar (İzle/Yeni/Düzenle/Sil) · el terminali · tesis · depo · operasyon · kolonlar"
+        subtitle="Yetki (ne yapabilir: firma/tesis/depo/operasyon) · Hak (hangi ekranları görür: backoffice + el terminali) · Kolonlar"
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>Liste</Button>}
       />
       <Alert type="info" showIcon style={{ marginBottom: 12 }}
-        title="Kısıtlama-listesi modeli"
-        description={isGroup
-          ? 'Gruba verilen yetkiler üyelerine miras geçer. Boş sekme = o boyutta kısıtsız; seçim = yalnız seçilenler.'
-          : 'Her sekme boş = o boyutta kısıtsız; seçim = yalnız seçilenler. Ekran/menü yetkisi yeni girişte yansır. Super-admin/ADMIN tüm erişime sahiptir.'} />
+        title="Yetki ≠ Hak — kısıtlama-listesi modeli"
+        description={<>
+          <b>Yetki</b> = kullanıcının işlem yapabileceği firma/tesis/depo/operasyon. <b>Hak</b> = görebileceği ekranlar (backoffice + el terminali).
+          {' '}Her boyut boş = kısıtsız; seçim = yalnız seçilenler. {isGroup ? 'Gruba verilenler üyelere miras geçer.' : 'Ekran/firma yetkisi yeni girişte yansır. Super-admin/ADMIN her şeye erişir.'}
+        </>} />
       <div className="og-section-card" style={{ padding: '4px 14px 14px' }}>
         <Tabs items={tabs} />
       </div>

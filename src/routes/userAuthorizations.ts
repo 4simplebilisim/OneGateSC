@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 
-const scopeEnum = z.enum(['FACILITY', 'WAREHOUSE', 'OPERATION_TYPE', 'SCREEN'])
+const scopeEnum = z.enum(['COMPANY', 'FACILITY', 'WAREHOUSE', 'OPERATION_TYPE', 'SCREEN'])
 const createSchema = z.object({
   userId: z.number().int().positive().optional(), // sahip = kullanıcı
   groupId: z.number().int().positive().optional(), // sahip = grup (üyelerine miras)
@@ -13,8 +13,10 @@ const createSchema = z.object({
   isActive: z.boolean().optional(),
 }).refine((d) => (d.userId ? 1 : 0) + (d.groupId ? 1 : 0) === 1, { message: 'userId VEYA groupId (tam biri) gerekli' })
 
-// entity scope referenceId, scopeType'a göre bu firmaya ait olmalı (cross-tenant koruması)
+// entity scope referenceId, scopeType'a göre bu firmaya ait olmalı (cross-tenant koruması).
+// COMPANY hariç: firma referansı BAŞKA firmadır (kullanıcıya o firmaya erişim verilir) → yalnız varlık kontrolü.
 async function validRef(companyId: number, scopeType: z.infer<typeof scopeEnum>, referenceId: number): Promise<boolean> {
+  if (scopeType === 'COMPANY') return !!(await prisma.tBLCOMPANY.findFirst({ where: { id: referenceId } }))
   if (scopeType === 'FACILITY') return !!(await prisma.tBLFACILITY.findFirst({ where: { id: referenceId, companyId } }))
   if (scopeType === 'WAREHOUSE') return !!(await prisma.tBLWAREHOUSE.findFirst({ where: { id: referenceId, companyId } }))
   return !!(await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: referenceId, companyId } }))
@@ -40,6 +42,11 @@ export async function userAuthorizationRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
     const { userId, groupId, scopeType, referenceId, referenceCode, isActive } = parsed.data
+
+    // Firma (tenant) erişimi vermek cross-tenant bir işlemdir → yalnız super-admin
+    if (scopeType === 'COMPANY' && !(request.user as { isSuperAdmin?: boolean }).isSuperAdmin) {
+      return reply.code(403).send({ error: 'Firma (tenant) yetkisini yalnız super-admin verebilir' })
+    }
 
     // sahip (kullanıcı veya grup) bu firmaya ait olmalı
     if (userId) {

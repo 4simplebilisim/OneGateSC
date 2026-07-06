@@ -24,14 +24,18 @@ function headerCompanyId(request: FastifyRequest): number | undefined {
  *  - Anonim (public GET) → x-company-id header ya da default firma.
  */
 export function getCompanyId(request: FastifyRequest): number {
-  const user = request.user as { companyId?: number | null; isSuperAdmin?: boolean } | undefined
+  const user = request.user as { companyId?: number | null; isSuperAdmin?: boolean; companies?: number[] } | undefined
 
   if (user) {
     if (user.isSuperAdmin) {
       return headerCompanyId(request) ?? (typeof user.companyId === 'number' && user.companyId > 0 ? user.companyId : DEFAULT_COMPANY_ID)
     }
-    if (typeof user.companyId === 'number' && user.companyId > 0) return user.companyId
-    return DEFAULT_COMPANY_ID
+    const own = typeof user.companyId === 'number' && user.companyId > 0 ? user.companyId : DEFAULT_COMPANY_ID
+    // Çok-firmalı kullanıcı (COMPANY yetkisi): x-company-id header'ı İZİNLİ firmalardan biriyse ona geç; değilse kendi firması.
+    const allowed = user.companies && user.companies.length ? user.companies : [own]
+    const h = headerCompanyId(request)
+    if (h && allowed.includes(h)) return h
+    return own
   }
 
   return headerCompanyId(request) ?? DEFAULT_COMPANY_ID

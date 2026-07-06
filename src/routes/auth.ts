@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../lib/prisma.js'
 import { getUserColumnAuth } from './columnAuthorizations.js'
 import { getUserScreenRights } from './screenRights.js'
+import { getUserCompanies } from '../lib/userAuth.js'
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -33,12 +34,15 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const roles = user.userRoles.map((ur) => ur.role.code)
+    // Erişilebilir firmalar (kendi + COMPANY yetkileri) — JWT'ye gömülür; getCompanyId çok-firmalı geçişi buradan doğrular
+    const companies = user.isSuperAdmin ? [] : await getUserCompanies(user.id, user.companyId)
     const token = app.jwt.sign({
       sub: user.id,
       username: user.username,
       roles,
       companyId: user.companyId,
       isSuperAdmin: user.isSuperAdmin,
+      companies,
     })
 
     await prisma.tBLUSER.update({
@@ -58,6 +62,7 @@ export async function authRoutes(app: FastifyInstance) {
         roles,
         companyId: user.companyId,
         isSuperAdmin: user.isSuperAdmin,
+        companies, // erişilebilir firmalar (çok-firmalı kullanıcıda >1) — frontend firma switcher'ı için
         screens,
         columnAuth,
         screenRights,

@@ -162,6 +162,7 @@ model TBLUSERAUTHORIZATION {
 }
 
 enum UserScopeType {
+  COMPANY // firma (tenant) erişimi — kullanıcı birden fazla firmada işlem yapabilir (referenceId = companyId)
   FACILITY
   WAREHOUSE
   OPERATION_TYPE

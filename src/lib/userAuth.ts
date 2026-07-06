@@ -33,6 +33,20 @@ export async function userGroupIds(userId: number): Promise<number[]> {
   return rows.map((r) => r.groupId)
 }
 
+/** Kullanıcının erişebileceği firma id'leri (kendi firması + COMPANY yetkileri, doğrudan+grup). Login'de JWT'ye gömülür. */
+export async function getUserCompanies(userId: number, ownCompanyId: number | null): Promise<number[]> {
+  const groups = await prisma.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+  const groupIds = groups.map((g) => g.groupId)
+  const auths = await prisma.tBLUSERAUTHORIZATION.findMany({
+    where: { scopeType: 'COMPANY', isActive: true, OR: [{ userId }, ...(groupIds.length ? [{ groupId: { in: groupIds } }] : [])] },
+    select: { referenceId: true },
+  })
+  const set = new Set<number>()
+  if (ownCompanyId != null) set.add(ownCompanyId)
+  for (const a of auths) if (a.referenceId != null) set.add(a.referenceId)
+  return [...set]
+}
+
 export async function assertUserAuthorized(request: FastifyRequest, scopes: CheckScopes): Promise<void> {
   const user = request.user as { sub?: number; isSuperAdmin?: boolean } | undefined
   if (!user || user.isSuperAdmin) return
