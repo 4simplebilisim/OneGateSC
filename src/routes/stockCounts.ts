@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, countDifferences, CountingError } from '../lib/counting.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
+import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
 const scope = z.enum(['ALL', 'GROUP', 'SPECIFIC'])
 const createSchema = z.object({
@@ -24,6 +25,20 @@ const createSchema = z.object({
 const idOf = (request: FastifyRequest) => Number((request.params as { id: string }).id)
 
 export async function stockCountRoutes(app: FastifyInstance) {
+  // Mevcut sayımın deposu/operasyonu için yetki kontrolü (kısıtlama-listesi) — yetkisiz 403, sayım yoksa 404.
+  // false dönerse çağıran reply'ı gönderilmiştir; handler `return reply` ile durur.
+  const assertCountAuth = async (request: FastifyRequest, reply: FastifyReply, id: number): Promise<boolean> => {
+    const count = await prisma.tBLSTOCKCOUNT.findFirst({ where: { id, companyId: getCompanyId(request) }, select: { warehouseId: true, operationTypeId: true } })
+    if (!count) { reply.code(404).send({ error: 'Stock count not found' }); return false }
+    try {
+      await assertUserAuthorized(request, { warehouseId: count.warehouseId, operationTypeId: count.operationTypeId })
+      return true
+    } catch (err) {
+      if (err instanceof AuthorizationError) { reply.code(403).send({ error: err.message }); return false }
+      throw err
+    }
+  }
+
   app.get('/', async (request) => {
     const q = request.query as { status?: string }
     const statuses = ['DRAFT', 'COUNTING', 'COMPLETED', 'CANCELLED'] as const
@@ -63,6 +78,13 @@ export async function stockCountRoutes(app: FastifyInstance) {
     if (d.userLinkType === 'GROUP') refs.push(['Kullanıcı Grubu', 'userGroup', d.userLinkId])
     const bad = await firstBadRef(companyId, refs)
     if (bad) return reply.code(400).send({ error: `${bad}: başka firmaya ait veya geçersiz` })
+    // Yetki (kısıtlama-listesi): kullanıcının bu DEPO (+ tesisi) ve varsa sayım OPERASYONU için yetkisi olmalı → yetkisiz 403
+    try {
+      await assertUserAuthorized(request, { warehouseId: d.warehouseId, operationTypeId: d.operationTypeId })
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      throw err
+    }
     try {
       const count = await createCount(companyId, d.warehouseId, d.countNo, request.user.sub, {
         note: d.note, countType: d.countType, operationTypeId: d.operationTypeId, locationId: d.locationId, productId: d.productId,
@@ -82,6 +104,7 @@ export async function stockCountRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id) || !Number.isInteger(lineId)) return reply.code(400).send({ error: 'Invalid id' })
     const body = z.object({ countedQty: z.number().min(0) }).safeParse(request.body)
     if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
+    if (!(await assertCountAuth(request, reply, id))) return reply // yetki: bu sayımın deposu/operasyonu
     try {
       return await setCounted(id, lineId, body.data.countedQty)
     } catch (err) {
@@ -93,6 +116,7 @@ export async function stockCountRoutes(app: FastifyInstance) {
   const wrap = (fn: (id: number) => Promise<unknown>) => async (request: FastifyRequest, reply: FastifyReply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await assertCountAuth(request, reply, id))) return reply
     try {
       return await fn(id)
     } catch (err) {
