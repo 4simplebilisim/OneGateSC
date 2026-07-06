@@ -10,6 +10,7 @@ const createSchema = z.object({
   scopeType: scopeEnum,
   referenceId: z.number().int().positive().optional(), // entity scope
   referenceCode: z.string().min(1).max(60).optional(), // SCREEN scope = ekran/menü anahtarı
+  deny: z.boolean().optional(), // KULLANICI > GRUP: yasakla (grubun verdiğini kaldırır). yalnız kullanıcıda anlamlı
   isActive: z.boolean().optional(),
 }).refine((d) => (d.userId ? 1 : 0) + (d.groupId ? 1 : 0) === 1, { message: 'userId VEYA groupId (tam biri) gerekli' })
 
@@ -42,10 +43,15 @@ export async function userAuthorizationRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
     const { userId, groupId, scopeType, referenceId, referenceCode, isActive } = parsed.data
+    const deny = parsed.data.deny ?? false
 
     // Firma (tenant) erişimi vermek cross-tenant bir işlemdir → yalnız super-admin
     if (scopeType === 'COMPANY' && !(request.user as { isSuperAdmin?: boolean }).isSuperAdmin) {
       return reply.code(403).send({ error: 'Firma (tenant) yetkisini yalnız super-admin verebilir' })
+    }
+    // Yasak (deny) yalnız KULLANICI seviyesinde anlamlı (grup override'ı) + SCREEN scope'ta yasak yok
+    if (deny && (groupId || scopeType === 'SCREEN')) {
+      return reply.code(400).send({ error: 'Yasak yalnız kullanıcı seviyesindeki entity yetkilerinde kullanılır' })
     }
 
     // sahip (kullanıcı veya grup) bu firmaya ait olmalı
@@ -63,15 +69,37 @@ export async function userAuthorizationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: 'Geçersiz referans — bu firmaya ait değil' })
       }
     }
-    try {
-      const row = await prisma.tBLUSERAUTHORIZATION.create({
-        data: { companyId, userId, groupId, scopeType, isActive, referenceId: scopeType === 'SCREEN' ? null : referenceId, referenceCode: scopeType === 'SCREEN' ? referenceCode : null },
-      })
-      return reply.code(201).send(row)
-    } catch (err) {
-      if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Bu yetki zaten tanımlı' })
-      throw err
+    // UPSERT: aynı sahip+scope+referans varsa güncelle (grant↔yasak toggle), yoksa oluştur
+    const refId = scopeType === 'SCREEN' ? null : referenceId ?? null
+    const refCode = scopeType === 'SCREEN' ? referenceCode ?? null : null
+    const existing = await prisma.tBLUSERAUTHORIZATION.findFirst({
+      where: { companyId, userId: userId ?? null, groupId: groupId ?? null, scopeType, referenceId: refId, referenceCode: refCode },
+      select: { id: true },
+    })
+    if (existing) {
+      const row = await prisma.tBLUSERAUTHORIZATION.update({ where: { id: existing.id }, data: { deny, isActive: isActive ?? true } })
+      return reply.code(200).send(row)
     }
+    const row = await prisma.tBLUSERAUTHORIZATION.create({
+      data: { companyId, userId, groupId, scopeType, deny, isActive, referenceId: refId, referenceCode: refCode },
+    })
+    return reply.code(201).send(row)
+  })
+
+  // Grup baseline (miras): bu kullanıcının ÜYE olduğu grupların bu scope'ta GRANT ettiği referenceId'ler.
+  // Kullanıcı ekranı "Devralınan" durumu göstersin diye — kullanıcı bunları yasaklayabilir/üstüne ekleyebilir.
+  app.get('/inherited', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {
+    const q = request.query as { userId?: string; scopeType?: string }
+    const userId = Number(q.userId)
+    if (!Number.isInteger(userId) || !scopeEnum.safeParse(q.scopeType).success) return reply.code(400).send({ error: 'userId + scopeType gerekli' })
+    const groups = await prisma.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+    const groupIds = groups.map((g) => g.groupId)
+    if (!groupIds.length) return { referenceIds: [] }
+    const rows = await prisma.tBLUSERAUTHORIZATION.findMany({
+      where: { companyId: getCompanyId(request), groupId: { in: groupIds }, scopeType: q.scopeType as z.infer<typeof scopeEnum>, deny: false, isActive: true },
+      select: { referenceId: true },
+    })
+    return { referenceIds: [...new Set(rows.map((r) => r.referenceId).filter((x): x is number => x != null))] }
   })
 
   app.delete('/:id', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {

@@ -143,6 +143,7 @@ model TBLUSERAUTHORIZATION {
   scopeType     UserScopeType
   referenceId   Int? // entity scope (FACILITY/WAREHOUSE/OPERATION_TYPE) → ilgili tablo id'si
   referenceCode String?       @db.VarChar(60) // SCREEN scope → ekran/menü anahtarı (resource adı)
+  deny          Boolean       @default(false) // KULLANICI > GRUP: kullanıcı seviyesinde bir yetkiyi YASAKLA (grubun verdiğini kaldırır). grant=izin, deny=yasak
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
