@@ -81,6 +81,7 @@ import { locationCapacityRoutes } from './routes/locationCapacity.js'
 import { locationGroupLinkRoutes } from './routes/locationGroupLinks.js'
 import { palletRoutes } from './routes/pallets.js'
 import { workOrderRoutes } from './routes/workOrders.js'
+import { notificationRoutes } from './routes/notifications.js'
 import { requireRole } from './lib/rbac.js'
 import { prisma } from './lib/prisma.js'
 
@@ -237,6 +238,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(productSubGroupRoutes, { prefix: '/api/product-subgroups' })
   await app.register(palletRoutes, { prefix: '/api/pallets' })
   await app.register(workOrderRoutes, { prefix: '/api/work-orders' })
+  await app.register(notificationRoutes, { prefix: '/api/notifications' })
   await app.register(entryConditionTypeRoutes, { prefix: '/api/entry-condition-types' })
   await app.register(exitConditionTypeRoutes, { prefix: '/api/exit-condition-types' })
   await app.register(routingTypeRoutes, { prefix: '/api/routing-types' })

@@ -9,6 +9,7 @@ export const authProvider: AuthProvider = {
       localStorage.setItem('og_user', JSON.stringify(data.user))
       if (data.user.companyId) localStorage.setItem('og_company', String(data.user.companyId))
       // Mobil (el terminali) kullanıcı → backoffice yerine el terminaline düşer
+      if (!data.user.isMobileUser) localStorage.setItem('og_notif_greet', '1') // ilk girişte zil popup'ı (backoffice)
       return { success: true, redirectTo: data.user.isMobileUser ? '/m' : '/' }
     } catch {
       return { success: false, error: { name: 'Giriş hatası', message: 'Kullanıcı adı veya şifre hatalı' } }

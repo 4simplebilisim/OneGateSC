@@ -1,12 +1,13 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGetIdentity, useLogout } from '@refinedev/core'
 import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip } from 'antd'
-import { MenuOutlined, AppstoreOutlined, BellOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
+import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
 import { screenRight } from './screenRight'
 import { CompanySwitcher } from './components/CompanySwitcher'
+import { NotificationBell } from './components/NotificationBell'
 
 const NAVY = '#0f2238'
 const NAVY_DARK = '#0a1626'
@@ -89,7 +90,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           <Tooltip title={mode === 'dark' ? 'Açık mod' : 'Koyu mod'}>
             <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon }} aria-label="tema" />
           </Tooltip>
-          <Tooltip title="Bildirimler"><Button type="text" icon={<BellOutlined />} style={{ color: chrome.icon }} /></Tooltip>
+          <NotificationBell color={chrome.icon} />
           <Tooltip title="Yardım"><Button type="text" icon={<QuestionCircleOutlined />} style={{ color: chrome.icon }} /></Tooltip>
         </Space>
         <Space size={10}>
