@@ -6,6 +6,7 @@ import { getCompanyId } from '../lib/company.js'
 import { refreshDocStatus } from '../lib/documentStatus.js'
 import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '../lib/movement.js'
 import { firstBadRef } from '../lib/refGuard.js'
+import { rotationWarning, type Rotation } from '../lib/rotation.js'
 
 // Sadece-tarih alanı (üretim/SKT): "YYYY-MM-DD" → UTC ÖĞLE Date (timezone gün-kayması önlenir; @db.Date günü korur)
 const dateOnly = z.preprocess(
@@ -123,7 +124,7 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
         batchNo: true, serialNo: true, quantity: true,
         product: { select: { productGroupId: true } },
-        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true } } } },
+        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true } } } },
       },
     })
     // Okutulan (miras dahil) kaynak/hedef lokasyon+statü
@@ -195,7 +196,18 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       serialNo: scopeData.serialNo ?? ln?.serialNo ?? null,
     } })
     await recomputeCollected(documentLineId, Number((request.user as { sub?: number | string })?.sub) || null)
-    return reply.code(201).send(created)
+
+    // Stok rotasyonu (öner+uyar): ÇIKIŞ operasyonunda daha eski lot dururken yeni lot okutulduysa uyar (bloklamaz)
+    let warning: string | null = null
+    const op = ln?.document.operationType
+    if (op && op.direction === 'OUTBOUND' && (op.stockRotation ?? 'NONE') !== 'NONE' && eff.sourceLocationId) {
+      warning = await rotationWarning({
+        companyId, strategy: op.stockRotation as Rotation, productId: ln!.productId, sourceLocationId: eff.sourceLocationId,
+        pickedExpiry: scopeData.expiryDate ?? null, pickedProduction: scopeData.productionDate ?? null,
+        pickedBatchNo: scopeData.batchNo ?? ln!.batchNo ?? null,
+      })
+    }
+    return reply.code(201).send(warning ? { ...created, _warning: warning } : created)
   })
 
   app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

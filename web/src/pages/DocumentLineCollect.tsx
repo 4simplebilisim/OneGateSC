@@ -50,7 +50,7 @@ export const DocumentLineCollect = () => {
     setBusy(true)
     try {
       const loc = vals.locationId ?? null // boş = satırdan miras (backend)
-      await axiosInstance.post('/api/document-line-scopes', {
+      const { data } = await axiosInstance.post('/api/document-line-scopes', {
         documentLineId: Number(lineId), unitId: line.unitId, quantity: Number(vals.quantity),
         palletId: vals.palletId ?? null, serialNo: vals.serialNo || null, batchNo: vals.batchNo || null,
         productionDate: vals.productionDate ? vals.productionDate.format('YYYY-MM-DD') : null,
@@ -58,6 +58,7 @@ export const DocumentLineCollect = () => {
         ...(inbound ? { targetLocationId: loc } : { sourceLocationId: loc }), // INBOUND→hedef, çıkış→kaynak
       })
       message.success('Toplama kaydedildi')
+      if (data?._warning) message.warning(data._warning, 6) // Stok rotasyonu (FIFO/FEFO) — yanlış lot uyarısı (bloklamaz)
       form.resetFields()
       load()
     } catch (e) {

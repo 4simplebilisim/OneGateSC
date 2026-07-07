@@ -60,9 +60,10 @@ export const MobilePick = () => {
     if (!doc) return
     setBusy(true)
     try {
-      await axiosInstance.post('/api/document-line-scopes', { documentLineId: line.id, unitId: line.unitId, quantity: q })
+      const { data } = await axiosInstance.post('/api/document-line-scopes', { documentLineId: line.id, unitId: line.unitId, quantity: q })
       await refreshDoc()
       message.success(`${line.product?.code ?? '#' + line.lineNo} × ${q} toplandı`)
+      if (data?._warning) message.warning(data._warning, 6) // Stok rotasyonu (FIFO/FEFO) yanlış-lot uyarısı — bloklamaz
     } catch (e) { message.error(apiErr(e)) } finally { setBusy(false); scanRef.current?.focus() }
   }
 

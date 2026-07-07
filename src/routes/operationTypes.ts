@@ -7,6 +7,7 @@ import { getCompanyId, companyListFilter } from '../lib/company.js'
 const directions = ['INBOUND', 'OUTBOUND', 'INTERNAL', 'COUNT'] as const
 const docTypes = ['STOCK_MOVEMENT', 'COUNT', 'PRODUCTION', 'ORDER', 'OTHER'] as const
 const controlModes = ['UNCONTROLLED', 'CONTROLLED', 'REFERENCE_CONTROLLED'] as const
+const rotations = ['NONE', 'FIFO', 'FEFO'] as const // Stok rotasyonu (çıkış yönlendirme)
 
 // Davranış flag'leri (legacy BYT*) — operasyon tipinin kalbi
 const BOOL_FIELDS = [
@@ -24,6 +25,7 @@ const baseShape = {
   direction: z.enum(directions),
   documentType: z.enum(docTypes).optional(),
   controlMode: z.enum(controlModes).optional(),
+  stockRotation: z.enum(rotations).optional(),
   facilityId: z.number().int().positive().optional(),
   sequenceId: z.number().int().positive().optional(),
   operationSequenceId: z.number().int().positive().optional(),

@@ -514,8 +514,9 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
             if (dir === 'INBOUND' || dir === 'INTERNAL') {
               if (sc.targetLocationId == null || sc.targetStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: hedef lokasyon/statü gerekli`)
               await enforceCapacity(tx, doc.companyId, sc.targetLocationId, line.productId, sc.quantity, line.lineNo)
-              // toplamada okutulan üretim/SKT stok'a taşınır (yoksa INBOUND'da ürün raf ömründen türetilir)
-              const scExpiry = sc.expiryDate ?? (dir === 'INBOUND' && product?.shelfLifeDays ? new Date(Date.now() + product.shelfLifeDays * 86400000) : null)
+              // toplamada okutulan üretim/SKT stok'a taşınır. SKT önceliği: (1) okutulan SKT (barkod/elle),
+              // (2) INBOUND + raf ömrü → SKT = (okutulan üretim tarihi ?? bugün) + raf ömrü gün.
+              const scExpiry = sc.expiryDate ?? (dir === 'INBOUND' && product?.shelfLifeDays ? new Date((sc.productionDate ?? new Date()).getTime() + product.shelfLifeDays * 86400000) : null)
               await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }, sc.unitId, sc.quantity, moveCtx, scExpiry, sc.productionDate)
             }
             collected = collected.add(sc.quantity)

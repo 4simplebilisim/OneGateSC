@@ -980,6 +980,7 @@ model TBLOPERATIONTYPE {
   bulkAction       Boolean @default(false) // BYTTOPLUISLEM — işaretliyse yönüne göre Toplu İşlem ekranında görünür
   reservation      Boolean @default(false) // Rezervasyon parametresi (StokBar toplu-işlem tipi RESERVATION'ın sade karşılığı)
   applyAssignment  Boolean @default(false) // İş Ataması Uygula — açıksa el terminalinde kullanıcı YALNIZ kendine/grubuna atanmış belgeleri görür; kapalıysa (yetkisi olan) tüm belgeler
+  stockRotation    StockRotation @default(NONE) // Çıkış toplama yönlendirmesi: FEFO (SKT en yakın önce) / FIFO (üretim en eski önce) / NONE — öneri sıralar + yanlış lot okutmada uyarır
   // Stok Hareketi
   equivalentApplication Boolean @default(false) // BYTMUADILUYGULAMASI
   materialBasedCollection Boolean @default(false) // BYTMALBAZINDATOPLAMA
@@ -1228,6 +1229,15 @@ enum MovementDirection {
   OUTBOUND // Çıkış
   INTERNAL // Transfer
   COUNT // Sayım
+
+  @@schema("wms")
+}
+
+// Çıkış toplama stok rotasyonu (operasyon tipinde) — yönlendirme + yanlış-lot uyarısı
+enum StockRotation {
+  NONE // rotasyon yok — plan/id sırası
+  FIFO // First In First Out — üretim tarihi en eski önce
+  FEFO // First Expired First Out — SKT (expiryDate) en yakın önce
 
   @@schema("wms")
 }

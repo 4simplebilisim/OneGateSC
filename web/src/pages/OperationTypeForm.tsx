@@ -31,6 +31,8 @@ const SECTIONS: Sec[] = [
     title: 'Stok Hareketi',
     fields: [
       { n: 'controlMode', l: 'Kontrollü İşlem', t: 'select', opts: [{ value: 'UNCONTROLLED', label: 'Kontrolsüz' }, { value: 'CONTROLLED', label: 'Kontrollü İşlem' }, { value: 'REFERENCE_CONTROLLED', label: 'Referans Kontrollü' }] },
+      // Stok Rotasyonu (çıkış toplama yönlendirmesi): öneri sıralar + yanlış lot okutmada uyarır (bloklamaz)
+      { n: 'stockRotation', l: 'Stok Rotasyonu (Çıkış)', t: 'select', opts: [{ value: 'NONE', label: 'Yok' }, { value: 'FIFO', label: 'FIFO — Üretim en eski önce' }, { value: 'FEFO', label: 'FEFO — SKT en yakın önce' }] },
       { n: 'reverseOperationTypeId', l: 'Ters Operasyon', t: 'ref', ref: 'operation-types' },
       // Referans Kontrollü eşleme TEK yerden tanımlanır: Uyarlamalar › Otomatik Ref. Kontrollü Belge (kaynak/hedef tesis+operasyon)
       { n: 'reasonRequired', l: 'Neden Girişi Zorunlu', t: 'bool' },
