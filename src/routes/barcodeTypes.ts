@@ -6,7 +6,7 @@ import { simpleCrud, type Delegate, type BeforeWrite } from './documentTypes.js'
 import { firstBadRef } from '../lib/refGuard.js'
 import { parseBarcode } from '../lib/barcodeParse.js'
 
-const modes = ['EAN', 'PALLET', 'SEGMENT'] as const
+const modes = ['EAN', 'PALLET', 'SEGMENT', 'SCRIPT'] as const
 const fields = ['PALLET', 'PRODUCT', 'BATCH', 'PRODUCTION', 'EXPIRY', 'QUANTITY', 'UNIT', 'SERIAL', 'IGNORE'] as const
 const parseTypes = ['FIXED', 'UNTIL'] as const
 
@@ -23,6 +23,7 @@ const typeCreate = z.object({
   maxLen: z.number().int().nonnegative().nullish(),
   separator: z.string().max(4).nullish(),
   palletKeyLen: z.number().int().positive().nullish(),
+  parseScript: z.string().max(20000).nullish(), // SCRIPT modu: sandbox betiği (legacy TXTSCRIPT)
   isProductionBarcode: z.boolean().optional(),
   isActive: z.boolean().optional(),
 })

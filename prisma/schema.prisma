@@ -1247,6 +1247,7 @@ enum BarcodeMode {
   EAN // ürün-birim barkodu tam eşleşme → ürün + birim
   PALLET // palet anahtarı → paletin stok içeriği (SP'siz)
   SEGMENT // gömülü alanlar → segmentlere böl
+  SCRIPT // ileri seviye: parseScript güvenli sandbox'ta (QuickJS/WASM) — legacy TXTSCRIPT birebir port
 
   @@schema("wms")
 }

@@ -853,7 +853,7 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Tanım', type: 'text' },
     { name: 'sortOrder', label: 'Sıra', type: 'number' },
-    { name: 'mode', label: 'Mod', type: 'select', options: [{ value: 'EAN', label: 'EAN — Ürün' }, { value: 'PALLET', label: 'Palet' }, { value: 'SEGMENT', label: 'Segment' }] },
+    { name: 'mode', label: 'Mod', type: 'select', options: [{ value: 'EAN', label: 'EAN — Ürün' }, { value: 'PALLET', label: 'Palet' }, { value: 'SEGMENT', label: 'Segment' }, { value: 'SCRIPT', label: 'Betik' }] },
     { name: 'matchPrefix', label: 'Önek', type: 'text' },
     { name: 'matchContains', label: 'İçerir', type: 'text' },
     { name: 'minLen', label: 'Min Uzunluk', type: 'number' },

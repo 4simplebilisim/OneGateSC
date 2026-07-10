@@ -9,7 +9,35 @@ const MODES = [
   { value: 'EAN', label: 'EAN — Ürün barkodu (tam eşleşme)' },
   { value: 'PALLET', label: 'Palet — stoktan doldur' },
   { value: 'SEGMENT', label: 'Segment — gömülü alanlar' },
+  { value: 'SCRIPT', label: 'Betik — ileri seviye (sandbox)' },
 ]
+
+// SCRIPT modu sözleşme yardımı — legacy TXTSCRIPT'in JS karşılığı (mid/instr 1-tabanlı, VBScript gibi)
+const SCRIPT_HELP = `Hazır değişken/yardımcılar (VBScript karşılıkları):
+  code                → okutulan barkod (string)
+  mid(s, başlangıç, uzunluk?)  → Mid (1-tabanlı; uzunluk yoksa sona kadar)
+  instr(başlangıç, s, ara)     → InStr (1-tabanlı; 0 = bulunamadı)
+  len(s) · rep(s, eski, yeni)  → Len · Replace
+
+Sonucu b nesnesine yaz:
+  b.product  = ürün kodu/barkodu     b.quantity = miktar ("500.00" olur)
+  b.unit     = birim kodu            b.batch    = lot/parti
+  b.pallet   = palet no (ürün YOKSA paletin içeriği stoktan gelir)
+  b.production / b.expiry = "YYYY-AA-GG"   b.serial · b.po
+  b.error    = "mesaj"  → okutma bu hatayla durur
+  b.matched  = false    → "bu barkod benim değil" — SONRAKİ kural denenir
+
+Güvenlik: betik izole sandbox'ta çalışır (100ms CPU + 8MB bellek, sistem erişimi yok).`
+
+const SCRIPT_EXAMPLE = `const bc = rep(code, ",", ".");
+const s1 = instr(1, bc, "/"), s2 = instr(s1+1, bc, "/");
+if (mid(bc,1,1) === "P" && s2 > 0) {      // P.../urun/miktar
+  b.pallet   = mid(bc, 1, 10);
+  b.product  = mid(bc, s1+1, s2-s1-1);
+  b.quantity = mid(bc, s2+1);
+} else if (len(bc) === 9) {               // palet okut → hepsi gelsin
+  b.pallet = bc;
+} else { b.matched = false; }             // sonraki kurala geç`
 const FIELD_OPTS = [
   { value: 'PRODUCT', label: 'Ürün' }, { value: 'QUANTITY', label: 'Miktar' }, { value: 'UNIT', label: 'Birim' },
   { value: 'BATCH', label: 'Lot / Parti' }, { value: 'PRODUCTION', label: 'Üretim Tarihi' }, { value: 'EXPIRY', label: 'SKT' },
@@ -140,6 +168,19 @@ export const BarcodeTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         {modeVal === 'PALLET' && (
           <Row gutter={16}><Col xs={12} sm={6}><Form.Item label="Palet No Uzunluğu" name="palletKeyLen" tooltip="Palet no = barkodun ilk N karakteri (boş = tüm barkod)"><InputNumber style={{ width: '100%' }} min={1} /></Form.Item></Col></Row>
         )}
+        {modeVal === 'SCRIPT' && (
+          <Row gutter={16}>
+            <Col xs={24} lg={14}>
+              <Form.Item label="Betik (parseScript)" name="parseScript" rules={[{ required: true, message: 'Betik gerekli' }]}
+                tooltip="Legacy TXTSCRIPT karşılığı — güvenli sandbox'ta çalışır">
+                <Input.TextArea rows={16} style={{ fontFamily: 'Consolas, monospace', fontSize: 12.5 }} placeholder={SCRIPT_EXAMPLE} spellCheck={false} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} lg={10}>
+              <Alert type="info" message="Betik sözleşmesi" description={<pre style={{ fontSize: 11.5, whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'Consolas, monospace' }}>{SCRIPT_HELP}</pre>} />
+            </Col>
+          </Row>
+        )}
 
         <Row gutter={16}>
           <Col xs={12} sm={6}><Form.Item label="Üretim Barkodu" name="isProductionBarcode" valuePropName="checked"><Switch /></Form.Item></Col>
@@ -161,7 +202,7 @@ export const BarcodeTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       children: segmentsEnabled
         ? <Card size="small"><Alert type="info" showIcon style={{ marginBottom: 12 }} message="Segmentler soldan sağa sırayla ayrıştırılır. Her segment 'Ayraca kadar' (ayraç) veya 'Sabit N karakter'." />
             <LinkTab ownerField="barcodeTypeId" ownerId={id!} resource="barcode-segments" fields={SEGMENT_FIELDS} /></Card>
-        : <Alert type="warning" showIcon message={mode !== 'edit' ? 'Önce barkod tipini Oluştur — sonra segment eklenir.' : 'Segmentler yalnız SEGMENT modunda tanımlanır. Modu SEGMENT yapıp kaydedin.'} />,
+        : <Alert type="warning" showIcon message={mode !== 'edit' ? 'Önce barkod tipini Oluştur — sonra segment eklenir.' : modeVal === 'SCRIPT' ? 'Betik modunda segment kullanılmaz — ayrıştırmayı betik yapar.' : 'Segmentler yalnız SEGMENT modunda tanımlanır. Modu SEGMENT yapıp kaydedin.'} />,
     },
     { key: 'test', label: 'Test', children: <TestPanel facilityId={form.getFieldValue('facilityId')} /> },
   ]
