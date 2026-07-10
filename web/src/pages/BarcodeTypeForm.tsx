@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { App, Alert, Button, Card, Col, Divider, Form, Input, InputNumber, Row, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { LinkTab, type LF } from '../components/LinkTab'
@@ -36,6 +36,8 @@ type Facility = { id: number; code: string; name: string | null }
 // Barkod tipi (kural) yönetim ekranı: eşleşme + mod + ayraç + Segmentler (LinkTab) + canlı Test.
 export const BarcodeTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const { id } = useParams()
+  const [search] = useSearchParams()
+  const copyFrom = search.get('copyFrom') // Kopyala: alanlar + SEGMENTLER kaynak tipten kopyalanır (kod hariç)
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm()
@@ -56,8 +58,15 @@ export const BarcodeTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   useEffect(() => {
     if (mode === 'edit' && id) axiosInstance.get(`/api/barcode-types/${id}`).then((r) => { form.setFieldsValue(r.data); if (r.data?.companyId) setCompanyId(r.data.companyId) })
+    else if (mode === 'create' && copyFrom) {
+      // Kopyala: tanım alanlarını çek; kimlik/kod/zaman at (null'ları da ele — zod .nullish kabul eder ama form temiz kalsın)
+      axiosInstance.get(`/api/barcode-types/${copyFrom}`).then((r) => {
+        const { id: _id, code: _code, companyId: _co, createdAt: _c, updatedAt: _u, ...rest } = r.data
+        form.setFieldsValue(Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null)))
+      })
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, id])
+  }, [mode, id, copyFrom])
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
@@ -69,7 +78,18 @@ export const BarcodeTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         message.success('Kaydedildi')
       } else {
         const r = await axiosInstance.post('/api/barcode-types', body)
-        message.success('Oluşturuldu — segment eklemek için Segmentler sekmesine geçin')
+        // Kopyala akışı: kaynak tipin SEGMENTLERİ de yeni tipe kopyalanır (barkod tipinin kalbi segmentler)
+        if (copyFrom) {
+          const segs = await axiosInstance.get('/api/barcode-segments', { params: { barcodeTypeId: copyFrom } })
+          const rows = (Array.isArray(segs.data) ? segs.data : (segs.data.data ?? [])) as Record<string, unknown>[]
+          for (const s of rows) {
+            const { id: _id, companyId: _co, barcodeTypeId: _bt, createdAt: _c, updatedAt: _u, ...seg } = s
+            await axiosInstance.post('/api/barcode-segments', { barcodeTypeId: r.data.id, ...Object.fromEntries(Object.entries(seg).filter(([, v]) => v !== null)) })
+          }
+          message.success(rows.length ? `Oluşturuldu — ${rows.length} segment kopyalandı` : 'Oluşturuldu')
+        } else {
+          message.success('Oluşturuldu — segment eklemek için Segmentler sekmesine geçin')
+        }
         navigate(`/barcode-types/${r.data.id}/edit`)
       }
     } catch (e) {

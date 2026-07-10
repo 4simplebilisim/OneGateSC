@@ -847,10 +847,19 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'name', label: 'Tanım', type: 'text' },
     { name: 'value', label: 'Değer', type: 'text' },
   ],
+  // Barkod Tipi — form ÖZEL ekranda (BarcodeTypeForm: eşleşme+mod+Segmentler+Test); bu liste yalnız
+  // GenericList'i besler: buton görünürlüğü (hasForm) + kolon başlıkları (label) + mod değer çevirisi (select options).
   'barcode-types': [
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Tanım', type: 'text' },
-    { name: 'parseScript', label: 'Parse Script (regex/ifade)', type: 'text' },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'mode', label: 'Mod', type: 'select', options: [{ value: 'EAN', label: 'EAN — Ürün' }, { value: 'PALLET', label: 'Palet' }, { value: 'SEGMENT', label: 'Segment' }] },
+    { name: 'matchPrefix', label: 'Önek', type: 'text' },
+    { name: 'matchContains', label: 'İçerir', type: 'text' },
+    { name: 'minLen', label: 'Min Uzunluk', type: 'number' },
+    { name: 'maxLen', label: 'Max Uzunluk', type: 'number' },
+    { name: 'separator', label: 'Ayraç', type: 'text' },
+    { name: 'palletKeyLen', label: 'Palet No Uzunluğu', type: 'number' },
     { name: 'isProductionBarcode', label: 'Üretim Barkodu', type: 'bool' },
   ],
   // Legacy-sade (StokBar): Tesis + Yazıcı + Yazıcı Adresi. Firma EN ÜSTTE (GenericForm), sonra Tesis.

@@ -95,7 +95,7 @@ export const RESOURCES: ResourceDef[] = [
   // Genel
   { name: 'sequences', label: 'Sayaçlar', section: 'Uyarlamalar', group: 'Genel' },
   { name: 'parameters', label: 'Parametreler', section: 'Uyarlamalar', group: 'Genel' },
-  { name: 'barcode-types', label: 'Barkod Tipleri', section: 'Uyarlamalar', group: 'Genel' },
+  { name: 'barcode-types', label: 'Barkod Tipi', section: 'Uyarlamalar', group: 'Genel' }, // barkod kural motoru — özel ekran (BarcodeTypeForm: eşleşme+mod+segmentler+Test)
   // NOT: Vardiya (shifts) kaldırıldı — üretim modülü kapsam dışı, içeriği boştu.
   // Altı boş + davranış bağlanmadı → menüden kaldırıldı (API/kod durur): Yazıcılar, Dil, Ekran Rapor Bağlantı,
   // Stok Kontrol Parametre, Belge Planlama Parametre, Toplama Emri Parametre, Dashboard Rapor
