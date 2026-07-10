@@ -73,7 +73,8 @@ import { invoiceRoutes } from './routes/invoices.js'
 import { reportRoutes } from './routes/reports.js'
 import { productGroupRoutes } from './routes/productGroups.js'
 import { sequenceRoutes } from './routes/sequences.js'
-import { reasonRoutes, locationGroupRoutes, operationGroupRoutes, labelTypeRoutes, productSubGroupRoutes, entryConditionTypeRoutes, exitConditionTypeRoutes, routingTypeRoutes, facilityRoutes, regionRoutes, partnerGroupRoutes, statusRoutes, palletTypeRoutes, barcodeTypeRoutes, parameterRoutes, documentStatusRoutes } from './routes/wmsMasters.js'
+import { reasonRoutes, locationGroupRoutes, operationGroupRoutes, labelTypeRoutes, productSubGroupRoutes, entryConditionTypeRoutes, exitConditionTypeRoutes, routingTypeRoutes, facilityRoutes, regionRoutes, partnerGroupRoutes, statusRoutes, palletTypeRoutes, parameterRoutes, documentStatusRoutes } from './routes/wmsMasters.js'
+import { barcodeTypeRoutes, barcodeSegmentRoutes } from './routes/barcodeTypes.js'
 import { routingRuleRoutes } from './routes/routing.js'
 import { productUnitRoutes } from './routes/productUnits.js'
 import { operationTypeStatusRoutes, operationTypeLocationRoutes, operationTypeReasonRoutes, operationTypePalletTypeRoutes } from './routes/operationLinks.js'
@@ -255,6 +256,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(operationTypePalletTypeRoutes, { prefix: '/api/operation-type-pallet-types' })
   await app.register(locationCapacityRoutes, { prefix: '/api/location-capacities' })
   await app.register(barcodeTypeRoutes, { prefix: '/api/barcode-types' })
+  await app.register(barcodeSegmentRoutes, { prefix: '/api/barcode-segments' })
   await app.register(parameterRoutes, { prefix: '/api/parameters' })
   await app.register(documentStatusRoutes, { prefix: '/api/document-statuses' })
   await app.register(documentStatusActionRoutes, { prefix: '/api/document-status-actions' })

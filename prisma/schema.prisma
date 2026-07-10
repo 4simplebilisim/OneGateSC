@@ -1242,6 +1242,38 @@ enum StockRotation {
   @@schema("wms")
 }
 
+// Barkod çözümleme modu (barkod tipinde)
+enum BarcodeMode {
+  EAN // ürün-birim barkodu tam eşleşme → ürün + birim
+  PALLET // palet anahtarı → paletin stok içeriği (SP'siz)
+  SEGMENT // gömülü alanlar → segmentlere böl
+
+  @@schema("wms")
+}
+
+// Barkod segment alanı — segmentin hangi veriye gittiği
+enum BarcodeField {
+  PALLET // palet no
+  PRODUCT // ürün kodu/barkodu
+  BATCH // parti/lot
+  PRODUCTION // üretim tarihi
+  EXPIRY // SKT (son kullanma)
+  QUANTITY // miktar
+  UNIT // birim kodu
+  SERIAL // seri no
+  IGNORE // yoksay
+
+  @@schema("wms")
+}
+
+// Segment ayrıştırma türü
+enum BarcodeParseType {
+  FIXED // sabit N karakter
+  UNTIL // ayraca kadar
+
+  @@schema("wms")
+}
+
 // Kontrollü İşlem (legacy BYTKONTROLLU) — Kontrolsüz / Kontrollü / Referans Kontrollü
 enum ControlMode {
   UNCONTROLLED // Kontrolsüz
@@ -2197,21 +2229,55 @@ model TBLOPERATIONTYPEPALLETTYPE {
 }
 
 // Barkod tipi / parse (legacy TBLSBBARKODTIPI) — müşteri/üretim barkodu parse mantığı
+// Barkod Tipi (legacy TBLSBBARKODTIPI) — bildirimsel kural: eşleşme (önek/uzunluk) + mod (EAN/Palet/Segment) + segmentler.
+// Çoklu format = birden çok tip satırı; okutmada sortOrder sırasıyla denenir, İLK EŞLEŞEN kazanır (legacy if/elseif).
 model TBLBARCODETYPE {
   id                  Int      @id @default(autoincrement())
   companyId           Int
+  facilityId          Int? // Tesis (legacy) — null = tüm tesisler (plain int, refGuard doğrular)
   code                String   @db.VarChar(20)
   name                String?  @db.VarChar(100)
-  parseScript         String?  @db.Text // barkod parse mantığı (regex/ifade — legacy TXTSCRIPT)
+  sortOrder           Int      @default(0) // ilk eşleşen kazanır (if/elseif sırası)
+  mode                BarcodeMode @default(EAN) // çözümleme modu
+  matchPrefix         String?  @db.VarChar(20) // eşleşme: barkod bu önekle başlar
+  matchContains       String?  @db.VarChar(20) // eşleşme: barkod bunu içerir
+  minLen              Int? // eşleşme: min uzunluk (dahil)
+  maxLen              Int? // eşleşme: max uzunluk (dahil)
+  separator           String?  @db.VarChar(4) // SEGMENT: varsayılan ayraç (segmentin kendi ayracı boşsa)
+  palletKeyLen        Int? // PALLET: palet no = ilk N karakter (boş = tüm barkod)
+  parseScript         String?  @db.Text // legacy TXTSCRIPT — ileri seviye (şimdilik motora bağlı değil)
   isProductionBarcode Boolean  @default(false) // legacy BYTURETIMBARKOD
   isActive            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+  company  TBLCOMPANY          @relation(fields: [companyId], references: [id])
+  segments TBLBARCODESEGMENT[]
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([companyId, facilityId, sortOrder])
+  @@schema("wms")
+}
+
+// Barkod segmenti (SEGMENT modunda) — sıralı alan: alan + ayrıştırma (sabit uzunluk VEYA ayraca kadar).
+model TBLBARCODESEGMENT {
+  id            Int              @id @default(autoincrement())
+  companyId     Int
+  barcodeTypeId Int
+  sortOrder     Int              @default(0) // soldan sağa sıra
+  field         BarcodeField // alanın hangi veriye gittiği
+  parseType     BarcodeParseType @default(UNTIL)
+  length        Int? // FIXED: karakter sayısı
+  separator     String?          @db.VarChar(4) // UNTIL: ayraç (boşsa tipin separator'ı)
+  dateFormat    String?          @db.VarChar(12) // PRODUCTION/EXPIRY: YYAAGG / YYYYAAGG / GGAAYY
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  barcodeType TBLBARCODETYPE @relation(fields: [barcodeTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([barcodeTypeId])
   @@schema("wms")
 }
 

@@ -239,9 +239,7 @@ const palletType = z.object({
 })
 export const palletTypeRoutes = masterRoutes(prisma.tBLPALLETTYPE as unknown as MasterDelegate, palletType, palletType.partial().omit({ code: true }), 'Palet tipi kodu zaten var', 'Pallet type not found')
 
-// Barkod tipi/parse (legacy TBLSBBARKODTIPI) + Genel parametre (legacy TBLSBPARAMETRE)
-const barcodeType = z.object({ code: z.string().min(1).max(20), name: z.string().max(100).optional(), parseScript: z.string().optional(), isProductionBarcode: z.boolean().optional(), isActive: z.boolean().optional() })
-export const barcodeTypeRoutes = masterRoutes(prisma.tBLBARCODETYPE as unknown as MasterDelegate, barcodeType, barcodeType.partial().omit({ code: true }), 'Barkod tipi kodu zaten var', 'Barcode type not found')
+// Barkod tipi/parse → src/routes/barcodeTypes.ts (kural motoru). Genel parametre (legacy TBLSBPARAMETRE):
 const parameter = z.object({ code: z.string().min(1).max(100), name: z.string().max(200).optional(), value: z.string().max(510).optional(), isActive: z.boolean().optional() })
 export const parameterRoutes = masterRoutes(prisma.tBLPARAMETER as unknown as MasterDelegate, parameter, parameter.partial().omit({ code: true }), 'Parametre kodu zaten var', 'Parameter not found')
 
