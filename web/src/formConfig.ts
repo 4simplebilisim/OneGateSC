@@ -1,3 +1,5 @@
+import { PARAM_CATALOG } from './paramCatalog'
+
 // Hangi kaynakların create/edit formu var + alanları (API create şemalarına birebir)
 export interface FieldDef {
   name: string
@@ -842,9 +844,10 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'startNo', label: 'Başlangıç No', type: 'number' },
     { name: 'endNo', label: 'Bitiş No', type: 'number' },
   ],
+  // Parametreler — Kod REHBERDEN seçilir (legacy TBLSBPARAMETRETANIM dökümü, StokBar davranışı);
+  // listede kod "Kod — Tanım" olarak çözülür (selectLabelMap). Tanım ayrıca girilmez.
   parameters: [
-    { name: 'code', label: 'Kod', type: 'text', required: true },
-    { name: 'name', label: 'Tanım', type: 'text' },
+    { name: 'code', label: 'Parametre (rehber)', type: 'select', required: true, options: PARAM_CATALOG },
     { name: 'value', label: 'Değer', type: 'text' },
   ],
   // Barkod Tipi — form ÖZEL ekranda (BarcodeTypeForm: eşleşme+mod+Segmentler+Test); bu liste yalnız

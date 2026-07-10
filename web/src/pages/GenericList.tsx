@@ -219,6 +219,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
     ...(resource === 'count-parameters' ? ['transferOperationTypeId'] : []),
     // Belge: Depo gösterilmez (tesise bağlı); partner objesi gizli (Cari zaten partnerId'den çözülür → ham "partner" kolonu olmasın)
     ...(resource === 'documents' ? ['warehouseId', 'partner'] : []),
+    // Parametreler: Tanım rehberden çözülür (kod kolonunda "Kod — Tanım") → boş name kolonu gizli
+    ...(resource === 'parameters' ? ['name'] : []),
     ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
   const columns = [
     ...Object.keys(sample)

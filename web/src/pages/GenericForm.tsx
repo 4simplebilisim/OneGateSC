@@ -127,7 +127,7 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
     if (f.type === 'number') return <InputNumber style={{ width: '100%' }} disabled={ro} />
     if (f.type === 'bool') return <Switch disabled={ro} />
     if (f.type === 'color') return <ColorPicker format="hex" showText disabled={ro} />
-    if (f.type === 'select') return <Select options={f.options} allowClear disabled={ro} />
+    if (f.type === 'select') return <Select options={f.options} allowClear showSearch optionFilterProp="label" disabled={ro} />
     if (f.type === 'ref') return <Select options={refOptions[f.name] ?? []} showSearch optionFilterProp="label" placeholder="Seçiniz" disabled={ro} />
     return <Input disabled={ro || (mode === 'edit' && f.name === 'code')} />
   }
