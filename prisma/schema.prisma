@@ -662,6 +662,7 @@ model TBLSTOCK {
   poLine         String?   @db.VarChar(100)
   mainQty        Decimal   @default(0) @db.Decimal(28, 8)
   reservedQty    Decimal   @default(0) @db.Decimal(28, 8)
+  reservedDocumentId Int? // legacy LNGREZERVEBELGEKOD — rezervin sahibi belge; rezerve stok YALNIZ o belgede okutulur/çekilir (null+reservedQty>0 = bağsız blokaj/satış tahsisi)
   unitId         Int
   netWeight      Decimal?  @db.Decimal(28, 8)
   grossWeight    Decimal?  @db.Decimal(28, 8)
@@ -684,6 +685,7 @@ model TBLSTOCK {
   @@index([statusId])
   @@index([palletId])
   @@index([expiryDate])
+  @@index([reservedDocumentId])
   @@schema("wms")
 }
 

@@ -240,9 +240,26 @@ async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.
         `Yetersiz stok (lokasyon ${key.locationId}, ürün ${key.productId}, statü ${key.statusId}): mevcut ${existing.mainQty.toString()}, talep ${delta.abs().toString()}`,
       )
     }
-    // Fiziksel miktar rezervenin altına düşerse rezerveyi kıs (sevk rezerveyi tüketir)
     const data: Prisma.TBLSTOCKUpdateInput = { mainQty: newQty }
-    if (existing.reservedQty.greaterThan(newQty)) data.reservedQty = newQty
+    // Rezerv koruması (legacy LNGREZERVEBELGEKOD): rezerve stok YALNIZ sahibi belgede çekilir.
+    if (delta.isNegative() && existing.reservedQty.greaterThan(0)) {
+      const ownDoc = existing.reservedDocumentId != null && existing.reservedDocumentId === (ctx.documentId ?? null)
+      if (ownDoc) {
+        // Kendi belgesi: sevk rezervini tüketir; rezerv biterse belge bağı kalkar
+        const consume = existing.reservedQty.lte(delta.abs()) ? existing.reservedQty : delta.abs()
+        const newReserved = existing.reservedQty.sub(consume)
+        data.reservedQty = newReserved
+        if (newReserved.lte(0)) data.reservedDocumentId = null
+      } else if (newQty.lessThan(existing.reservedQty)) {
+        // Başka belgenin rezervi (veya bağsız blokaj/satış tahsisi) — serbest kısmın ötesi ÇEKİLEMEZ
+        const owner = existing.reservedDocumentId != null
+          ? `belge #${existing.reservedDocumentId} rezervi`
+          : 'blokaj/tahsis rezervi'
+        throw new MovementError(
+          `Rezerve stok — çekilemez (lokasyon ${key.locationId}, ürün ${key.productId}): serbest ${existing.mainQty.sub(existing.reservedQty).toString()}, talep ${delta.abs().toString()} (${existing.reservedQty.toString()} ${owner})`,
+        )
+      }
+    }
     await tx.tBLSTOCK.update({ where: { id: existing.id }, data })
   } else {
     if (delta.isNegative()) {

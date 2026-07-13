@@ -9,6 +9,7 @@ import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
 import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
 import { codeMap, resolveCode, str } from '../lib/importer.js'
+import { reserveForDocument, releaseForDocument, reservationSummary, ReservationError } from '../lib/reservation.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
@@ -449,8 +450,35 @@ export async function documentRoutes(app: FastifyInstance) {
     }
     if (doc.status === 'CANCELLED') return reply.code(409).send({ error: 'Belge zaten iptal edilmiş' })
     await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CANCELLED' } })
+    await releaseForDocument(id, doc.companyId) // rezervasyonlu belgeyse stok rezervleri serbest kalır
     await refreshDocStatus(prisma, id, { source: 'cancel', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → IPT
     return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
+  })
+
+  // ── Rezervasyon (legacy LNGREZERVEBELGEKOD): belgeye stok ayır / serbest bırak / liste özeti ──
+  app.post('/:id/reserve', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    try {
+      return await reserveForDocument(id, getCompanyId(request))
+    } catch (err) {
+      if (err instanceof ReservationError) return reply.code(err.httpCode).send({ error: err.message })
+      throw err
+    }
+  })
+
+  app.post('/:id/release-reservation', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId: getCompanyId(request) }, select: { id: true } })
+    if (!doc) return reply.code(404).send({ error: 'Belge bulunamadı' })
+    return releaseForDocument(id, getCompanyId(request))
+  })
+
+  // Rezervasyon ekranı rozeti: ?ids=1,2,3 → { docId: Σ rezerve }
+  app.get('/reservations/summary', { preHandler: [app.authenticate] }, async (request) => {
+    const ids = String((request.query as { ids?: string }).ids ?? '').split(',').map(Number).filter(Number.isInteger)
+    return reservationSummary(getCompanyId(request), ids)
   })
 
   // COMPLETED → ters kayıt (stok geri al) → CANCELLED

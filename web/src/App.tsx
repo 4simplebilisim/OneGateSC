@@ -31,7 +31,7 @@ import { StockReport } from './pages/StockReport'
 import { DocumentObservation } from './pages/DocumentObservation'
 import { BulkDocOps } from './pages/BulkDocOps'
 import { DocumentAssign } from './pages/DocumentAssign'
-import { Reservation } from './pages/Reservation'
+import { DocumentReservation } from './pages/DocumentReservation'
 import { StockReclassify } from './pages/StockReclassify'
 import { SuggestList } from './pages/SuggestList'
 import { StockEntry } from './pages/StockEntry'
@@ -150,7 +150,8 @@ export default function App() {
           <Route path="doc-assign-in" element={<DocumentAssign direction="INBOUND" />} />
           <Route path="doc-assign-out" element={<DocumentAssign direction="OUTBOUND" />} />
           <Route path="doc-assign-tr" element={<DocumentAssign direction="INTERNAL" />} />
-          <Route path="reservation" element={<Reservation />} />
+          <Route path="reservation-out" element={<DocumentReservation direction="OUTBOUND" />} />
+          <Route path="reservation-tr" element={<DocumentReservation direction="INTERNAL" />} />
           <Route path="stock-reclassify" element={<StockReclassify />} />
           <Route path="putaway-suggest" element={<SuggestList mode="putaway" />} />
           <Route path="pick-suggest" element={<SuggestList mode="pick" />} />
@@ -169,7 +170,7 @@ export default function App() {
           {RESOURCES.filter((r) => hasDetail(r.name)).map((r) => (
             <Route key={`${r.name}-detail`} path={`${r.name}/:id`} element={<GenericDetail resource={r.name} label={r.label} />} />
           ))}
-          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'bulk-doc-ops-in', 'bulk-doc-ops-tr', 'doc-assign-in', 'doc-assign-out', 'doc-assign-tr', 'reservation', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
+          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'bulk-doc-ops-in', 'bulk-doc-ops-tr', 'doc-assign-in', 'doc-assign-out', 'doc-assign-tr', 'reservation-out', 'reservation-tr', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
             <Route key={r.name} path={r.name} element={<GenericList resource={r.apiName ?? r.name} label={r.label} filter={r.filter} observe={r.observe} />} />
           ))}
         </Route>

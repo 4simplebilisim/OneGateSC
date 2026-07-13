@@ -57,12 +57,13 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'exit-labeling', label: 'Çıkış Etiketleme', section: 'İşlemler', group: 'Çıkış' },
   { name: 'pick-suggest', label: 'Çıkış Öneri Listesi', section: 'İşlemler', group: 'Çıkış' },
   { name: 'bulk-doc-ops', label: 'Toplu İşlem', section: 'İşlemler', group: 'Çıkış' },
+  { name: 'reservation-out', label: 'Rezervasyon', section: 'İşlemler', group: 'Çıkış' }, // rezervasyonlu op belgeleri → stok ayır (yalnız o belgede okutulur)
   { name: 'doc-assign-out', label: 'İş Atama', section: 'İşlemler', group: 'Çıkış' },
   { name: 'stock-exit', label: 'Stok Çıkış', section: 'İşlemler', group: 'Çıkış' },
   { name: 'shipments-loading', label: 'Yükleme Takip', section: 'İşlemler', group: 'Çıkış', apiName: 'shipments' },
   { name: 'documents-tr', label: 'Belge', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' } },
   { name: 'documents-tr-obs', label: 'Gözlem', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' }, observe: true },
-  { name: 'reservation', label: 'Rezervasyon', section: 'İşlemler', group: 'Transfer' },
+  { name: 'reservation-tr', label: 'Rezervasyon', section: 'İşlemler', group: 'Transfer' }, // rezervasyonlu op belgeleri (eski elle stok-blokaj ekranı kaldırıldı — belge-bazlı model)
   { name: 'bulk-doc-ops-tr', label: 'Toplu İşlem', section: 'İşlemler', group: 'Transfer' },
   { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },

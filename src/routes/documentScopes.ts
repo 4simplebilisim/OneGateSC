@@ -121,6 +121,7 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     const ln = await prisma.tBLDOCUMENTLINE.findUnique({
       where: { id: documentLineId },
       select: {
+        documentId: true,
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
         batchNo: true, serialNo: true, quantity: true,
         product: { select: { productGroupId: true } },
@@ -184,6 +185,28 @@ export async function documentScopeRoutes(app: FastifyInstance) {
             error: `Tolerans aşımı: satır miktarı ${ln.quantity}, toplanan ${current} + okutma ${scopeData.quantity} = ${after} > üst sınır ${limit}` +
               (upperPct.gt(0) ? ` (üst tolerans %${upperPct})` : ' (tolerans tanımsız — plan üstü okutma yapılamaz)'),
           })
+        }
+      }
+    }
+    // Rezerv kapısı (legacy LNGREZERVEBELGEKOD): kaynak stok BAŞKA belgeye rezerveyse yalnız SERBEST kısmı okutulabilir.
+    // (complete'teki adjustStock kesin kapı — bu erken, kullanıcı-dostu red.)
+    if (ln?.document.operationType && (ln.document.operationType.direction === 'OUTBOUND' || ln.document.operationType.direction === 'INTERNAL') && eff.sourceLocationId && eff.sourceStatusId) {
+      const st = await prisma.tBLSTOCK.findFirst({
+        where: {
+          companyId, locationId: eff.sourceLocationId, productId: ln.productId, statusId: eff.sourceStatusId,
+          batchNo: scopeData.batchNo ?? ln.batchNo ?? null,
+          serialNo: scopeData.serialNo ?? ln.serialNo ?? null,
+          palletId: scopeData.palletId ?? null,
+          customerId: scopeData.customerId ?? null, poNo: scopeData.poNo ?? null, poLine: scopeData.poLine ?? null,
+          reservedQty: { gt: 0 },
+        },
+        select: { reservedQty: true, mainQty: true, reservedDocumentId: true },
+      })
+      if (st && st.reservedDocumentId !== ln.documentId) {
+        const free = st.mainQty.sub(st.reservedQty)
+        if (new Prisma.Decimal(scopeData.quantity).gt(free)) {
+          const owner = st.reservedDocumentId != null ? `belge #${st.reservedDocumentId}'e rezerve` : 'blokaj/tahsis rezervli'
+          return reply.code(400).send({ error: `Rezerve stok — bu stok ${owner}; yalnız o belgede okutulabilir (serbest: ${free.toString()}, okutma: ${scopeData.quantity})` })
         }
       }
     }
