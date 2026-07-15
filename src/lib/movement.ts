@@ -762,9 +762,10 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     })
     const linkedOpId = autoRefRow?.targetOperationTypeId ?? doc.operationType.linkedEntryOperationTypeId
     if (linkedOpId != null) {
-      // idempotent: reverse→yeniden onay durumunda ikinci belge üretme (bu belgeden türeyen zaten varsa onu bildir)
+      // idempotent: reverse→yeniden onay durumunda ikinci belge üretme (bu belgeden türeyen zaten varsa onu bildir).
+      // operationTypeId filtresi: SIRALI operasyonun doğurduğu belgeyle karışmasın (aynı referenceDocumentId'yi kullanır)
       const existing = await tx.tBLDOCUMENT.findFirst({
-        where: { companyId: doc.companyId, referenceDocumentId: doc.id },
+        where: { companyId: doc.companyId, referenceDocumentId: doc.id, operationTypeId: linkedOpId },
         select: { id: true, documentNo: true },
       })
       if (existing) {
@@ -797,12 +798,96 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       }
     }
 
+    // ── SIRALI OPERASYON (legacy TBLSBSIRALIOPERASYON): ilk operasyonun belgesi TAMAMLANINCA
+    // ikinci operasyonun belgesi otomatik doğar (ör. mal kabul → yerleştirme transferi).
+    // Kapsam filtreleri: cari (belge düzeyi), malzeme + lokasyon (satır düzeyi). İdempotent (reverse→re-complete üretmez).
+    let sequentialDocument: { id: number; documentNo: string } | null = null
+    const seqRules = await tx.tBLSEQUENTIALOPERATION.findMany({
+      where: {
+        companyId: doc.companyId, firstOperationId: op.id, isActive: true,
+        OR: [{ facilityId: null }, { facilityId: op.facilityId ?? -1 }],
+      },
+      orderBy: { id: 'asc' },
+    })
+    if (seqRules.length) {
+      // Cari kapsamı (belge düzeyi): ALL/boş geçer; SPECIFIC=cari, GROUP=cari grubu eşleşmeli
+      const partnerGroupId = doc.partnerId
+        ? (await tx.tBLBUSINESSPARTNER.findUnique({ where: { id: doc.partnerId }, select: { partnerGroupId: true } }))?.partnerGroupId ?? null
+        : null
+      const cariOk = (r: (typeof seqRules)[number]) =>
+        !r.cariLinkType || r.cariLinkType === 'ALL' ||
+        (r.cariLinkType === 'SPECIFIC' && doc.partnerId === r.cariLinkId) ||
+        (r.cariLinkType === 'GROUP' && partnerGroupId != null && partnerGroupId === r.cariLinkId)
+      const rule = seqRules.find(cariOk)
+      if (rule) {
+        const existingSeq = await tx.tBLDOCUMENT.findFirst({
+          where: { companyId: doc.companyId, referenceDocumentId: doc.id, operationTypeId: rule.secondOperationId },
+          select: { id: true, documentNo: true },
+        })
+        if (existingSeq) {
+          sequentialDocument = existingSeq
+        } else {
+          const secondOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: rule.secondOperationId, companyId: doc.companyId }, include: { sequence: true } })
+          if (secondOp) {
+            // Malzeme kapsamı: SPECIFIC=ürün, GROUP=ürün grubu (satır düzeyi)
+            const prodGroups = new Map(
+              (await tx.tBLPRODUCT.findMany({ where: { id: { in: doc.lines.map((l) => l.productId) } }, select: { id: true, productGroupId: true } }))
+                .map((p) => [p.id, p.productGroupId]),
+            )
+            // Devir birimleri: okutmalı satırda SCOPE'lar gerçek kaynaktır (kontrolsüzde lot/hedef okutmada taşınır);
+            // okutmasız (plan) satırda satırın kendisi. Aynı (ürün|lot|seri|hedef) birleşir. Lokasyon kapsamı hedefe göre.
+            type SeqUnit = { productId: number; unitId: number; quantity: Prisma.Decimal; batchNo: string | null; serialNo: string | null; fromLocId: number | null; fromStaId: number | null }
+            const units = new Map<string, SeqUnit>()
+            for (const l of doc.lines) {
+              if (l.quantity.lte(0)) continue
+              if (rule.materialLinkType === 'SPECIFIC' && l.productId !== rule.materialLinkId) continue
+              if (rule.materialLinkType === 'GROUP' && prodGroups.get(l.productId) !== rule.materialLinkId) continue
+              const push = (qty: Prisma.Decimal, batchNo: string | null, serialNo: string | null, locId: number | null, staId: number | null) => {
+                if (qty.lte(0)) return
+                if (rule.locationLinkType === 'SPECIFIC' && locId !== rule.locationLinkId) return
+                const key = [l.productId, l.unitId, batchNo ?? '', serialNo ?? '', locId ?? '', staId ?? ''].join('|')
+                const ex = units.get(key)
+                if (ex) ex.quantity = ex.quantity.add(qty)
+                else units.set(key, { productId: l.productId, unitId: l.unitId, quantity: qty, batchNo, serialNo, fromLocId: locId, fromStaId: staId })
+              }
+              if (l.scopes.length) for (const sc of l.scopes) push(sc.quantity, sc.batchNo ?? l.batchNo, sc.serialNo ?? l.serialNo, sc.targetLocationId ?? l.targetLocationId, sc.targetStatusId ?? l.targetStatusId)
+              else push(l.quantity, l.batchNo, l.serialNo, l.targetLocationId, l.targetStatusId)
+            }
+            if (units.size > 0) {
+              const seqNo = secondOp.sequence
+                ? (await nextSequence(doc.companyId, secondOp.sequence.code, tx)).formatted
+                : `${doc.documentNo.slice(0, 37)}-S`
+              // İkinci belge yönü çıkış/transfer ise kaynak = ilk belgenin HEDEFİ (mal oraya kondu, oradan alınacak)
+              const inheritSource = secondOp.direction === 'OUTBOUND' || secondOp.direction === 'INTERNAL'
+              const createdSeq = await tx.tBLDOCUMENT.create({
+                data: {
+                  companyId: doc.companyId, documentNo: seqNo, operationTypeId: secondOp.id, status: 'DRAFT',
+                  createdById: doc.createdById, partnerId: doc.partnerId, referenceDocumentId: doc.id,
+                  note: `Sıralı operasyon: ${doc.documentNo}`,
+                  lines: {
+                    create: [...units.values()].map((u, i) => ({
+                      companyId: doc.companyId, lineNo: i + 1, productId: u.productId, unitId: u.unitId,
+                      quantity: u.quantity, batchNo: u.batchNo ?? undefined, serialNo: u.serialNo ?? undefined, collectedQty: 0,
+                      ...(inheritSource ? { sourceLocationId: u.fromLocId ?? undefined, sourceStatusId: u.fromStaId ?? undefined } : {}),
+                    })),
+                  },
+                },
+                select: { id: true, documentNo: true },
+              })
+              await refreshDocStatus(tx, createdSeq.id, { source: 'sequential-create', userId: breakOpts.userId ?? null }) // → Bekliyor
+              sequentialDocument = createdSeq
+            }
+          }
+        }
+      }
+    }
+
     const updated = await tx.tBLDOCUMENT.update({
       where: { id: documentId },
       data: { status: 'COMPLETED', completedAt: new Date() },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
-    return Object.assign(updated, { referenceDocument })
+    return Object.assign(updated, { referenceDocument, sequentialDocument })
   })
 }
 
