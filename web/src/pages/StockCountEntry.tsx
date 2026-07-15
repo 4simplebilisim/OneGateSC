@@ -58,26 +58,28 @@ export const StockCountEntry = () => {
     },
   })
 
+  // KÖR SAYIM (Sayım Parametreleri › Sayım Tipi = Kör): sayıcı sistem miktarını GÖRMEZ — Sistem/Fark kolonları gizli
+  const blind = (count as { blindCount?: boolean }).blindCount === true
   const columns = [
     { title: 'Sıra', dataIndex: 'lineNo', width: 60 },
     { title: 'Ürün', render: (_: unknown, l: Line) => <span>{l.productCode ?? l.id}{l.productName ? <Typography.Text type="secondary"> — {l.productName}</Typography.Text> : null}</span> },
     { title: 'Lokasyon', dataIndex: 'locationCode', width: 120 },
     { title: 'Parti/Seri', width: 130, render: (_: unknown, l: Line) => [l.batchNo, l.serialNo].filter(Boolean).join(' / ') || '—' },
     { title: 'Birim', dataIndex: 'unitCode', width: 80 },
-    { title: 'Sistem', dataIndex: 'systemQty', width: 100, align: 'right' as const, render: (v: unknown) => Number(v) },
+    ...(blind ? [] : [{ title: 'Sistem', dataIndex: 'systemQty', width: 100, align: 'right' as const, render: (v: unknown) => Number(v) }]),
     {
       title: 'Sayılan', width: 130, align: 'right' as const, render: (_: unknown, l: Line) => editable
         ? <InputNumber min={0} style={{ width: 110 }} value={valOf(l)} placeholder="—"
             onChange={(v) => setEdits((e) => ({ ...e, [l.id]: v as number | null }))} />
         : (valOf(l) ?? '—'),
     },
-    {
+    ...(blind ? [] : [{
       title: 'Fark', width: 90, align: 'right' as const, render: (_: unknown, l: Line) => {
         const c = valOf(l); if (c == null) return <Typography.Text type="secondary">—</Typography.Text>
         const d = c - Number(l.systemQty)
         return <Typography.Text type={d === 0 ? 'success' : 'danger'}>{d > 0 ? `+${d}` : d}</Typography.Text>
       },
-    },
+    }]),
   ]
 
   return (
@@ -86,7 +88,7 @@ export const StockCountEntry = () => {
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/stock-counts')}>Liste</Button>} />
       <Card className="og-section-card" size="small" style={{ marginBottom: 12 }}>
         <Descriptions size="small" column={{ xs: 1, sm: 2, md: 4 }}>
-          <Descriptions.Item label="Durum"><Tag color={st.c}>{st.t}</Tag></Descriptions.Item>
+          <Descriptions.Item label="Durum"><Tag color={st.c}>{st.t}</Tag>{blind && <Tag color="purple">KÖR SAYIM</Tag>}</Descriptions.Item>
           <Descriptions.Item label="Depo">{count.warehouseCode ?? '—'}{count.warehouseName ? ` — ${count.warehouseName}` : ''}</Descriptions.Item>
           <Descriptions.Item label="Satır">{count.lines.length}</Descriptions.Item>
           <Descriptions.Item label="Sayılan">{countedN}/{count.lines.length}</Descriptions.Item>

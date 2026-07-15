@@ -66,9 +66,19 @@ export async function stockCountRoutes(app: FastifyInstance) {
       prisma.tBLUNIT.findMany({ where: { id: { in: pick(count.lines, 'unitId') } }, select: { id: true, code: true } }),
     ])
     const pMap = new Map(products.map((p) => [p.id, p])), lMap = new Map(locations.map((l) => [l.id, l.code])), uMap = new Map(units.map((u) => [u.id, u.code]))
-    const lines = count.lines.map((l) => ({ ...l, productCode: pMap.get(l.productId)?.code, productName: pMap.get(l.productId)?.name, locationCode: lMap.get(l.locationId), unitCode: uMap.get(l.unitId) }))
+    // KÖR SAYIM (legacy BYTSAYIMTIP=1): sayım bitene dek sayıcı SİSTEM miktarını görmez — systemQty maskelenir.
+    // Fark COMPLETED sonrası görünür (DB'de değer durur; yalnız yanıt maskeler). Parametre sayım operasyonundan çözülür.
+    const param = count.operationTypeId
+      ? await prisma.tBLCOUNTPARAMETER.findFirst({ where: { companyId: count.companyId, operationTypeId: count.operationTypeId }, select: { countType: true } })
+      : null
+    const blindCount = param?.countType === 1 && count.status !== 'COMPLETED'
+    const lines = count.lines.map((l) => ({
+      ...l,
+      ...(blindCount ? { systemQty: null } : {}),
+      productCode: pMap.get(l.productId)?.code, productName: pMap.get(l.productId)?.name, locationCode: lMap.get(l.locationId), unitCode: uMap.get(l.unitId),
+    }))
     const warehouse = await prisma.tBLWAREHOUSE.findUnique({ where: { id: count.warehouseId }, select: { code: true, name: true } })
-    return { ...count, lines, warehouseCode: warehouse?.code, warehouseName: warehouse?.name }
+    return { ...count, lines, blindCount, warehouseCode: warehouse?.code, warehouseName: warehouse?.name }
   })
 
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
