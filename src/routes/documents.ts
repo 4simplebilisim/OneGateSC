@@ -10,6 +10,7 @@ import { suggestPutawayLocations } from '../lib/routing.js'
 import { assertUserAuthorized, assertDocumentAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
 import { codeMap, resolveCode, str } from '../lib/importer.js'
 import { reserveForDocument, releaseForDocument, reservationSummary, ReservationError } from '../lib/reservation.js'
+import { getParamInt } from '../lib/parameters.js'
 
 const lineSchema = z.object({
   productId: z.number().int().positive(),
@@ -505,6 +506,11 @@ export async function documentRoutes(app: FastifyInstance) {
     if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    // Parametre: BelgeOnayIptalKontrolGunSayisi — tamamlanalı N günden eski belgenin onayı iptal edilemez (dönem koruması)
+    const revDays = await getParamInt(doc.companyId, 'BelgeOnayIptalKontrolGunSayisi')
+    if (revDays != null && revDays > 0 && doc.completedAt && doc.completedAt < new Date(Date.now() - revDays * 86400_000)) {
+      return reply.code(409).send({ error: `Onay iptali için süre aşıldı — belge ${revDays} günden önce onaylanmış (BelgeOnayIptalKontrolGunSayisi)` })
+    }
     try {
       const rev = await reverseDocument(id) // stok geri + DRAFT
       await refreshDocStatus(prisma, id, { source: 'reverse', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → Bekliyor/Toplanıyor/Onay Bekliyor (toplama durumuna göre)
@@ -562,6 +568,10 @@ export async function documentRoutes(app: FastifyInstance) {
           await refreshDocStatus(prisma, id) // → ONY
         } else if (action === 'reverse') {
           if (doc.status !== 'COMPLETED') throw new MovementError(`Yalnız onaylı belgenin onayı iptal edilir (${doc.status})`)
+          const revDays = await getParamInt(companyId, 'BelgeOnayIptalKontrolGunSayisi')
+          if (revDays != null && revDays > 0 && doc.completedAt && doc.completedAt < new Date(Date.now() - revDays * 86400_000)) {
+            throw new MovementError(`Onay iptali için süre aşıldı (${revDays} gün)`)
+          }
           await reverseDocument(id) // stok geri + DRAFT
           await refreshDocStatus(prisma, id) // → toplama durumuna göre Bekliyor/Onay Bekliyor
         } else if (action === 'cancel-picking') {

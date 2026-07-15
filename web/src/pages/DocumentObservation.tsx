@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { App, Button, Card, DatePicker, Input, Select, Space, Table, Tag } from 'antd'
 import { ReloadOutlined, DownloadOutlined, EyeOutlined, CheckCircleOutlined, SendOutlined, RollbackOutlined, ClearOutlined, DeleteOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
-import type { Dayjs } from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import { axiosInstance } from '../providers/dataProvider'
+import { paramInt } from '../params'
 import { PageHeader } from '../components/PageHeader'
 import { canWrite } from '../formConfig'
 
@@ -63,6 +64,10 @@ export const DocumentObservation = ({ direction }: { direction: 'INBOUND' | 'OUT
     axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) => setFacilities(arr(r.data) as Facility[]))
     axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) => setOps(arr(r.data) as Op[]))
     axiosInstance.get('/api/partners', { params: { pageSize: 500 } }).then((r) => setPartners((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: codeName(x.code, x.name) }))))
+    // Parametre: GozlemBasTarihiGunEkle / GozlemBitTarihiGunEkle — açılışta varsayılan tarih aralığı (bugün+N gün)
+    Promise.all([paramInt('GozlemBasTarihiGunEkle'), paramInt('GozlemBitTarihiGunEkle')]).then(([bas, bit]) => {
+      if (bas != null || bit != null) setRange([bas != null ? dayjs().add(bas, 'day') : null, bit != null ? dayjs().add(bit, 'day') : null])
+    })
   }, [])
 
   // Operasyonlar bu yöne + (seçili tesise) göre

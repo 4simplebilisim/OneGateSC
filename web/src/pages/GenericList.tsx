@@ -3,6 +3,7 @@ import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented, S
 import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined } from '@ant-design/icons'
 import { hiddenColumns } from '../columnAuth'
 import { screenRight } from '../screenRight'
+import { paramInt } from '../params'
 import { useNavigate } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -60,11 +61,17 @@ const STATUS_COLOR: Record<string, string> = {
   AVAILABLE: 'green', QUARANTINE: 'gold', BLOCKED: 'red', DAMAGED: 'volcano',
 }
 
+// MiktarOndalikHane parametresi: ondalıklı miktarlar bu basamakla gösterilir (yalnız görünüm; tam sayı/id dokunulmaz)
+let QTY_DECIMALS: number | null = null
+export const setQtyDecimals = (n: number | null) => { QTY_DECIMALS = n }
 const fmt = (v: unknown) => {
   if (v === null || v === undefined || v === '') return <span style={{ color: '#c0cad9' }}>—</span>
   if (typeof v === 'boolean')
     return v ? <Badge status="success" text="Evet" /> : <Badge color="#cbd5e1" text="Hayır" />
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return v.slice(0, 10)
+  if (QTY_DECIMALS != null && ((typeof v === 'number' && !Number.isInteger(v)) || (typeof v === 'string' && /^-?\d+\.\d+$/.test(v)))) {
+    return Number(v).toFixed(QTY_DECIMALS)
+  }
   return String(v)
 }
 
@@ -77,6 +84,9 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
+  // MiktarOndalikHane parametresi → ondalıklı miktar gösterimi (bir kez yüklenir, cache'li)
+  const [, forceQtyFmt] = useState(0)
+  useEffect(() => { paramInt('MiktarOndalikHane').then((n) => { setQtyDecimals(n); if (n != null) forceQtyFmt((x) => x + 1) }) }, [])
   // Belgeler ekranı tek menü — durum filtresi liste içinde (Tümü/Açık/Tamamlanmış); ayrı "Açık Belgeler"/"Gözlem" yok
   const [docStatus, setDocStatus] = useState<'all' | 'open' | 'done'>('all')
   const isDocuments = resource === 'documents'

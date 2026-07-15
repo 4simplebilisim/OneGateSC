@@ -8,6 +8,7 @@ import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '..
 import { firstBadRef } from '../lib/refGuard.js'
 import { rotationWarning, type Rotation } from '../lib/rotation.js'
 import { assertDocumentAuthorized, AuthorizationError } from '../lib/userAuth.js'
+import { getParamInt } from '../lib/parameters.js'
 
 // Sadece-tarih alanı (üretim/SKT): "YYYY-MM-DD" → UTC ÖĞLE Date (timezone gün-kayması önlenir; @db.Date günü korur)
 const dateOnly = z.preprocess(
@@ -87,6 +88,11 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     const parsed = scopeSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
+    // Parametre: ElTerminalindeMaxMiktarDegeri — tek okutmada girilebilecek üst sınır (parmak hatası koruması)
+    const maxQty = await getParamInt(companyId, 'ElTerminalindeMaxMiktarDegeri')
+    if (maxQty != null && maxQty > 0 && parsed.data.quantity > maxQty) {
+      return reply.code(400).send({ error: `Tek okutmada en fazla ${maxQty} girilebilir (ElTerminalindeMaxMiktarDegeri) — girilen: ${parsed.data.quantity}` })
+    }
     // documentId/productId scope kolonu değil — satır çözümlemesinde kullanılır, create'e spread edilmez
     const { documentLineId: givenLineId, documentId, productId, ...scopeData } = parsed.data
 
@@ -259,6 +265,10 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     const { documentLineId: _l, documentId: _d, productId: _p, ...patch } = parsed.data
     // Miktar artırılıyorsa üst sınır (satır miktarı + üst tolerans) kontrolü — POST'takiyle aynı kural
     if (patch.quantity != null) {
+      const maxQty = await getParamInt(companyId, 'ElTerminalindeMaxMiktarDegeri')
+      if (maxQty != null && maxQty > 0 && patch.quantity > maxQty) {
+        return reply.code(400).send({ error: `Tek okutmada en fazla ${maxQty} girilebilir (ElTerminalindeMaxMiktarDegeri)` })
+      }
       const ln2 = await prisma.tBLDOCUMENTLINE.findUnique({
         where: { id: sc.documentLineId },
         select: {
