@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { reserveStock, releaseStock, type StockKey } from '../lib/stock.js'
 import { MovementError } from '../lib/movement.js'
+import { assertLocationAuthorized, AuthorizationError } from '../lib/userAuth.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 
 const keySchema = z.object({
@@ -114,8 +115,10 @@ export async function stockRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const { quantity, ...key } = parsed.data
     try {
+      await assertLocationAuthorized(request, key.locationId) // depo/tesis yetkisi (lokasyondan türer)
       return await reserveStock({ companyId: getCompanyId(request), ...(key as Omit<StockKey, 'companyId'>) }, quantity)
     } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err
     }
@@ -126,8 +129,10 @@ export async function stockRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const { quantity, ...key } = parsed.data
     try {
+      await assertLocationAuthorized(request, key.locationId)
       return await releaseStock({ companyId: getCompanyId(request), ...(key as Omit<StockKey, 'companyId'>) }, quantity)
     } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err
     }
@@ -142,6 +147,12 @@ export async function stockRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const src = await prisma.tBLSTOCK.findFirst({ where: { id, companyId } })
     if (!src) return reply.code(404).send({ error: 'Stok bulunamadı' })
+    try {
+      await assertLocationAuthorized(request, src.locationId) // kimlik değişimi de depo yetkisine tabi
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      throw err
+    }
     const newProductId = parsed.data.productId ?? src.productId
     const newBatch = parsed.data.batchNo !== undefined ? parsed.data.batchNo : src.batchNo
     const newSerial = parsed.data.serialNo !== undefined ? parsed.data.serialNo : src.serialNo

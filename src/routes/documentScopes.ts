@@ -7,6 +7,7 @@ import { refreshDocStatus } from '../lib/documentStatus.js'
 import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '../lib/movement.js'
 import { firstBadRef } from '../lib/refGuard.js'
 import { rotationWarning, type Rotation } from '../lib/rotation.js'
+import { assertDocumentAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
 // Sadece-tarih alanı (üretim/SKT): "YYYY-MM-DD" → UTC ÖĞLE Date (timezone gün-kayması önlenir; @db.Date günü korur)
 const dateOnly = z.preprocess(
@@ -115,6 +116,14 @@ export async function documentScopeRoutes(app: FastifyInstance) {
     } else {
       const g = await draftLineGuard(companyId, documentLineId)
       if (g) return reply.code(g.code).send({ error: g.error })
+    }
+    // Yetki: okutma da bir işlem — belgenin depo/tesis/operasyonu kullanıcının kısıt listesine uymalı
+    try {
+      const owner = await prisma.tBLDOCUMENTLINE.findUnique({ where: { id: documentLineId }, select: { documentId: true } })
+      if (owner) await assertDocumentAuthorized(request, owner.documentId)
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      throw err
     }
     const last = await prisma.tBLDOCUMENTLINESCOPE.findFirst({ where: { documentLineId }, orderBy: { scopeNo: 'desc' }, select: { scopeNo: true } })
     // Kaynak/hedef lokasyon+statü verilmezse SATIRDAN miras al (operatör tek tek girmesin; complete bunları kullanır)

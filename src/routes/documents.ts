@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
@@ -7,7 +7,7 @@ import { completeDocument, reverseDocument, splitDocument, collectionShortfall, 
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
-import { assertUserAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
+import { assertUserAuthorized, assertDocumentAuthorized, AuthorizationError, userGroupIds, allowedOperationTypeIds } from '../lib/userAuth.js'
 import { codeMap, resolveCode, str } from '../lib/importer.js'
 import { reserveForDocument, releaseForDocument, reservationSummary, ReservationError } from '../lib/reservation.js'
 
@@ -49,6 +49,17 @@ const lineInclude = {
   sourceStatus: { select: { id: true, code: true } },
   targetStatus: { select: { id: true, code: true } },
 } as const
+
+// Yaşam-döngüsü uçları için yetki kapısı: belgenin depo/tesis/operasyonu kullanıcının kısıt listesine uymalı → 403
+async function docAuth(request: FastifyRequest, reply: FastifyReply, documentId: number): Promise<boolean> {
+  try {
+    await assertDocumentAuthorized(request, documentId)
+    return true
+  } catch (err) {
+    if (err instanceof AuthorizationError) { reply.code(403).send({ error: err.message }); return false }
+    throw err
+  }
+}
 
 export async function documentRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
@@ -386,6 +397,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/start-picking', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     if (doc.status !== 'DRAFT') return reply.code(409).send({ error: `Sadece bekleyen belge toplamaya alınabilir (mevcut: ${doc.status})` })
@@ -400,6 +412,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/confirm', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     if (doc.status !== 'DRAFT') {
@@ -423,6 +436,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/complete', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     const body = (request.body ?? {}) as { breakPassword?: string; breakReasonCode?: string }
@@ -443,6 +457,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/cancel', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     if (doc.status === 'COMPLETED') {
@@ -459,6 +474,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/reserve', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     try {
       return await reserveForDocument(id, getCompanyId(request))
     } catch (err) {
@@ -470,6 +486,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/release-reservation', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId: getCompanyId(request) }, select: { id: true } })
     if (!doc) return reply.code(404).send({ error: 'Belge bulunamadı' })
     return releaseForDocument(id, getCompanyId(request))
@@ -485,6 +502,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/reverse', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findUnique({ where: { id } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     try {
@@ -501,6 +519,7 @@ export async function documentRoutes(app: FastifyInstance) {
   app.post('/:id/split', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
     const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId: getCompanyId(request) } })
     if (!doc) return reply.code(404).send({ error: 'Document not found' })
     try {
@@ -526,6 +545,7 @@ export async function documentRoutes(app: FastifyInstance) {
       const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId } })
       if (!doc) { failed.push({ id, error: 'Bulunamadı' }); continue }
       try {
+        await assertDocumentAuthorized(request, id) // depo/tesis/operasyon yetkisi — belge başına
         if (action === 'confirm') {
           if (doc.status !== 'DRAFT') throw new MovementError(`DRAFT değil (${doc.status})`)
           // Tekil confirm ile aynı kapılar: kontrollü=tam toplama, kontrolsüz=en az bir okutma
@@ -558,7 +578,7 @@ export async function documentRoutes(app: FastifyInstance) {
         }
         ok++
       } catch (err) {
-        failed.push({ id, error: err instanceof MovementError ? err.message : 'Hata' })
+        failed.push({ id, error: err instanceof MovementError || err instanceof AuthorizationError ? err.message : 'Hata' })
       }
     }
     return reply.send({ ok, failedCount: failed.length, failed })
@@ -569,6 +589,7 @@ export async function documentRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const sourceId = Number((request.params as { id: string }).id)
     if (!Number.isInteger(sourceId)) return reply.code(400).send({ error: 'Geçersiz id' })
+    if (!(await docAuth(request, reply, sourceId))) return
     const body = z.object({ documentNo: z.string().min(1).max(40).optional() }).safeParse(request.body ?? {})
     if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
 

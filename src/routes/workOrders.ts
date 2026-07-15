@@ -6,6 +6,22 @@ import { parsePagination, paginated } from '../lib/pagination.js'
 import { nextSequence } from '../lib/sequence.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 import { assignWorkOrder, startWorkOrder, reportLine, completeWorkOrder, cancelWorkOrder, WorkOrderError } from '../lib/workOrder.js'
+import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
+
+// İş emri yetki kapısı: deposu (→tesisi) kullanıcının kısıt listesine uymalı → 403
+async function woAuth(request: FastifyRequest, reply: FastifyReply, warehouseId: number | null | undefined): Promise<boolean> {
+  try {
+    await assertUserAuthorized(request, { warehouseId: warehouseId ?? null })
+    return true
+  } catch (err) {
+    if (err instanceof AuthorizationError) { reply.code(403).send({ error: err.message }); return false }
+    throw err
+  }
+}
+async function woAuthById(request: FastifyRequest, reply: FastifyReply, id: number): Promise<boolean> {
+  const wo = await prisma.tBLWORKORDER.findUnique({ where: { id }, select: { warehouseId: true } })
+  return wo ? woAuth(request, reply, wo.warehouseId) : true // yoksa uç 404 verir
+}
 
 const types = ['PICK', 'PUTAWAY', 'COUNT', 'TRANSFER', 'REPLENISH'] as const
 
@@ -67,6 +83,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
     const { lines, orderNo: providedNo, ...header } = parsed.data
+    if (!(await woAuth(request, reply, header.warehouseId))) return
 
     // Cross-tenant koruması: depo + atanan kullanıcı + satır referansları (ürün/birim/lokasyon/statü) bu firmaya ait olmalı
     const uniq = (a: (number | null | undefined)[]) => [...new Set(a.filter((x): x is number => x != null))]
@@ -108,6 +125,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
   const wrap = (fn: (request: FastifyRequest) => Promise<unknown>) => async (request: FastifyRequest, reply: FastifyReply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await woAuthById(request, reply, id))) return
     try {
       return await fn(request)
     } catch (err) {
@@ -119,6 +137,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
   app.post('/:id/assign', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await woAuthById(request, reply, id))) return
     const body = z.object({ userId: z.number().int().positive() }).safeParse(request.body)
     if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
     try {
@@ -137,6 +156,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
     const id = idOf(request)
     const lineId = Number((request.params as { lineId: string }).lineId)
     if (!Number.isInteger(id) || !Number.isInteger(lineId)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await woAuthById(request, reply, id))) return
     const body = z.object({ collectedQty: z.number().min(0) }).safeParse(request.body)
     if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
     try {

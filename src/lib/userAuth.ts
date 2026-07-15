@@ -90,3 +90,24 @@ export async function assertUserAuthorized(request: FastifyRequest, scopes: Chec
     }
   }
 }
+
+/** Belge üzerinden yetki: belgenin operasyonu + tesisi + deposu kullanıcının kısıt listesine uymalı (yaşam döngüsü uçları). */
+export async function assertDocumentAuthorized(request: FastifyRequest, documentId: number): Promise<void> {
+  const user = request.user as { isSuperAdmin?: boolean } | undefined
+  if (!user || user.isSuperAdmin) return
+  const doc = await prisma.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    select: { warehouseId: true, operationTypeId: true, operationType: { select: { facilityId: true } } },
+  })
+  if (!doc) return // uç zaten 404 verir — yetki katmanı varlık sızdırmaz
+  await assertUserAuthorized(request, { warehouseId: doc.warehouseId, facilityId: doc.operationType?.facilityId ?? null, operationTypeId: doc.operationTypeId })
+}
+
+/** Lokasyon üzerinden yetki: lokasyonun deposu (ve tesisi) kullanıcının kısıt listesine uymalı (stok uçları). */
+export async function assertLocationAuthorized(request: FastifyRequest, locationId: number | null | undefined): Promise<void> {
+  const user = request.user as { isSuperAdmin?: boolean } | undefined
+  if (!user || user.isSuperAdmin || locationId == null) return
+  const loc = await prisma.tBLLOCATION.findUnique({ where: { id: locationId }, select: { warehouseId: true, facilityId: true } })
+  if (!loc) return
+  await assertUserAuthorized(request, { warehouseId: loc.warehouseId, facilityId: loc.facilityId })
+}
