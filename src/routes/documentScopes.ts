@@ -125,7 +125,7 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
         batchNo: true, serialNo: true, quantity: true,
         product: { select: { productGroupId: true } },
-        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true } } } },
+        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true, reserveTransfer: true } } } },
       },
     })
     // Okutulan (miras dahil) kaynak/hedef lokasyon+statü
@@ -202,7 +202,10 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         },
         select: { reservedQty: true, mainQty: true, reservedDocumentId: true },
       })
-      if (st && st.reservedDocumentId !== ln.documentId) {
+      // İstisna: rezerv-taşımalı transfer (op.reserveTransfer) BELGEYE BAĞLI rezervi okutabilir — taşıma amaçlı
+      // (complete rezervi hedefe taşır); bağsız blokaj (reservedDocumentId=null) yine engellidir.
+      const carriesReserve = ln.document.operationType.direction === 'INTERNAL' && ln.document.operationType.reserveTransfer === true && st?.reservedDocumentId != null
+      if (st && st.reservedDocumentId !== ln.documentId && !carriesReserve) {
         const free = st.mainQty.sub(st.reservedQty)
         if (new Prisma.Decimal(scopeData.quantity).gt(free)) {
           const owner = st.reservedDocumentId != null ? `belge #${st.reservedDocumentId}'e rezerve` : 'blokaj/tahsis rezervli'

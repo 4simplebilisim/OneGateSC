@@ -230,6 +230,28 @@ interface MoveCtx {
  * Yoksa ve delta>0 ise yeni satır açar; delta<0 ve satır yoksa/yetersizse hata.
  * Her başarılı değişim hareket defterine (ledger) işaretli qtyDelta ile yazılır.
  */
+// ── Rezerv taşıma (op.reserveTransfer, legacy BYTREZERVETRANSFEREDILSIN) ──
+// Transferde belgeye bağlı rezerv stokla birlikte hedefe taşınır: kaynaktan kaldır (lift) → hareket → hedefe koy (land).
+// Bağsız blokaj (reservedDocumentId=null) TAŞINMAZ — koruma engel olarak kalır (blokajlı stok yerinden oynatılamaz).
+type ReserveCarry = { qty: Prisma.Decimal; docId: number } | null
+async function liftReservation(tx: Tx, key: StockKey, qty: Prisma.Decimal): Promise<ReserveCarry> {
+  const s = await tx.tBLSTOCK.findFirst({ where: key })
+  if (!s || s.reservedDocumentId == null || s.reservedQty.lte(0)) return null
+  const moved = s.reservedQty.lte(qty) ? s.reservedQty : qty
+  const rest = s.reservedQty.sub(moved)
+  await tx.tBLSTOCK.update({ where: { id: s.id }, data: { reservedQty: rest, ...(rest.lte(0) ? { reservedDocumentId: null } : {}) } })
+  return { qty: moved, docId: s.reservedDocumentId }
+}
+async function landReservation(tx: Tx, key: StockKey, carry: ReserveCarry): Promise<void> {
+  if (!carry || carry.qty.lte(0)) return
+  const s = await tx.tBLSTOCK.findFirst({ where: key })
+  if (!s) return // hedef satır az önce adjustStock ile yaratıldı/artırıldı — pratikte hep bulunur
+  if (s.reservedDocumentId != null && s.reservedDocumentId !== carry.docId) {
+    throw new MovementError(`Hedef stokta başka belgenin rezervi var (belge #${s.reservedDocumentId}) — rezerv taşınamaz`)
+  }
+  await tx.tBLSTOCK.update({ where: { id: s.id }, data: { reservedQty: s.reservedQty.add(carry.qty), reservedDocumentId: carry.docId } })
+}
+
 async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null, productionDate?: Date | null) {
   const existing = await tx.tBLSTOCK.findFirst({ where: key })
 
@@ -524,9 +546,13 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
               batchNo: sc.batchNo, serialNo: sc.serialNo, palletId: sc.palletId,
               customerId: sc.customerId, poNo: sc.poNo, poLine: sc.poLine,
             }
+            // Rezerv taşıma: transferde belgeye bağlı rezerv stokla birlikte hedefe gider (op.reserveTransfer)
+            let carry: ReserveCarry = null
             if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
               if (sc.sourceLocationId == null || sc.sourceStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: kaynak lokasyon/statü gerekli`)
-              await adjustStock(tx, { ...sCommon, locationId: sc.sourceLocationId, statusId: sc.sourceStatusId }, sc.unitId, sc.quantity.negated(), moveCtx)
+              const srcKey = { ...sCommon, locationId: sc.sourceLocationId, statusId: sc.sourceStatusId }
+              if (dir === 'INTERNAL' && op.reserveTransfer) carry = await liftReservation(tx, srcKey, sc.quantity)
+              await adjustStock(tx, srcKey, sc.unitId, sc.quantity.negated(), moveCtx)
             }
             if (dir === 'INBOUND' || dir === 'INTERNAL') {
               if (sc.targetLocationId == null || sc.targetStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: hedef lokasyon/statü gerekli`)
@@ -534,7 +560,9 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
               // toplamada okutulan üretim/SKT stok'a taşınır. SKT önceliği: (1) okutulan SKT (barkod/elle),
               // (2) INBOUND + raf ömrü → SKT = (okutulan üretim tarihi ?? bugün) + raf ömrü gün.
               const scExpiry = sc.expiryDate ?? (dir === 'INBOUND' && product?.shelfLifeDays ? new Date((sc.productionDate ?? new Date()).getTime() + product.shelfLifeDays * 86400000) : null)
-              await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }, sc.unitId, sc.quantity, moveCtx, scExpiry, sc.productionDate)
+              const tgtKey = { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }
+              await adjustStock(tx, tgtKey, sc.unitId, sc.quantity, moveCtx, scExpiry, sc.productionDate)
+              await landReservation(tx, tgtKey, carry)
             }
             collected = collected.add(sc.quantity)
           }
@@ -712,18 +740,15 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
         }
         const moveCtx: MoveCtx = { direction: dir, documentId: doc.id, documentLineId: line.id, operationTypeId: op.id, userId: breakOpts.userId ?? null }
 
-        // Çıkış: kaynak azalt
+        // Çıkış: kaynak azalt (transferde belgeye bağlı rezerv stokla taşınır — op.reserveTransfer)
+        let carry: ReserveCarry = null
         if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
           if (line.sourceLocationId == null || line.sourceStatusId == null) {
             throw new MovementError(`Satır ${line.lineNo}: kaynak lokasyon ve statü gerekli (${dir})`)
           }
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.sourceLocationId, statusId: line.sourceStatusId },
-            line.unitId,
-            qty.negated(),
-            moveCtx,
-          )
+          const srcKey = { ...common, locationId: line.sourceLocationId, statusId: line.sourceStatusId }
+          if (dir === 'INTERNAL' && op.reserveTransfer) carry = await liftReservation(tx, srcKey, qty)
+          await adjustStock(tx, srcKey, line.unitId, qty.negated(), moveCtx)
         }
 
         // Giriş: hedef artır
@@ -738,14 +763,9 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
             dir === 'INBOUND' && product?.shelfLifeDays
               ? new Date(Date.now() + product.shelfLifeDays * 86400000)
               : undefined
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.targetLocationId, statusId: line.targetStatusId },
-            line.unitId,
-            qty,
-            moveCtx,
-            inboundExpiry,
-          )
+          const tgtKey = { ...common, locationId: line.targetLocationId, statusId: line.targetStatusId }
+          await adjustStock(tx, tgtKey, line.unitId, qty, moveCtx, inboundExpiry)
+          await landReservation(tx, tgtKey, carry)
         }
       }
     }
@@ -915,7 +935,13 @@ export async function reverseDocument(documentId: number) {
           for (const sc of line.scopes) {
             const sCommon = { companyId: doc.companyId, productId: line.productId, batchNo: sc.batchNo, serialNo: sc.serialNo, palletId: sc.palletId, customerId: sc.customerId, poNo: sc.poNo, poLine: sc.poLine }
             if (dir === 'OUTBOUND' || dir === 'INTERNAL') await adjustStock(tx, { ...sCommon, locationId: sc.sourceLocationId!, statusId: sc.sourceStatusId! }, sc.unitId, sc.quantity, mCtx)
-            if (dir === 'INBOUND' || dir === 'INTERNAL') await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId!, statusId: sc.targetStatusId! }, sc.unitId, sc.quantity.negated(), mCtx)
+            if (dir === 'INBOUND' || dir === 'INTERNAL') {
+              const tgtKey = { ...sCommon, locationId: sc.targetLocationId!, statusId: sc.targetStatusId! }
+              // Rezerv taşımalı transferin tersi: rezerv hedefe taşınmıştı → hedeften kaldır, kaynağa geri koy
+              const carry = dir === 'INTERNAL' && doc.operationType.reserveTransfer ? await liftReservation(tx, tgtKey, sc.quantity) : null
+              await adjustStock(tx, tgtKey, sc.unitId, sc.quantity.negated(), mCtx)
+              await landReservation(tx, { ...sCommon, locationId: sc.sourceLocationId!, statusId: sc.sourceStatusId! }, carry)
+            }
           }
           continue
         }
@@ -943,13 +969,11 @@ export async function reverseDocument(documentId: number) {
           )
         }
         if (dir === 'INBOUND' || dir === 'INTERNAL') {
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.targetLocationId!, statusId: line.targetStatusId! },
-            line.unitId,
-            qty.negated(),
-            moveCtx,
-          )
+          const tgtKey = { ...common, locationId: line.targetLocationId!, statusId: line.targetStatusId! }
+          // Rezerv taşımalı transferin tersi: rezervi hedeften kaldır, kaynağa geri koy
+          const carry = dir === 'INTERNAL' && doc.operationType.reserveTransfer ? await liftReservation(tx, tgtKey, qty) : null
+          await adjustStock(tx, tgtKey, line.unitId, qty.negated(), moveCtx)
+          await landReservation(tx, { ...common, locationId: line.sourceLocationId!, statusId: line.sourceStatusId! }, carry)
         }
       }
     }
