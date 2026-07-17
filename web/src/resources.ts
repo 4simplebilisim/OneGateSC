@@ -50,13 +50,14 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'entry-labeling', label: 'Giriş Etiketleme', section: 'İşlemler', group: 'Giriş' },
   { name: 'putaway-suggest', label: 'Giriş Öneri Listesi', section: 'İşlemler', group: 'Giriş' },
   { name: 'stock-entry', label: 'Stok Giriş', section: 'İşlemler', group: 'Giriş' },
-  { name: 'bulk-doc-ops-in', label: 'Toplu İşlem', section: 'İşlemler', group: 'Giriş' },
+  { name: 'bulk-doc-ops-in', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Giriş' },
   { name: 'doc-assign-in', label: 'İş Atama', section: 'İşlemler', group: 'Giriş' },
   { name: 'documents-out', label: 'Belge', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' } },
   { name: 'documents-out-obs', label: 'Gözlem', section: 'İşlemler', group: 'Çıkış', apiName: 'documents', filter: { direction: 'OUTBOUND' }, observe: true },
   { name: 'exit-labeling', label: 'Çıkış Etiketleme', section: 'İşlemler', group: 'Çıkış' },
   { name: 'pick-suggest', label: 'Çıkış Öneri Listesi', section: 'İşlemler', group: 'Çıkış' },
-  { name: 'bulk-doc-ops', label: 'Toplu İşlem', section: 'İşlemler', group: 'Çıkış' },
+  { name: 'bulk-stock-ops', label: 'Toplu İşlem', section: 'İşlemler', group: 'Çıkış' }, // StokBar SbTopluIslem: stok seç → operasyon uygula (belge otomatik)
+  { name: 'bulk-doc-ops', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Çıkış' },
   { name: 'reservation-out', label: 'Rezervasyon', section: 'İşlemler', group: 'Çıkış' }, // rezervasyonlu op belgeleri → stok ayır (yalnız o belgede okutulur)
   { name: 'doc-assign-out', label: 'İş Atama', section: 'İşlemler', group: 'Çıkış' },
   { name: 'stock-exit', label: 'Stok Çıkış', section: 'İşlemler', group: 'Çıkış' },
@@ -64,7 +65,8 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'documents-tr', label: 'Belge', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' } },
   { name: 'documents-tr-obs', label: 'Gözlem', section: 'İşlemler', group: 'Transfer', apiName: 'documents', filter: { direction: 'INTERNAL' }, observe: true },
   { name: 'reservation-tr', label: 'Rezervasyon', section: 'İşlemler', group: 'Transfer' }, // rezervasyonlu op belgeleri (eski elle stok-blokaj ekranı kaldırıldı — belge-bazlı model)
-  { name: 'bulk-doc-ops-tr', label: 'Toplu İşlem', section: 'İşlemler', group: 'Transfer' },
+  { name: 'bulk-stock-ops-tr', label: 'Toplu İşlem', section: 'İşlemler', group: 'Transfer' },
+  { name: 'bulk-doc-ops-tr', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Transfer' },
   { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
   // Entegrasyon (Gelen/Giden İzleme + Aktarım): menüden kaldırıldı (altı boş — entegrasyon bacağı henüz yok);

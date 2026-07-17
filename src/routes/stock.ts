@@ -5,7 +5,8 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { reserveStock, releaseStock, type StockKey } from '../lib/stock.js'
 import { MovementError } from '../lib/movement.js'
-import { assertLocationAuthorized, AuthorizationError } from '../lib/userAuth.js'
+import { assertLocationAuthorized, assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
+import { bulkStockOperation, BulkStockError } from '../lib/bulkStock.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 
 const keySchema = z.object({
@@ -34,11 +35,20 @@ export async function stockRoutes(app: FastifyInstance) {
     const locFilter: Prisma.TBLLOCATIONWhereInput = {}
     if (warehouseId) locFilter.warehouseId = warehouseId
     if (facilityId) locFilter.warehouse = { facilityId }
+    // SKT aralığı (Toplu İşlem ekranı filtresi)
+    const expFilter = {
+      ...(q.expiryFrom ? { gte: new Date(q.expiryFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}),
+      ...(q.expiryTo ? { lte: new Date(q.expiryTo.slice(0, 10) + 'T23:59:59.999Z') } : {}),
+    }
     const where = {
       companyId,
       productId: num(q.productId),
       locationId: num(q.locationId),
       statusId: num(q.statusId),
+      ...(q.batchNo ? { batchNo: { contains: q.batchNo, mode: 'insensitive' as const } } : {}),
+      ...(q.serialNo ? { serialNo: { contains: q.serialNo, mode: 'insensitive' as const } } : {}),
+      ...(q.palletNo ? { pallet: { palletNo: { contains: q.palletNo, mode: 'insensitive' as const } } } : {}),
+      ...(Object.keys(expFilter).length ? { expiryDate: expFilter } : {}),
       ...(Object.keys(locFilter).length ? { location: locFilter } : {}),
       ...(q.includeZero === 'true' ? {} : { mainQty: { gt: 0 } }),
     }
@@ -108,6 +118,27 @@ export async function stockRoutes(app: FastifyInstance) {
       }
     })
     return { productId, movementCount: movements.length, movements }
+  })
+
+  // TOPLU İŞLEM (StokBar): seçili stok satırlarına operasyon uygula — belge otomatik doğar + tamamlanır
+  app.post('/bulk-action', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = z.object({
+      operationTypeId: z.number().int().positive(),
+      stockIds: z.array(z.number().int().positive()).min(1).max(1000),
+    }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    try {
+      const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: parsed.data.operationTypeId, companyId }, select: { facilityId: true } })
+      if (!op) return reply.code(404).send({ error: 'Operasyon bulunamadı' })
+      await assertUserAuthorized(request, { operationTypeId: parsed.data.operationTypeId, facilityId: op.facilityId })
+      const userId = Number((request.user as { sub?: number | string })?.sub) || null
+      return await bulkStockOperation(companyId, parsed.data.operationTypeId, parsed.data.stockIds, userId)
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      if (err instanceof BulkStockError) return reply.code(err.httpCode).send({ error: err.message })
+      throw err
+    }
   })
 
   app.post('/reserve', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
