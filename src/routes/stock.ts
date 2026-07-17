@@ -125,6 +125,7 @@ export async function stockRoutes(app: FastifyInstance) {
     const parsed = z.object({
       operationTypeId: z.number().int().positive(),
       stockIds: z.array(z.number().int().positive()).min(1).max(1000),
+      targetLocationId: z.number().int().positive().nullish(), // Transfer: toplu taşıma hedefi (boş = yerinde statü değişimi)
     }).safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const companyId = getCompanyId(request)
@@ -132,8 +133,9 @@ export async function stockRoutes(app: FastifyInstance) {
       const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: parsed.data.operationTypeId, companyId }, select: { facilityId: true } })
       if (!op) return reply.code(404).send({ error: 'Operasyon bulunamadı' })
       await assertUserAuthorized(request, { operationTypeId: parsed.data.operationTypeId, facilityId: op.facilityId })
+      await assertLocationAuthorized(request, parsed.data.targetLocationId) // hedef deponun yetkisi
       const userId = Number((request.user as { sub?: number | string })?.sub) || null
-      return await bulkStockOperation(companyId, parsed.data.operationTypeId, parsed.data.stockIds, userId)
+      return await bulkStockOperation(companyId, parsed.data.operationTypeId, parsed.data.stockIds, userId, parsed.data.targetLocationId ?? null)
     } catch (err) {
       if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       if (err instanceof BulkStockError) return reply.code(err.httpCode).send({ error: err.message })

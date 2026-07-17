@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Col, DatePicker, Input, Row, Select, Space, Table, Tag, Typography } from 'antd'
+import { App, Alert, Button, Card, Col, DatePicker, Input, Modal, Row, Select, Space, Table, Tag, Typography } from 'antd'
 import { ReloadOutlined, ThunderboltOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import type { Dayjs } from 'dayjs'
@@ -23,7 +23,7 @@ const DIR_LABEL: Record<string, string> = { OUTBOUND: 'Çıkış', INTERNAL: 'Tr
 // TOPLU İŞLEM (StokBar SbTopluIslem): filtrele → stok satırlarını LİSTELE → seç → İşlem:
 // seçilen operasyonla belge otomatik doğar + TAMAMLANIR (statü değiştirme = statü-geçişli Transfer op).
 export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL' }) => {
-  const { message, modal } = App.useApp()
+  const { message } = App.useApp()
   const [ops, setOps] = useState<Op[]>([])
   const [facilities, setFacilities] = useState<{ id: number; code: string; name?: string }[]>([])
   const [products, setProducts] = useState<{ value: number; label: string }[]>([])
@@ -69,26 +69,24 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
     }).then((r) => setRows(arr(r.data) as StockRow[])).finally(() => setLoading(false))
   }, [facilityId, productId, locationId, statusId, batchNo, palletNo, expiry])
 
+  const [islemOpen, setIslemOpen] = useState(false)
+  const [targetLocId, setTargetLocId] = useState<number>() // Transfer: toplu taşıma hedefi (boş = yerinde statü değişimi)
   const islem = () => {
     if (!opId) { message.warning('Operasyon seçin'); return }
     if (!selected.length) { message.warning('Stok satırı seçin'); return }
-    const op = bulkOps.find((o) => o.id === opId)
-    modal.confirm({
-      title: `${selected.length} stok satırına "${op?.code}" uygulansın mı?`,
-      content: 'Seçili satırlar için belge otomatik oluşturulur, onaylanır ve TAMAMLANIR (stok anında işlenir).',
-      okText: 'İşlem', cancelText: 'Vazgeç',
-      onOk: async () => {
-        setBusy(true)
-        try {
-          const r = await axiosInstance.post('/api/stock/bulk-action', { operationTypeId: opId, stockIds: selected })
-          message.success(`${r.data.documentNo}: ${r.data.lineCount} satır / ${r.data.totalQty} miktar işlendi`)
-          if (r.data.skipped?.length) message.warning(`Atlanan: ${r.data.skipped.join(', ')}`)
-          listele()
-        } catch (e) {
-          message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'İşlem başarısız')
-        } finally { setBusy(false) }
-      },
-    })
+    setTargetLocId(undefined); setIslemOpen(true)
+  }
+  const islemUygula = async () => {
+    setBusy(true)
+    try {
+      const r = await axiosInstance.post('/api/stock/bulk-action', { operationTypeId: opId, stockIds: selected, targetLocationId: targetLocId ?? null })
+      message.success(`${r.data.documentNo}: ${r.data.lineCount} satır / ${r.data.totalQty} miktar işlendi`)
+      if (r.data.skipped?.length) message.warning(`Atlanan: ${r.data.skipped.join(', ')}`)
+      setIslemOpen(false)
+      listele()
+    } catch (e) {
+      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'İşlem başarısız')
+    } finally { setBusy(false) }
   }
 
   return (
@@ -142,6 +140,21 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
           ]}
         />
       </Card>
+
+      <Modal open={islemOpen} onCancel={() => setIslemOpen(false)} onOk={islemUygula} okText="İşlem" cancelText="Vazgeç" confirmLoading={busy}
+        title={`${selected.length} stok satırına "${bulkOps.find((o) => o.id === opId)?.code ?? ''}" uygulansın mı?`}>
+        <p>Seçili satırlar için belge otomatik oluşturulur, onaylanır ve <b>TAMAMLANIR</b> (stok anında işlenir).</p>
+        {direction === 'INTERNAL' && (
+          <>
+            <Typography.Text strong>Hedef Lokasyon (toplu taşıma)</Typography.Text>
+            <Select style={{ width: '100%', marginTop: 6 }} value={targetLocId} onChange={setTargetLocId} allowClear showSearch optionFilterProp="label"
+              placeholder="Boş = yerinde statü değişimi (operasyonun statü geçişi uygulanır)" options={locations} />
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
+              Dolu = seçili stoklar bu lokasyona taşınır (operasyonda statü geçişi varsa statü de değişir, yoksa korunur).
+            </Typography.Text>
+          </>
+        )}
+      </Modal>
     </div>
   )
 }

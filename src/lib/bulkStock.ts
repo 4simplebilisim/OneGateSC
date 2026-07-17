@@ -21,7 +21,7 @@ export interface BulkStockResult {
   skipped: string[] // sıfır miktarlı vb. atlanan satırlar (bilgi)
 }
 
-export async function bulkStockOperation(companyId: number, operationTypeId: number, stockIds: number[], userId?: number | null): Promise<BulkStockResult> {
+export async function bulkStockOperation(companyId: number, operationTypeId: number, stockIds: number[], userId?: number | null, targetLocationId?: number | null): Promise<BulkStockResult> {
   const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: operationTypeId, companyId }, include: { sequence: true } })
   if (!op) throw new BulkStockError('Operasyon bulunamadı', 404)
   if (!op.bulkAction) throw new BulkStockError("Bu operasyonda 'Toplu İşlem' işaretli değil — Operasyon Tipi › Toplu İşlem parametresini açın")
@@ -32,21 +32,33 @@ export async function bulkStockOperation(companyId: number, operationTypeId: num
   const missing = stockIds.filter((id) => !stocks.some((s) => s.id === id))
   if (missing.length) throw new BulkStockError(`Stok satırı bulunamadı: #${missing.join(', #')}`)
 
-  // Hedef statü (INTERNAL — statü değiştirme): operasyonun statü geçişinden; hedef lokasyon = kaynağın kendisi (yerinde değişim)
-  let targetStatusId: number | null = null
+  // INTERNAL iki kip: (a) TOPLU TAŞIMA — hedef lokasyon verilir (statü geçiş varsa uygulanır, yoksa korunur);
+  //                   (b) STATÜ DEĞİŞTİRME — hedef lokasyon boş, stok yerinde; statü geçişi ZORUNLU (yoksa no-op olurdu).
+  let transStatusId: number | null = null
   if (op.direction === 'INTERNAL') {
+    if (targetLocationId != null) {
+      const loc = await prisma.tBLLOCATION.findFirst({ where: { id: targetLocationId, companyId }, select: { id: true } })
+      if (!loc) throw new BulkStockError('Hedef lokasyon bulunamadı — bu firmaya ait değil')
+    }
     const tr = await prisma.tBLOPERATIONTYPESTATUS.findFirst({
       where: { companyId, operationTypeId: op.id, targetStatusId: { not: null } },
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }], select: { targetStatusId: true },
     })
-    targetStatusId = tr?.targetStatusId ?? null
-    if (!targetStatusId) throw new BulkStockError('Operasyonda hedef statü geçişi tanımlı değil — Operasyon Tipi › Statü sekmesinden tanımlayın')
+    transStatusId = tr?.targetStatusId ?? null
+    if (targetLocationId == null && !transStatusId) {
+      throw new BulkStockError('Hedef lokasyon seçin (toplu taşıma) ya da operasyona statü geçişi tanımlayın (yerinde statü değişimi)')
+    }
+  } else if (targetLocationId != null) {
+    throw new BulkStockError('Hedef lokasyon yalnız Transfer operasyonunda kullanılır')
   }
+  // Satır bazında hedef: lokasyon = seçilen ?? yerinde; statü = geçiş ?? kaynak statü (taşıma statüyü korur)
+  const tgtLocOf = (s: { locationId: number }) => targetLocationId ?? s.locationId
+  const tgtStaOf = (s: { statusId: number }) => transStatusId ?? s.statusId
 
   const skipped: string[] = []
   const usable = stocks.filter((s) => {
     if (s.mainQty.lte(0)) { skipped.push(`#${s.id} (miktar 0)`); return false }
-    if (op.direction === 'INTERNAL' && s.statusId === targetStatusId) { skipped.push(`#${s.id} (zaten hedef statüde)`); return false }
+    if (op.direction === 'INTERNAL' && tgtLocOf(s) === s.locationId && tgtStaOf(s) === s.statusId) { skipped.push(`#${s.id} (hedef = mevcut konum/statü)`); return false }
     return true
   })
   if (!usable.length) throw new BulkStockError('İşlenecek satır kalmadı (hepsi atlandı: ' + skipped.join(', ') + ')')
@@ -68,14 +80,14 @@ export async function bulkStockOperation(companyId: number, operationTypeId: num
           batchNo: s.batchNo, serialNo: s.serialNo, palletId: s.palletId,
           customerId: s.customerId, poNo: s.poNo, poLine: s.poLine,
           sourceLocationId: s.locationId, sourceStatusId: s.statusId,
-          ...(op.direction === 'INTERNAL' ? { targetLocationId: s.locationId, targetStatusId } : {}),
+          ...(op.direction === 'INTERNAL' ? { targetLocationId: tgtLocOf(s), targetStatusId: tgtStaOf(s) } : {}),
           scopes: {
             create: [{
               companyId, scopeNo: 1, quantity: s.mainQty, unitId: s.unitId,
               batchNo: s.batchNo, serialNo: s.serialNo, palletId: s.palletId,
               customerId: s.customerId, poNo: s.poNo, poLine: s.poLine,
               sourceLocationId: s.locationId, sourceStatusId: s.statusId,
-              ...(op.direction === 'INTERNAL' ? { targetLocationId: s.locationId, targetStatusId } : {}),
+              ...(op.direction === 'INTERNAL' ? { targetLocationId: tgtLocOf(s), targetStatusId: tgtStaOf(s) } : {}),
             }],
           },
         })),
