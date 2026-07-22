@@ -69,8 +69,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'bulk-doc-ops-tr', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Transfer' },
   { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
-  // Entegrasyon (Gelen/Giden İzleme + Aktarım): menüden kaldırıldı (altı boş — entegrasyon bacağı henüz yok);
-  // entegrasyon geldiğinde geri açılır — API/kod durur (integration-logs; Dönüşüm kodu eşlemesi hazır)
+  // Entegrasyon: Uyarlamalar › Entegrasyon grubuna taşındı (Paket + İzleme) — altyapı geldi (2026-07)
   // Sayım
   { name: 'stock-counts', label: 'Sayım Girişi', section: 'İşlemler', group: 'Sayım' },
   { name: 'count-differences', label: 'Sayım Fark', section: 'İşlemler', group: 'Sayım' },
@@ -155,6 +154,10 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'report-defs', label: 'Rapor Başlık', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-criteria', label: 'Rapor Kriter', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-fields', label: 'Rapor Saha', section: 'Uyarlamalar', group: 'Rapor' },
+  // Entegrasyon (StokBar Entegrasyon menüsü) — Paket = ERP bağlantı profili (Netsis/Logo/genel REST),
+  // Adresler paket formunun sekmesi (integration-addresses API); İzleme = aktarım logları + manuel tetikleme
+  { name: 'integration-packages', label: 'Entegrasyon Paketi', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  { name: 'integration-logs', label: 'Entegrasyon İzleme', section: 'Uyarlamalar', group: 'Entegrasyon' },
 
   // ── El Terminali (Android) dinamik menü ──
   { name: 'handheld-menu-groups', label: 'El Terminali Menü', section: 'Uyarlamalar', group: 'El Terminali' },

@@ -850,6 +850,21 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'code', label: 'Parametre (rehber)', type: 'select', required: true, options: PARAM_CATALOG },
     { name: 'value', label: 'Değer', type: 'text' },
   ],
+  // Entegrasyon Paketi — form ÖZEL ekranda (IntegrationPackageForm: bağlantı profili + Adresler + Bağlantı Testi);
+  // bu liste yalnız GenericList'i besler (hasForm + kolon başlıkları + tip çevirisi). Sır alanları listede gizli.
+  'integration-packages': [
+    { name: 'code', label: 'Kod', type: 'text', required: true },
+    { name: 'name', label: 'Tanım', type: 'text' },
+    { name: 'packageType', label: 'Paket Tipi', type: 'select', options: [
+      { value: 'NETSIS_REST', label: 'Netsis REST' }, { value: 'LOGO_REST', label: 'Logo REST' }, { value: 'GENERIC_REST', label: 'Genel REST' },
+    ] },
+    { name: 'baseUrl', label: 'Sunucu Adresi', type: 'text' },
+    { name: 'dbName', label: 'DB Adı', type: 'text' },
+    { name: 'branchCode', label: 'Şube', type: 'text' },
+    { name: 'firmNr', label: 'Firma No', type: 'text' },
+    { name: 'periodNr', label: 'Dönem', type: 'text' },
+    { name: 'logging', label: 'Log', type: 'bool' },
+  ],
   // Barkod Tipi — form ÖZEL ekranda (BarcodeTypeForm: eşleşme+mod+Segmentler+Test); bu liste yalnız
   // GenericList'i besler: buton görünürlüğü (hasForm) + kolon başlıkları (label) + mod değer çevirisi (select options).
   'barcode-types': [

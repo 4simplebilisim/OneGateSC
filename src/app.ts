@@ -62,6 +62,7 @@ import { vehicleRoutes } from './routes/vehicles.js'
 import { shipmentRoutes } from './routes/shipments.js'
 import { stockCountRoutes, countDifferenceRoutes } from './routes/stockCounts.js'
 import { integrationLogRoutes } from './routes/integration.js'
+import { integrationPackageRoutes, integrationAddressRoutes } from './routes/integrationPackages.js'
 import { reportDefRoutes, reportCriteriaRoutes, reportFieldRoutes, reportRunRoutes } from './routes/reportBuilder.js'
 import { suggestionListRoutes } from './routes/suggestions.js'
 import { extraFieldRoutes, extraFieldOptionRoutes, operationTypeExtraFieldRoutes } from './routes/extraFields.js'
@@ -208,6 +209,8 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(stockCountRoutes, { prefix: '/api/stock-counts' })
   await app.register(countDifferenceRoutes, { prefix: '/api/count-differences' })
   await app.register(integrationLogRoutes, { prefix: '/api/integration-logs' })
+  await app.register(integrationPackageRoutes, { prefix: '/api/integration-packages' })
+  await app.register(integrationAddressRoutes, { prefix: '/api/integration-addresses' })
   await app.register(reportDefRoutes, { prefix: '/api/report-defs' })
   await app.register(reportCriteriaRoutes, { prefix: '/api/report-criteria' })
   await app.register(reportFieldRoutes, { prefix: '/api/report-fields' })

@@ -51,6 +51,7 @@ export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateS
         return reply.code(201).send(row)
       } catch (err) {
         if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
+        if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Bu kod zaten kullanılıyor' })
         throw err
       }
     })
@@ -70,6 +71,7 @@ export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateS
         return await delegate.update({ where: { id }, data: parsed.data })
       } catch (err) {
         if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans' })
+        if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Bu kod zaten kullanılıyor' })
         throw err
       }
     })

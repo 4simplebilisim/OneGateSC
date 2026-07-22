@@ -52,6 +52,7 @@ model TBLCOMPANY {
   partnerGroups       TBLPARTNERGROUP[]
   locationCapacities  TBLLOCATIONCAPACITY[]
   barcodeTypes        TBLBARCODETYPE[]
+  integrationPackages TBLINTEGRATIONPACKAGE[]
   parameters          TBLPARAMETER[]
   printers            TBLPRINTER[]
   documentStatuses    TBLDOCUMENTSTATUS[]
@@ -1923,6 +1924,15 @@ model TBLCONDITIONBREAKLOG {
 }
 
 // Entegrasyon aktarım logu (legacy TBLSBENTEGRASYONAKTARIM — sadeleştirilmiş): dış sistem izleme + manuel tetikleme
+// Entegrasyon paketi tipi (legacy BYTPAKETTIPI) — bağlantı/kimlik şekli tipe göre değişir
+enum IntegrationPackageType {
+  GENERIC_REST // düz REST hedefi (özel/3. parti)
+  NETSIS_REST // Netsis NetOpenX REST (/api/v2 + OAuth2 password: DbName/DbUser/Branch/NetsisUser)
+  LOGO_REST // Logo Objects REST (ClientId/Secret Basic → Bearer; firmNr/periodNr)
+
+  @@schema("wms")
+}
+
 enum IntegrationDirection {
   IN // Gelen Aktarım
   OUT // Giden Aktarım
@@ -1935,6 +1945,67 @@ enum IntegrationStatus {
   SUCCESS
   ERROR
 
+  @@schema("wms")
+}
+
+// Entegrasyon Paketi (legacy TBLSBENTEGRASYONPAKET) — ERP bağlantı profili (Netsis NetOpenX REST / Logo Objects REST).
+// Netsis: baseUrl=/api/v2 kökü + DbName/DbUser/BranchCode + Netsis kullanıcı; Logo: REST anahtarı (ClientId/Secret) + firma/dönem no.
+model TBLINTEGRATIONPACKAGE {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  code         String   @db.VarChar(40)
+  name         String?  @db.VarChar(150)
+  packageType  IntegrationPackageType @default(GENERIC_REST) // legacy BYTPAKETTIPI
+  baseUrl      String?  @db.VarChar(300) // legacy TXTSUNUCUADI — http://host:port(/api/v2)
+  username     String?  @db.VarChar(100) // legacy TXTKULLANICI (ERP kullanıcısı)
+  password     String?  @db.VarChar(200) // legacy TXTSIFRE
+  clientId     String?  @db.VarChar(150) // Logo REST anahtar sahibi (ClientId)
+  clientSecret String?  @db.VarChar(200) // Logo REST anahtar değeri (ClientSecret)
+  dbType       String?  @db.VarChar(30) // legacy BYTDBTIP (Netsis: vtMSSQL vb.)
+  dbName       String?  @db.VarChar(100) // legacy TXTDBADI
+  dbUser       String?  @db.VarChar(100) // legacy TXTDBKULLANICI
+  dbPassword   String?  @db.VarChar(200) // legacy TXTDBSIFRE
+  branchCode   String?  @db.VarChar(20) // legacy TXTSUBE (Netsis şube)
+  firmNr       String?  @db.VarChar(10) // Logo firma no (BYTCOKLUFIRMAAKTARIMI bağlamı)
+  periodNr     String?  @db.VarChar(10) // legacy TXTDONEM (Logo dönem)
+  logging      Boolean  @default(false) // legacy BYTLOGLAMA
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   TBLCOMPANY              @relation(fields: [companyId], references: [id])
+  addresses TBLINTEGRATIONADDRESS[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Entegrasyon Adresi (legacy TBLSBENTEGRASYONADRES) — operasyon × olay → hedef uç eşlemesi.
+// Tetikler legacy bayrak karşılıkları: yaratma/ilk okutma/onay/kaydetme → onCreate/onFirstScan/onConfirm/onComplete.
+model TBLINTEGRATIONADDRESS {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  packageId       Int
+  operationTypeId Int? // legacy LNGOPERASYONTIPKOD (null = genel)
+  facilityId      Int? // legacy LNGDISTKOD
+  name            String?  @db.VarChar(150) // legacy TXTTANIMI
+  path            String   @db.VarChar(300) // legacy TXTADRES — uç yolu (/ItemSlips, /salesDispatches) veya tam URL
+  sortOrder       Int      @default(0) // legacy BYTENTEGRASYON_SIRA
+  onCreate        Boolean  @default(false) // legacy BYTYARATMAENTEGRASYONU
+  onFirstScan     Boolean  @default(false) // legacy BYTILKOKUTMAENTEGRASYONU
+  onConfirm       Boolean  @default(false) // legacy BYTONAYENTEGRASYONU
+  onComplete      Boolean  @default(false) // legacy BYTKAYDETMEENTEGRASYONU
+  logging         Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  package TBLINTEGRATIONPACKAGE @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([packageId])
+  @@index([operationTypeId])
   @@schema("wms")
 }
 
