@@ -26,6 +26,8 @@ const pkgCreate = z.object({
   firmNr: z.string().max(10).nullish(),
   periodNr: z.string().max(10).nullish(),
   logging: z.boolean().optional(),
+  logoVersion: z.number().int().nullish(), // legacy BYTLOGOVERSIYON (1=LOGO 2.02 üstü, 0=öncesi)
+  multiCompanyTransfer: z.boolean().optional(), // legacy BYTCOKLUFIRMAAKTARIMI
   isActive: z.boolean().optional(),
 })
 const pkgUpdate = pkgCreate.partial().omit({ code: true })

@@ -1969,12 +1969,15 @@ model TBLINTEGRATIONPACKAGE {
   firmNr       String?  @db.VarChar(10) // Logo firma no (BYTCOKLUFIRMAAKTARIMI bağlamı)
   periodNr     String?  @db.VarChar(10) // legacy TXTDONEM (Logo dönem)
   logging      Boolean  @default(false) // legacy BYTLOGLAMA
+  logoVersion  Int?     @db.SmallInt // legacy BYTLOGOVERSIYON (1=LOGO 2.02 üstü, 0=öncesi)
+  multiCompanyTransfer Boolean @default(false) // legacy BYTCOKLUFIRMAAKTARIMI
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   company   TBLCOMPANY              @relation(fields: [companyId], references: [id])
   addresses TBLINTEGRATIONADDRESS[]
+  logs      TBLINTEGRATIONLOG[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2002,6 +2005,7 @@ model TBLINTEGRATIONADDRESS {
   updatedAt       DateTime @updatedAt
 
   package TBLINTEGRATIONPACKAGE @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  logs    TBLINTEGRATIONLOG[]
 
   @@index([companyId])
   @@index([packageId])
@@ -2013,15 +2017,25 @@ model TBLINTEGRATIONLOG {
   id           Int                  @id @default(autoincrement())
   companyId    Int
   direction    IntegrationDirection
-  entityType   String               @db.VarChar(40) // MALZEME/CARI/SIPARIS/FATURA/ISEMRI/DEPO...
-  status       IntegrationStatus    @default(SUCCESS)
-  referenceKey String?              @db.VarChar(100) // ilgili kayıt anahtarı (ör. belge no)
-  message      String?              @db.VarChar(500)
+  entityType   String               @db.VarChar(40) // legacy TXTTRANSACTIONKONUSU — MALZEME/CARI/SIPARIS/FATURA/TALEP...
+  status       IntegrationStatus    @default(SUCCESS) // legacy BYTMESAJTIPI/BYTDURUM
+  referenceKey String?              @db.VarChar(100) // legacy TXTENTEGRASYONKODU (kayıt anahtarı / uç yolu)
+  message      String?              @db.VarChar(500) // legacy TXTMESAJTANIMI
+  packageId    Int? // hangi paketle (legacy'de adres üzerinden; manuel tetiklemede adres olmayabilir)
+  addressId    Int? // legacy LNGENTEGRASYONADRESKOD
+  documentId   Int? // legacy LNGBELGEKOD (ilişkisiz — log tarihçesi belgeden bağımsız yaşar)
+  createdById  Int? // legacy LNGKULLANICIKOD
+  payload      String? // legacy TXTXMLTEXT — istek/yanıt gövdesi (kısaltılmış)
   createdAt    DateTime             @default(now())
   processedAt  DateTime?            @default(now())
 
+  package TBLINTEGRATIONPACKAGE? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  address TBLINTEGRATIONADDRESS? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
   @@index([companyId])
   @@index([direction])
+  @@index([packageId])
+  @@index([status])
   @@schema("wms")
 }
 

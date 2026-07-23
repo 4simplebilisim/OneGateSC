@@ -136,11 +136,17 @@ export const IntegrationPackageForm = ({ mode }: { mode: 'create' | 'edit' }) =>
             <Col xs={12} sm={6}><Form.Item label="Client Secret" name="clientSecret" rules={[{ required: true, message: 'Client Secret gerekli' }]}><Input.Password autoComplete="new-password" /></Form.Item></Col>
             <Col xs={12} sm={4}><Form.Item label="Firma No" name="firmNr" rules={[{ required: true, message: 'Firma no gerekli' }]}><Input placeholder="1" /></Form.Item></Col>
             <Col xs={12} sm={4}><Form.Item label="Dönem No" name="periodNr"><Input placeholder="1" /></Form.Item></Col>
+            <Col xs={12} sm={4}>
+              <Form.Item label="Logo Versiyonu" name="logoVersion" tooltip="Legacy BYTLOGOVERSIYON">
+                <Select allowClear placeholder="Seçin" options={[{ value: 1, label: 'LOGO 2.02 üstü' }, { value: 0, label: 'LOGO 2.02 öncesi' }]} />
+              </Form.Item>
+            </Col>
           </Row>
         )}
 
         <Row gutter={16}>
           <Col xs={12} sm={4}><Form.Item label="Log Tutulsun" name="logging" valuePropName="checked" tooltip="Aktarımlar Entegrasyon İzleme'ye yazılır"><Switch /></Form.Item></Col>
+          <Col xs={12} sm={5}><Form.Item label="Çoklu Firma Aktarımı" name="multiCompanyTransfer" valuePropName="checked" tooltip="Legacy BYTCOKLUFIRMAAKTARIMI — birden çok ERP firmasına aktarım"><Switch /></Form.Item></Col>
           <Col xs={12} sm={4}><Form.Item label="Aktif" name="isActive" valuePropName="checked"><Switch /></Form.Item></Col>
         </Row>
 

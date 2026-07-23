@@ -27,10 +27,19 @@ export interface ConnectionTestResult {
 }
 
 const TIMEOUT_MS = 8000
+// Ağ hatalarını kullanıcı diline çevirir ("fetch failed" log'a/ekrana çıkmasın)
 async function timedFetch(url: string, init: RequestInit): Promise<Response> {
   const ctl = new AbortController()
   const t = setTimeout(() => ctl.abort(), TIMEOUT_MS)
-  try { return await fetch(url, { ...init, signal: ctl.signal }) } finally { clearTimeout(t) }
+  try {
+    return await fetch(url, { ...init, signal: ctl.signal })
+  } catch (err) {
+    const e = err as Error & { cause?: { code?: string } }
+    if (e.name === 'AbortError') throw new Error(`Zaman aşımı (${TIMEOUT_MS / 1000} sn) — sunucuya erişilemiyor`)
+    if (e.cause?.code === 'ECONNREFUSED') throw new Error('Bağlantı reddedildi — adres/port kapalı veya servis çalışmıyor')
+    if (e.cause?.code === 'ENOTFOUND') throw new Error('Sunucu adı çözülemedi — adresi kontrol edin')
+    throw new Error(e.cause?.code ? `Ağ hatası (${e.cause.code})` : e.message)
+  } finally { clearTimeout(t) }
 }
 const trimBase = (u: string) => u.replace(/\/+$/, '')
 
@@ -81,13 +90,13 @@ export async function logoGetToken(p: IntegrationPackageLike): Promise<{ token?:
   return { token: body.access_token, raw: body }
 }
 
-/** Token'lı istek yardımcısı — gönderim akışları bunu kullanır (path adres tanımından gelir). */
-export async function integrationRequest(p: IntegrationPackageLike, token: string, method: string, path: string, payload?: unknown): Promise<{ status: number; body: unknown }> {
+/** İstek yardımcısı — gönderim/okuma akışları bunu kullanır (path adres tanımından gelir; token GENERIC'te yok). */
+export async function integrationRequest(p: IntegrationPackageLike, token: string | null, method: string, path: string, payload?: unknown): Promise<{ status: number; body: unknown }> {
   if (!p.baseUrl) throw new Error('Sunucu adresi (baseUrl) boş')
   const url = /^https?:\/\//i.test(path) ? path : `${trimBase(p.baseUrl)}${path.startsWith('/') ? '' : '/'}${path}`
   const res = await timedFetch(url, {
     method,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(payload !== undefined ? { 'content-type': 'application/json' } : {}) },
     ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
   })
   const body = await res.json().catch(() => null)
@@ -109,11 +118,6 @@ export async function testConnection(p: IntegrationPackageLike): Promise<Connect
     const res = await timedFetch(trimBase(p.baseUrl), { method: 'GET' })
     return { ok: res.status < 500, status: res.status, message: `Sunucuya erişildi (HTTP ${res.status})` }
   } catch (err) {
-    const e = err as Error & { cause?: { code?: string } }
-    const code = e.cause?.code
-    if (e.name === 'AbortError') return { ok: false, message: `Zaman aşımı (${TIMEOUT_MS / 1000} sn) — sunucuya erişilemiyor` }
-    if (code === 'ECONNREFUSED') return { ok: false, message: 'Bağlantı reddedildi — adres/port kapalı veya servis çalışmıyor' }
-    if (code === 'ENOTFOUND') return { ok: false, message: 'Sunucu adı çözülemedi — adresi kontrol edin' }
-    return { ok: false, message: e.message }
+    return { ok: false, message: (err as Error).message } // timedFetch ağ hatalarını Türkçeleştirir
   }
 }

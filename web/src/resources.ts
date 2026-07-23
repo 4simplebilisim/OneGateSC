@@ -69,7 +69,8 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'bulk-doc-ops-tr', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Transfer' },
   { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
-  // Entegrasyon: Uyarlamalar › Entegrasyon grubuna taşındı (Paket + İzleme) — altyapı geldi (2026-07)
+  // Entegrasyon (İşlemler) — StokBar SbEntegrasyonAktarim: manuel tetikleme + aktarım mesajları; tanımlar Uyarlamalar › Entegrasyon'da
+  { name: 'integration-transfer', label: 'Entegrasyon Aktarım', section: 'İşlemler', group: 'Entegrasyon' },
   // Sayım
   { name: 'stock-counts', label: 'Sayım Girişi', section: 'İşlemler', group: 'Sayım' },
   { name: 'count-differences', label: 'Sayım Fark', section: 'İşlemler', group: 'Sayım' },

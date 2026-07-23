@@ -35,6 +35,7 @@ export const FK_RESOURCE: Record<string, string> = {
   locationGroupId: 'location-groups', partnerGroupId: 'partner-groups', routingTypeId: 'routing-types',
   workOrderId: 'work-orders', shipmentId: 'shipments', invoiceId: 'invoices',
   labelTemplateId: 'label-templates', reportId: 'report-defs',
+  packageId: 'integration-packages',
 }
 
 // FK alan adı → Türkçe etiket
@@ -61,4 +62,5 @@ export const FK_LABEL: Record<string, string> = {
   locationGroupId: 'Lokasyon Grubu', partnerGroupId: 'Cari Grubu', routingTypeId: 'Yönlendirme Tipi',
   workOrderId: 'İş Emri', shipmentId: 'Sevkiyat', invoiceId: 'Fatura',
   labelTemplateId: 'Etiket Şablonu', reportId: 'Rapor',
+  packageId: 'Entegrasyon Paketi',
 }

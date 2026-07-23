@@ -52,6 +52,7 @@ const PRETTY: Record<string, string> = {
   driverName: 'Sürücü', plannedAt: 'Planlanan', dispatchedAt: 'Sevk', deliveredAt: 'Teslim',
   totalAmount: 'Tutar', paidAmount: 'Ödenen', invoiceNo: 'Fatura No', countNo: 'Sayım No',
   systemQty: 'Sistem', countedQty: 'Sayılan', collectedQty: 'Toplanan', qtyDelta: 'Miktar (±)',
+  entityType: 'İşlem Tipi', referenceKey: 'Referans', message: 'Mesaj', userName: 'Kullanıcı', createdAt: 'İşlem Tarihi',
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -232,7 +233,9 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
     // Parametreler: Tanım rehberden çözülür (kod kolonunda "Kod — Tanım") → boş name kolonu gizli
     ...(resource === 'parameters' ? ['name'] : []),
     // Entegrasyon Paketi: sır/kimlik alanları listede asla görünmesin (dbType ham İngilizce — o da gizli)
-    ...(resource === 'integration-packages' ? ['password', 'clientSecret', 'dbPassword', 'dbUser', 'username', 'clientId', 'dbType'] : []),
+    ...(resource === 'integration-packages' ? ['password', 'clientSecret', 'dbPassword', 'dbUser', 'username', 'clientId', 'dbType', 'logoVersion', 'multiCompanyTransfer'] : []),
+    // Entegrasyon İzleme: gövde + iç bağlar gizli (Kullanıcı userName'den, paket packageId'den çözülür)
+    ...(resource === 'integration-logs' ? ['payload', 'package', 'address', 'addressId', 'documentId', 'processedAt'] : []),
     ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
   const columns = [
     ...Object.keys(sample)

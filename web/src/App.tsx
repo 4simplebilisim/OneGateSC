@@ -17,6 +17,7 @@ import { LocationBulkGenerate } from './pages/LocationBulkGenerate'
 import { OperationTypeForm } from './pages/OperationTypeForm'
 import { BarcodeTypeForm } from './pages/BarcodeTypeForm'
 import { IntegrationPackageForm } from './pages/IntegrationPackageForm'
+import { IntegrationTransfer } from './pages/IntegrationTransfer'
 import { ProductForm } from './pages/ProductForm'
 import { PartnerForm } from './pages/PartnerForm'
 import { LabelDesigner } from './pages/LabelDesigner'
@@ -131,6 +132,7 @@ export default function App() {
           <Route path="barcode-types/:id/edit" element={<BarcodeTypeForm mode="edit" />} />
           <Route path="integration-packages/new" element={<IntegrationPackageForm mode="create" />} />
           <Route path="integration-packages/:id/edit" element={<IntegrationPackageForm mode="edit" />} />
+          <Route path="integration-transfer" element={<IntegrationTransfer />} />
           <Route path="products/new" element={<ProductForm mode="create" />} />
           <Route path="products/:id/edit" element={<ProductForm mode="edit" />} />
           <Route path="partners/new" element={<PartnerForm mode="create" />} />
