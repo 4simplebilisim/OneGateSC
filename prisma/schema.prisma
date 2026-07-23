@@ -1978,6 +1978,7 @@ model TBLINTEGRATIONPACKAGE {
   company   TBLCOMPANY              @relation(fields: [companyId], references: [id])
   addresses TBLINTEGRATIONADDRESS[]
   logs      TBLINTEGRATIONLOG[]
+  queries   TBLINTEGRATIONQUERY[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2004,12 +2005,91 @@ model TBLINTEGRATIONADDRESS {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  package TBLINTEGRATIONPACKAGE @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  logs    TBLINTEGRATIONLOG[]
+  package     TBLINTEGRATIONPACKAGE     @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  logs        TBLINTEGRATIONLOG[]
+  writeParams TBLINTEGRATIONWRITEPARAM[]
 
   @@index([companyId])
   @@index([packageId])
   @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Entegrasyon Okuma Sorgusu (legacy TBLSBENTEGRASYONSORGU) — GELEN aktarımın kaynak tanımı.
+// Legacy'de SQL SELECT; REST modelde '/uç/yolu' yazılırsa motor adressiz aktarımda bunu kullanır (bilinen uçtan önce).
+model TBLINTEGRATIONQUERY {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  packageId Int // legacy LNGPAKETKOD
+  queryType String   @db.VarChar(20) // legacy BYTSORGUTIP — MALZEME/CARI/SIPARIS/FATURA/TALEP
+  query     String // legacy TXTSORGU — SQL (legacy) veya REST uç yolu
+  ordering  String?  @db.VarChar(300) // legacy TXTSIRALAMA
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  package TBLINTEGRATIONPACKAGE       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  columns TBLINTEGRATIONQUERYCOLUMN[]
+
+  @@index([companyId])
+  @@index([packageId])
+  @@schema("wms")
+}
+
+// Sorgu Kolon Dönüşümü (legacy TBLSBENTEGRASYONSORGUKOLONDONUSUM) — kaynak kolon → OneGate alanı eşlemesi.
+model TBLINTEGRATIONQUERYCOLUMN {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  queryId      Int // legacy LNGSORGUKOD
+  sourceColumn String   @db.VarChar(100) // legacy TXTSORGUKOLON
+  targetField  String   @db.VarChar(40) // legacy BYTSBKOLON (tinyint kod) — anlamlı alan kodu (PRODUCT_CODE, QUANTITY...)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  query TBLINTEGRATIONQUERY @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([queryId])
+  @@schema("wms")
+}
+
+// Entegrasyon Yazma Parametresi (legacy TBLSBENTYAZMAPARAMETRE) — GİDEN aktarım kırılım bayrakları.
+// Legacy TXTKOD = operasyon tipi dönüşüm kodu → bizde conversionId (TBLOPERATIONTYPECONVERSION ref'i, ilişkisiz).
+model TBLINTEGRATIONWRITEPARAM {
+  id                  Int      @id @default(autoincrement())
+  companyId           Int
+  facilityId          Int? // legacy LNGDISTKOD
+  conversionId        Int? // legacy TXTKOD (operasyon tipi dönüşüm)
+  addressId           Int // legacy LNGENTADRESKOD
+  bulkAction          Boolean  @default(false) // legacy BYTTOPLUISLEM
+  batchTransfer       Boolean  @default(false) // legacy BYTBATCHAKTARIMI
+  palletBatchTransfer Boolean  @default(false) // legacy BYTPALETBATCHAKTARIMI
+  serialTransfer      Boolean  @default(false) // legacy BYTSERIAKTARIMI
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  address TBLINTEGRATIONADDRESS @relation(fields: [addressId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([addressId])
+  @@schema("wms")
+}
+
+// Entegrasyon XML Convert (legacy TBLSBENTEGRASYONXMLCONVERT) — gövde dönüşüm şablonları (XML + XSL).
+// REST veri eşleme turunda JSON şablonun temeli; şimdilik tanım deposu.
+model TBLINTEGRATIONXMLCONVERT {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  name        String   @db.VarChar(100) // legacy TXTENTEGRASYONISMI
+  xmlTemplate String? // legacy TXTXMLCONVERSION
+  xslTemplate String? // legacy TXTXSLCONVERSION
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
   @@schema("wms")
 }
 

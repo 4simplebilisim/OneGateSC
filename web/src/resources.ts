@@ -157,11 +157,15 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'report-defs', label: 'Rapor Başlık', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-criteria', label: 'Rapor Kriter', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-fields', label: 'Rapor Saha', section: 'Uyarlamalar', group: 'Rapor' },
-  // Entegrasyon (StokBar Uyarlamalar › Entegrasyon: Paket / Okuma Sorgu / Adres / Yazma Param) — tanım ekranları.
-  // Paket = ERP bağlantı profili; Adres = op-bazlı uç + tetikler (paket formunda sekme + düz menü "ikisi birden").
-  // Okuma Sorgu + Yazma Parametre: legacy SQL/DLL-dönemi ekranları — REST'te karşılığı veri eşleme turunda gelecek (şimdilik yok).
+  // Entegrasyon (StokBar Uyarlamalar › Entegrasyon menü sırası birebir) — tanım ekranları.
+  // Paket = ERP bağlantı profili; Okuma Sorgu = GELEN kaynak tanımı (+ Kolon Dönüşüm sekmesi; '/uç' yazılırsa motor kullanır);
+  // Adres = op-bazlı uç + tetikler ("ikisi birden": paket formunda sekme + düz menü); Yazma Param = GİDEN kırılım bayrakları;
+  // XML Convert = gövde dönüşüm şablonları (veri eşleme motoru sonraki tur). Excel Aktarımı Dönüşüm + Dinamik Ssp = SSP/dosya dönemi, REST'te anlamsız.
   { name: 'integration-packages', label: 'Entegrasyon Paket', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  { name: 'integration-queries', label: 'Entegrasyon Okuma Sorgu', section: 'Uyarlamalar', group: 'Entegrasyon' },
   { name: 'integration-addresses', label: 'Entegrasyon Adres', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  { name: 'integration-write-params', label: 'Entegrasyon Yazma Parametre', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  { name: 'integration-xml-converts', label: 'Entegrasyon XML Convert', section: 'Uyarlamalar', group: 'Entegrasyon' },
 
   // ── El Terminali (Android) dinamik menü ──
   { name: 'handheld-menu-groups', label: 'El Terminali Menü', section: 'Uyarlamalar', group: 'El Terminali' },

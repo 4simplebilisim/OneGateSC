@@ -83,3 +83,78 @@ export async function integrationPackageRoutes(app: FastifyInstance) {
 
 // Adres CRUD — LinkTab ?packageId=X ile filtreler
 export const integrationAddressRoutes = simpleCrud(prisma.tBLINTEGRATIONADDRESS as unknown as Delegate, addrCreate, addrUpdate, 'Entegrasyon adresi bulunamadı', 'packageId', addrGuard)
+
+// ── Okuma Sorgusu (legacy TBLSBENTEGRASYONSORGU) — GELEN kaynak tanımı; '/uç' yazılırsa motor kullanır
+const queryTypes = ['MALZEME', 'CARI', 'SIPARIS', 'FATURA', 'TALEP'] as const
+const qryCreate = z.object({
+  packageId: z.number().int().positive(),
+  queryType: z.enum(queryTypes),
+  query: z.string().min(1).max(20000), // legacy TXTSORGU (SQL) veya REST uç yolu
+  ordering: z.string().max(300).nullish(),
+  isActive: z.boolean().optional(),
+})
+const qryUpdate = qryCreate.partial().omit({ packageId: true })
+const qryGuard: BeforeWrite = async ({ data, companyId }) => {
+  const pkgId = data.packageId as number | undefined
+  if (pkgId == null) return null
+  const pkg = await prisma.tBLINTEGRATIONPACKAGE.findFirst({ where: { id: pkgId, companyId }, select: { id: true } })
+  return pkg ? null : 'Geçersiz entegrasyon paketi — bu firmaya ait değil'
+}
+export const integrationQueryRoutes = simpleCrud(prisma.tBLINTEGRATIONQUERY as unknown as Delegate, qryCreate, qryUpdate, 'Okuma sorgusu bulunamadı', 'packageId', qryGuard)
+
+// Sorgu Kolon Dönüşümü (legacy TBLSBENTEGRASYONSORGUKOLONDONUSUM) — LinkTab ?queryId=X
+const qcolCreate = z.object({
+  queryId: z.number().int().positive(),
+  sourceColumn: z.string().min(1).max(100),
+  targetField: z.string().min(1).max(40),
+  sortOrder: z.number().int().nullish(),
+})
+const qcolUpdate = qcolCreate.partial().omit({ queryId: true })
+const qcolGuard: BeforeWrite = async ({ data, companyId }) => {
+  const qid = data.queryId as number | undefined
+  if (qid == null) return null
+  const qry = await prisma.tBLINTEGRATIONQUERY.findFirst({ where: { id: qid, companyId }, select: { id: true } })
+  return qry ? null : 'Geçersiz okuma sorgusu — bu firmaya ait değil'
+}
+export const integrationQueryColumnRoutes = simpleCrud(prisma.tBLINTEGRATIONQUERYCOLUMN as unknown as Delegate, qcolCreate, qcolUpdate, 'Kolon dönüşümü bulunamadı', 'queryId', qcolGuard)
+
+// ── Yazma Parametresi (legacy TBLSBENTYAZMAPARAMETRE) — GİDEN kırılım bayrakları
+const wpCreate = z.object({
+  facilityId: z.number().int().positive().nullish(),
+  conversionId: z.number().int().positive().nullish(),
+  addressId: z.number().int().positive(),
+  bulkAction: z.boolean().optional(),
+  batchTransfer: z.boolean().optional(),
+  palletBatchTransfer: z.boolean().optional(),
+  serialTransfer: z.boolean().optional(),
+  isActive: z.boolean().optional(),
+})
+const wpUpdate = wpCreate.partial()
+const wpGuard: BeforeWrite = async ({ data, companyId }) => {
+  const addrId = data.addressId as number | undefined
+  if (addrId != null) {
+    const addr = await prisma.tBLINTEGRATIONADDRESS.findFirst({ where: { id: addrId, companyId }, select: { id: true } })
+    if (!addr) return 'Geçersiz entegrasyon adresi — bu firmaya ait değil'
+  }
+  const convId = data.conversionId as number | null | undefined
+  if (convId != null) {
+    const conv = await prisma.tBLOPERATIONTYPECONVERSION.findFirst({ where: { id: convId, companyId }, select: { id: true } })
+    if (!conv) return 'Geçersiz operasyon tipi dönüşümü — bu firmaya ait değil'
+  }
+  const facId = data.facilityId as number | null | undefined
+  if (facId != null) {
+    const bad = await firstBadRef(companyId, [['Tesis', 'facility', facId]])
+    if (bad) return `Geçersiz ${bad} — bu firmaya ait değil`
+  }
+  return null
+}
+export const integrationWriteParamRoutes = simpleCrud(prisma.tBLINTEGRATIONWRITEPARAM as unknown as Delegate, wpCreate, wpUpdate, 'Yazma parametresi bulunamadı', 'addressId', wpGuard)
+
+// ── XML Convert (legacy TBLSBENTEGRASYONXMLCONVERT) — gövde dönüşüm şablonları
+const xmlCreate = z.object({
+  name: z.string().min(1).max(100),
+  xmlTemplate: z.string().max(100000).nullish(),
+  xslTemplate: z.string().max(100000).nullish(),
+  isActive: z.boolean().optional(),
+})
+export const integrationXmlConvertRoutes = simpleCrud(prisma.tBLINTEGRATIONXMLCONVERT as unknown as Delegate, xmlCreate, xmlCreate.partial(), 'XML dönüşümü bulunamadı')

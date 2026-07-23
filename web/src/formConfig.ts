@@ -4,7 +4,7 @@ import { PARAM_CATALOG } from './paramCatalog'
 export interface FieldDef {
   name: string
   label: string
-  type?: 'text' | 'number' | 'bool' | 'select' | 'ref' | 'color'
+  type?: 'text' | 'number' | 'bool' | 'select' | 'ref' | 'color' | 'textarea'
   required?: boolean
   options?: { value: string | number; label: string }[]
   refResource?: string // type 'ref' için seçenekleri buradan çeker
@@ -879,6 +879,33 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'onConfirm', label: 'Onay Entegrasyonu', type: 'bool' },
     { name: 'onComplete', label: 'Kaydetme Entegrasyonu', type: 'bool' },
     { name: 'logging', label: 'Loglama', type: 'bool' },
+  ],
+  // Entegrasyon Okuma Sorgu — form ÖZEL ekranda (IntegrationQueryForm: sorgu + Kolon Dönüşüm sekmesi);
+  // bu liste GenericList'i besler (hasForm + başlıklar + sorgu tipi çevirisi).
+  'integration-queries': [
+    { name: 'packageId', label: 'Entegrasyon Paket', type: 'ref', required: true, refResource: 'integration-packages' },
+    { name: 'queryType', label: 'Sorgu Tipi', type: 'select', required: true, options: [
+      { value: 'MALZEME', label: 'Malzeme' }, { value: 'CARI', label: 'Cari' }, { value: 'SIPARIS', label: 'Sipariş' },
+      { value: 'FATURA', label: 'Fatura' }, { value: 'TALEP', label: 'Talep' },
+    ] },
+    { name: 'ordering', label: 'Sıralama', type: 'text' },
+    { name: 'query', label: 'Sorgu', type: 'textarea', required: true },
+  ],
+  // Entegrasyon Yazma Parametre (legacy TBLSBENTYAZMAPARAMETRE) — GİDEN kırılım bayrakları
+  'integration-write-params': [
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
+    { name: 'conversionId', label: 'Operasyon Tipi Dönüşüm', type: 'ref', refResource: 'operation-conversions' },
+    { name: 'addressId', label: 'Entegrasyon Adres', type: 'ref', required: true, refResource: 'integration-addresses' },
+    { name: 'bulkAction', label: 'Toplu İşlem', type: 'bool' },
+    { name: 'batchTransfer', label: 'Batch Aktarımı', type: 'bool' },
+    { name: 'palletBatchTransfer', label: 'Palet Batch Aktarımı', type: 'bool' },
+    { name: 'serialTransfer', label: 'Seri Aktarımı', type: 'bool' },
+  ],
+  // Entegrasyon XML Convert (legacy TBLSBENTEGRASYONXMLCONVERT) — gövde dönüşüm şablonları
+  'integration-xml-converts': [
+    { name: 'name', label: 'Entegrasyon Adı', type: 'text', required: true },
+    { name: 'xmlTemplate', label: 'XML Conversion', type: 'textarea' },
+    { name: 'xslTemplate', label: 'XSL Conversion', type: 'textarea' },
   ],
   // Barkod Tipi — form ÖZEL ekranda (BarcodeTypeForm: eşleşme+mod+Segmentler+Test); bu liste yalnız
   // GenericList'i besler: buton görünürlüğü (hasForm) + kolon başlıkları (label) + mod değer çevirisi (select options).

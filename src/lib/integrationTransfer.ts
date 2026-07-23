@@ -51,8 +51,20 @@ export async function runTransfer(t: TransferInput) {
     if (!address) throw new TransferError('Geçersiz adres — bu pakete ait değil')
     if (!address.isActive) throw new TransferError('Adres pasif — aktarım yapılamaz')
   }
-  const path = address?.path ?? KNOWN_PATHS[pkg.packageType]?.[t.entityType]
-  if (!path) throw new TransferError(`${t.entityType} için bilinen uç yok — pakete adres tanımlayıp seçin`)
+  // Path önceliği: seçili adres > aktif Okuma Sorgusu (REST uç yolu yazılmışsa) > bilinen ERP ucu.
+  // Sorguya legacy SQL yazılmışsa (SELECT...) REST'te uygulanamaz — yok sayılır, bilinen uca düşülür.
+  let queryPath: string | undefined
+  if (!address && t.direction === 'IN') {
+    const qry = await prisma.tBLINTEGRATIONQUERY.findFirst({
+      where: { companyId: t.companyId, packageId: pkg.id, queryType: t.entityType, isActive: true },
+      orderBy: { id: 'asc' },
+      select: { query: true },
+    })
+    const qText = qry?.query.trim()
+    if (qText && (/^https?:\/\//i.test(qText) || qText.startsWith('/'))) queryPath = qText
+  }
+  const path = address?.path ?? queryPath ?? KNOWN_PATHS[pkg.packageType]?.[t.entityType]
+  if (!path) throw new TransferError(`${t.entityType} için bilinen uç yok — pakete adres ya da okuma sorgusu (uç yolu) tanımlayın`)
 
   let status: 'SUCCESS' | 'ERROR' = 'ERROR'
   let message = ''

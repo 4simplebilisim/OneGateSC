@@ -18,6 +18,7 @@ import { OperationTypeForm } from './pages/OperationTypeForm'
 import { BarcodeTypeForm } from './pages/BarcodeTypeForm'
 import { IntegrationPackageForm } from './pages/IntegrationPackageForm'
 import { IntegrationTransfer } from './pages/IntegrationTransfer'
+import { IntegrationQueryForm } from './pages/IntegrationQueryForm'
 import { ProductForm } from './pages/ProductForm'
 import { PartnerForm } from './pages/PartnerForm'
 import { LabelDesigner } from './pages/LabelDesigner'
@@ -133,6 +134,8 @@ export default function App() {
           <Route path="integration-packages/new" element={<IntegrationPackageForm mode="create" />} />
           <Route path="integration-packages/:id/edit" element={<IntegrationPackageForm mode="edit" />} />
           <Route path="integration-transfer" element={<IntegrationTransfer />} />
+          <Route path="integration-queries/new" element={<IntegrationQueryForm mode="create" />} />
+          <Route path="integration-queries/:id/edit" element={<IntegrationQueryForm mode="edit" />} />
           <Route path="products/new" element={<ProductForm mode="create" />} />
           <Route path="products/:id/edit" element={<ProductForm mode="edit" />} />
           <Route path="partners/new" element={<PartnerForm mode="create" />} />
@@ -168,7 +171,7 @@ export default function App() {
           <Route path="stock-exit" element={<StockEntry direction="OUTBOUND" />} />
           <Route path="exit-labeling" element={<EntryLabeling direction="OUTBOUND" />} />
           <Route path="shipments/new" element={<ShipmentCreate />} />
-          {RESOURCES.filter((r) => hasForm(r.name) && !['products', 'partners', 'pallets', 'barcode-types', 'integration-packages'].includes(r.name)).flatMap((r) => [
+          {RESOURCES.filter((r) => hasForm(r.name) && !['products', 'partners', 'pallets', 'barcode-types', 'integration-packages', 'integration-queries'].includes(r.name)).flatMap((r) => [
             <Route key={`${r.name}-new`} path={`${r.name}/new`} element={<GenericForm resource={r.name} mode="create" />} />,
             <Route key={`${r.name}-edit`} path={`${r.name}/:id/edit`} element={<GenericForm resource={r.name} mode="edit" />} />,
           ])}
