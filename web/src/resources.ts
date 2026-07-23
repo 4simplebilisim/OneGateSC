@@ -69,8 +69,10 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'bulk-doc-ops-tr', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Transfer' },
   { name: 'doc-assign-tr', label: 'İş Atama', section: 'İşlemler', group: 'Transfer' },
   { name: 'stock-reclassify', label: 'Stok Operasyon', section: 'İşlemler', group: 'Transfer' },
-  // Entegrasyon (İşlemler) — StokBar SbEntegrasyonAktarim: manuel tetikleme + aktarım mesajları; tanımlar Uyarlamalar › Entegrasyon'da
+  // Entegrasyon (İşlemler) — StokBar kurgusu: Aktarım (manuel tetikleme) + İzleme (mesaj logları, salt-okunur);
+  // tanım ekranları (Paket/Adres) Uyarlamalar › Entegrasyon'da
   { name: 'integration-transfer', label: 'Entegrasyon Aktarım', section: 'İşlemler', group: 'Entegrasyon' },
+  { name: 'integration-logs', label: 'Entegrasyon İzleme', section: 'İşlemler', group: 'Entegrasyon', observe: true },
   // Sayım
   { name: 'stock-counts', label: 'Sayım Girişi', section: 'İşlemler', group: 'Sayım' },
   { name: 'count-differences', label: 'Sayım Fark', section: 'İşlemler', group: 'Sayım' },
@@ -155,10 +157,11 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'report-defs', label: 'Rapor Başlık', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-criteria', label: 'Rapor Kriter', section: 'Uyarlamalar', group: 'Rapor' },
   { name: 'report-fields', label: 'Rapor Saha', section: 'Uyarlamalar', group: 'Rapor' },
-  // Entegrasyon (StokBar Entegrasyon menüsü) — Paket = ERP bağlantı profili (Netsis/Logo/genel REST),
-  // Adresler paket formunun sekmesi (integration-addresses API); İzleme = aktarım logları + manuel tetikleme
-  { name: 'integration-packages', label: 'Entegrasyon Paketi', section: 'Uyarlamalar', group: 'Entegrasyon' },
-  { name: 'integration-logs', label: 'Entegrasyon İzleme', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  // Entegrasyon (StokBar Uyarlamalar › Entegrasyon: Paket / Okuma Sorgu / Adres / Yazma Param) — tanım ekranları.
+  // Paket = ERP bağlantı profili; Adres = op-bazlı uç + tetikler (paket formunda sekme + düz menü "ikisi birden").
+  // Okuma Sorgu + Yazma Parametre: legacy SQL/DLL-dönemi ekranları — REST'te karşılığı veri eşleme turunda gelecek (şimdilik yok).
+  { name: 'integration-packages', label: 'Entegrasyon Paket', section: 'Uyarlamalar', group: 'Entegrasyon' },
+  { name: 'integration-addresses', label: 'Entegrasyon Adres', section: 'Uyarlamalar', group: 'Entegrasyon' },
 
   // ── El Terminali (Android) dinamik menü ──
   { name: 'handheld-menu-groups', label: 'El Terminali Menü', section: 'Uyarlamalar', group: 'El Terminali' },

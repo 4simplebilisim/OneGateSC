@@ -236,6 +236,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
     ...(resource === 'integration-packages' ? ['password', 'clientSecret', 'dbPassword', 'dbUser', 'username', 'clientId', 'dbType', 'logoVersion', 'multiCompanyTransfer'] : []),
     // Entegrasyon İzleme: gövde + iç bağlar gizli (Kullanıcı userName'den, paket packageId'den çözülür)
     ...(resource === 'integration-logs' ? ['payload', 'package', 'address', 'addressId', 'documentId', 'processedAt'] : []),
+    // Entegrasyon Adres: 4 tetik kolonu sığsın diye ikincil alanlar gizli (formda görünürler)
+    ...(resource === 'integration-addresses' ? ['facilityId', 'sortOrder', 'logging'] : []),
     ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
   const columns = [
     ...Object.keys(sample)

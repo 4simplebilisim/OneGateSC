@@ -865,6 +865,21 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
     { name: 'periodNr', label: 'Dönem', type: 'text' },
     { name: 'logging', label: 'Log', type: 'bool' },
   ],
+  // Entegrasyon Adres — StokBar Uyarlamalar › Entegrasyon › Entegrasyon Adres (düz ekran; paket formundaki
+  // Adresler sekmesiyle aynı API). Tetikler legacy bayraklar: Yaratma/İlk Okutma/Onay/Kaydetme.
+  'integration-addresses': [
+    { name: 'packageId', label: 'Entegrasyon Paket', type: 'ref', required: true, refResource: 'integration-packages' },
+    { name: 'operationTypeId', label: 'Operasyon Tipi', type: 'ref', refResource: 'operation-types' },
+    { name: 'facilityId', label: 'Tesis', type: 'ref', refResource: 'facilities' },
+    { name: 'name', label: 'Tanımı', type: 'text' },
+    { name: 'path', label: 'Adres (path)', type: 'text', required: true },
+    { name: 'sortOrder', label: 'Sıra', type: 'number' },
+    { name: 'onCreate', label: 'Yaratma Entegrasyonu', type: 'bool' },
+    { name: 'onFirstScan', label: 'İlk Okutma Entegrasyonu', type: 'bool' },
+    { name: 'onConfirm', label: 'Onay Entegrasyonu', type: 'bool' },
+    { name: 'onComplete', label: 'Kaydetme Entegrasyonu', type: 'bool' },
+    { name: 'logging', label: 'Loglama', type: 'bool' },
+  ],
   // Barkod Tipi — form ÖZEL ekranda (BarcodeTypeForm: eşleşme+mod+Segmentler+Test); bu liste yalnız
   // GenericList'i besler: buton görünürlüğü (hasForm) + kolon başlıkları (label) + mod değer çevirisi (select options).
   'barcode-types': [
