@@ -112,9 +112,12 @@ export const Login = () => {
             </Button>
           </Form>
 
-          <Typography.Paragraph type="secondary" style={{ marginTop: 24, fontSize: 12, textAlign: 'center' }}>
-            Demo: <code>admin / admin123</code> · <code>operator / operator123</code> · <code>viewer / viewer123</code>
-          </Typography.Paragraph>
+          {/* Demo kimlikleri yalnız LOKAL geliştirmede göster — canlıda şifreler rotasyonlu, bu satır yanıltır + kullanıcı adlarını ifşa eder */}
+          {!import.meta.env.PROD && (
+            <Typography.Paragraph type="secondary" style={{ marginTop: 24, fontSize: 12, textAlign: 'center' }}>
+              Demo: <code>admin / admin123</code> · <code>operator / operator123</code> · <code>viewer / viewer123</code>
+            </Typography.Paragraph>
+          )}
         </div>
       </div>
     </div>
