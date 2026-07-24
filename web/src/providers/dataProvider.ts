@@ -1,7 +1,10 @@
 import type { DataProvider } from '@refinedev/core'
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000'
+// Production build'de varsayılan SAME-ORIGIN ('' → /api nginx proxy'sine gider) — canlı bundle'a asla
+// localhost gömülmesin (aksi hâlde canlı site kullanıcının makinesindeki API'ye bağımlı kalır — yaşandı).
+// Dev'de Vite localhost:3000'e gider; VITE_API_URL her ikisini de ezebilir.
+const API_URL = import.meta.env.VITE_API_URL ?? (import.meta.env.PROD ? '' : 'http://localhost:3000')
 export const axiosInstance = axios.create({ baseURL: API_URL })
 
 // Her isteğe JWT + firma (tenant) header'ı ekle
