@@ -48,6 +48,8 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
     if (companyId) params.companyId = companyId
     // Koşullu bağımlılık: dependsOnWhen sağlanmıyorsa parametresiz (tam liste) yüklenir (ör. Ürün Grup modunda Birim daralmaz)
     const depActive = !f.dependsOnWhen || (allValues != null && allValues[f.dependsOnWhen.field] === f.dependsOnWhen.equals)
+    // Bağımlılık aktif ama parent seçilmemişse: tam liste YÜKLEME — boş kalsın (kontrol de "Önce X seçin" ile kilitlenir)
+    if (f.dependsOn && depActive && parentValue == null) { setRefOptions((prev) => ({ ...prev, [f.name]: [] })); return }
     if (f.dependsOn && parentValue != null && depActive) params[f.dependsOnParam ?? f.dependsOn] = parentValue
     axiosInstance.get(`/api/${source}`, { params }).then((r) => {
       const raw = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
@@ -65,8 +67,9 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
   }, [companyId])
 
   useEffect(() => {
-    // Bağımsız ref'leri yükle; bağımlı (dependsOn) olanlar parent seçilince (onValuesChange) / edit'te yüklenir
-    fields.filter((f) => f.type === 'ref' && f.refResource && !f.dependsOn).forEach((f) => loadRefOptions(f))
+    // Bağımsız ref'leri yükle; bağımlı (dependsOn) olanlar parent seçilince (onValuesChange) / edit'te yüklenir.
+    // dependsOnWhen'li alanlar başlangıçta koşulsuz sayılır → tam liste (ör. malzeme tipi seçilmeden Birim serbest)
+    fields.filter((f) => f.type === 'ref' && f.refResource && (!f.dependsOn || f.dependsOnWhen)).forEach((f) => loadRefOptions(f, undefined, {}))
     // companyId değişince (super-admin firma değiştirdi) ref seçenekleri o firmaya göre yeniden çekilir
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resource, companyId])
@@ -134,7 +137,14 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
     if (f.type === 'bool') return <Switch disabled={ro} />
     if (f.type === 'color') return <ColorPicker format="hex" showText disabled={ro} />
     if (f.type === 'select') return <Select options={f.options} allowClear showSearch optionFilterProp="label" disabled={ro} />
-    if (f.type === 'ref') return <Select options={refOptions[f.name] ?? []} showSearch optionFilterProp="label" placeholder="Seçiniz" disabled={ro} />
+    if (f.type === 'ref') {
+      // Bağımlılık aktifken parent seçilmemişse alan kilitli — kullanıcıyı sıraya yönlendir (ör. "Önce Ürün/Grup seçin")
+      const depActive = !f.dependsOnWhen || formVals[f.dependsOnWhen.field] === f.dependsOnWhen.equals
+      const waiting = !!f.dependsOn && depActive && formVals[f.dependsOn] == null
+      const parentLabel = waiting ? (fields.find((x) => x.name === f.dependsOn)?.label ?? f.dependsOn) : ''
+      return <Select options={refOptions[f.name] ?? []} showSearch optionFilterProp="label"
+        placeholder={waiting ? `Önce ${parentLabel} seçin` : 'Seçiniz'} disabled={ro || waiting} />
+    }
     if (f.type === 'textarea') return <Input.TextArea rows={10} style={{ fontFamily: 'Consolas, monospace', fontSize: 12.5 }} spellCheck={false} disabled={ro} />
     return <Input disabled={ro || (mode === 'edit' && f.name === 'code')} />
   }
