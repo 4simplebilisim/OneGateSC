@@ -117,6 +117,10 @@ h1, h2, h3, h4, h5,
 .og-stripe > td {
   background: var(--og-sunken);
 }
+/* Pasif kayıt satırı — hafif soluk (durum rozeti yine de görünür kalır) */
+.og-inactive > td {
+  opacity: 0.62;
+}
 .ant-table-tbody > tr:hover > td {
   background: var(--og-row-hover) !important;
 }

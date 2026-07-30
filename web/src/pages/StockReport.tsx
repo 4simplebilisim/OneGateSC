@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
-import { App, Button, Card, Select, Space, Statistic, Switch, Table, Tag } from 'antd'
+import { App, Button, Card, Select, Space, Statistic, Switch, Table, Tag, Tooltip } from 'antd'
 import { ReloadOutlined, DownloadOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
+import { STATUS_COLOR, STATUS_TR } from '../statusMeta'
 
 type Opt = { value: number; label: string }
 type Facility = { id: number; code: string; name: string }
@@ -131,7 +132,17 @@ export const StockReport = () => {
             { title: 'Depo', key: 'depo', render: (_, r) => depoCol(r), width: 130 },
             { title: 'Lokasyon', key: 'lok', render: (_, r) => r.location?.code ?? '—', width: 100 },
             { title: 'Ürün', key: 'urun', render: (_, r) => codeName(r.product?.code, r.product?.name), ellipsis: true },
-            { title: 'Statü', key: 'statu', render: (_, r) => <Tag>{codeName(r.status?.code, r.status?.name)}</Tag>, width: 130 },
+            // Statü: yerelleştirilmiş renkli rozet — uzun ad hücreye sığmazsa taşmak yerine kısaltılır, tamamı tooltip'te
+            { title: 'Statü', key: 'statu', width: 140, render: (_, r) => {
+              const c = r.status?.code
+              if (!c) return '—'
+              const label = r.status?.name || STATUS_TR[c] || c
+              return (
+                <Tooltip title={codeName(c, r.status?.name)}>
+                  <Tag color={STATUS_COLOR[c] ?? 'default'} style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle', marginInlineEnd: 0 }}>{label}</Tag>
+                </Tooltip>
+              )
+            } },
             { title: 'Parti', dataIndex: 'batchNo', render: (v: string | null) => v ?? '—', width: 90 },
             { title: 'Seri', dataIndex: 'serialNo', render: (v: string | null) => v ?? '—', width: 90 },
             { title: 'Palet', key: 'palet', render: (_, r) => r.pallet?.palletNo ?? '—', width: 90 },

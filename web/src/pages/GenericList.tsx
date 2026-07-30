@@ -12,6 +12,7 @@ import { hasForm, canWrite, FORM_CONFIG } from '../formConfig'
 import { hasDetail } from '../detailActions'
 import { hasTxnCreate } from '../txnConfig'
 import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
+import { STATUS_COLOR, STATUS_TR, DIRECTION_TR } from '../statusMeta'
 
 // DELETE endpoint'i olan kaynaklar (master factory + routing)
 const DELETE_OK = new Set([
@@ -55,12 +56,7 @@ const PRETTY: Record<string, string> = {
   entityType: 'İşlem Tipi', referenceKey: 'Referans', message: 'Mesaj', userName: 'Kullanıcı', createdAt: 'İşlem Tarihi',
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  COMPLETED: 'green', CONFIRMED: 'blue', PLANNED: 'gold', IN_PROGRESS: 'cyan', CANCELLED: 'red',
-  DRAFT: 'default', SUBMITTED: 'gold', APPROVED: 'green', REJECTED: 'red', SHIPPED: 'green', PAID: 'green',
-  // Stok statüsü (kalite) — stok takibindeki statü kolonu
-  AVAILABLE: 'green', QUARANTINE: 'gold', BLOCKED: 'red', DAMAGED: 'volcano',
-}
+// STATUS_COLOR + STATUS_TR + DIRECTION_TR → paylaşılan ../statusMeta (GenericDetail/StockReport ile ortak)
 
 // MiktarOndalikHane parametresi: ondalıklı miktarlar bu basamakla gösterilir (yalnız görünüm; tam sayı/id dokunulmaz)
 let QTY_DECIMALS: number | null = null
@@ -244,13 +240,15 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
     ...(resource === 'integration-queries' ? ['query'] : []),
     ...(resource === 'integration-xml-converts' ? ['xmlTemplate', 'xslTemplate'] : []),
     ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
+  // Durum (isActive) 9'luk dilime yer kavgası yaptırmaz — varsa her zaman ayrı kolon olarak sonda gösterilir
+  const hasActiveCol = typeof sample.isActive === 'boolean' && !hidden.includes('isActive')
   const columns = [
     ...Object.keys(sample)
       .filter((k) => sample[k] === null || typeof sample[k] !== 'object')
-      .filter((k) => !hidden.includes(k))
+      .filter((k) => !hidden.includes(k) && k !== 'isActive')
       .slice(0, 9)
       .map((k) => ({
-        title: k === 'isActive' ? 'Durum' : (refLabelMap[k] ?? FK_LABEL[k] ?? PRETTY[k] ?? k),
+        title: refLabelMap[k] ?? FK_LABEL[k] ?? PRETTY[k] ?? k,
         dataIndex: k,
         ellipsis: true,
         render: (v: unknown) =>
@@ -261,18 +259,27 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             : k === 'color' && typeof v === 'string' && v
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span style={{ width: 14, height: 14, borderRadius: 4, background: v, border: '1px solid rgba(0,0,0,.15)', display: 'inline-block' }} />{v}</span>
               : (k === 'status' || k === 'type') && typeof v === 'string'
-                ? <Tag color={STATUS_COLOR[v] ?? 'default'}>{v}</Tag>
-                : k === 'isActive' && typeof v === 'boolean'
-                  ? (v ? <Badge status="success" text="Aktif" /> : <Badge color="#cbd5e1" text="Pasif" />)
+                ? <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_TR[v] ?? v}</Tag>
+                : k === 'direction' && typeof v === 'string'
+                  ? (DIRECTION_TR[v] ?? v)
                   : fmt(v),
       })),
+    ...(hasActiveCol
+      ? [{
+          title: 'Durum',
+          dataIndex: 'isActive',
+          key: '__active',
+          width: 90,
+          render: (v: unknown) => (v ? <Badge status="success" text="Aktif" /> : <Badge color="#cbd5e1" text="Pasif" />),
+        }]
+      : []),
     ...(hasStatusObj
       ? [{
           title: 'Statü',
           key: '__status',
           render: (_: unknown, row: Record<string, unknown>) => {
-            const c = (row.status as { code?: string } | null)?.code
-            return c ? <Tag color={STATUS_COLOR[c] ?? 'default'}>{c}</Tag> : fmt(null)
+            const s = row.status as { code?: string; name?: string } | null
+            return s?.code ? <Tag color={STATUS_COLOR[s.code] ?? 'default'}>{s.name || STATUS_TR[s.code] || s.code}</Tag> : fmt(null)
           },
         }]
       : []),
@@ -363,9 +370,11 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             {resource === 'locations' && canWrite() && <Button size="small" type="text" icon={<AppstoreAddOutlined />} onClick={() => navigate('/locations/bulk')}>Toplu Üret</Button>}
             {canDelete && <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!selected} onClick={remove}>Sil</Button>}
           </Space>
-          <span style={{ fontSize: 12.5, color: '#8696ae' }}>
-            {selected ? <>Seçili: <b style={{ color: '#42536f' }}>#{selected}</b></> : 'Satır seçilmedi'}
-          </span>
+          {selected != null && (
+            <span style={{ fontSize: 12.5, color: '#8696ae' }}>
+              Seçili: <b style={{ color: '#42536f' }}>#{selected}</b>
+            </span>
+          )}
         </Space>
       </Card>
 
@@ -378,10 +387,23 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
           loading={loading}
           columns={columns}
           size="small"
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Kayıt yok" style={{ padding: '28px 0' }} /> }}
+          locale={{
+            emptyText: (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Henüz kayıt yok" style={{ padding: '28px 0' }}>
+                {canCreate && (
+                  <Space size={8}>
+                    <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new${filter ? '?' + new URLSearchParams(filter as Record<string, string>).toString() : ''}`)}>
+                      İlk kaydı ekle
+                    </Button>
+                    {IMPORT_CONFIGS[resource] && <span style={{ fontSize: 12.5, color: '#8696ae' }}>veya İçe Aktar ile toplu yükleyin</span>}
+                  </Space>
+                )}
+              </Empty>
+            ),
+          }}
           pagination={{ pageSize: 15, showSizeChanger: false, size: 'small', showTotal: (t) => `Toplam ${t}` }}
           scroll={{ x: true }}
-          rowClassName={(_, i) => (i % 2 ? 'og-stripe' : '')}
+          rowClassName={(row, i) => [i % 2 ? 'og-stripe' : '', (row as { isActive?: unknown }).isActive === false ? 'og-inactive' : ''].filter(Boolean).join(' ')}
           rowSelection={{ type: 'radio', selectedRowKeys: selected ? [selected] : [], onChange: (keys) => setSelected(keys[0] as number) }}
           onRow={(row) => ({
             onClick: () => setSelected((row as { id: number }).id),
