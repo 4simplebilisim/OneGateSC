@@ -7,12 +7,7 @@ import { PageHeader } from '../components/PageHeader'
 import { DETAIL_ACTIONS } from '../detailActions'
 import { canWrite } from '../formConfig'
 import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
-
-const STATUS_COLOR: Record<string, string> = {
-  COMPLETED: 'green', CONFIRMED: 'blue', PLANNED: 'gold', IN_PROGRESS: 'cyan', CANCELLED: 'red',
-  DRAFT: 'default', SUBMITTED: 'gold', APPROVED: 'green', REJECTED: 'red',
-  COUNTING: 'gold', PENDING: 'gold', PASSED: 'green', FAILED: 'red', ISSUED: 'blue', PAID: 'green',
-}
+import { STATUS_COLOR, STATUS_TR } from '../statusMeta'
 
 const PRETTY: Record<string, string> = {
   id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Aktif',
@@ -132,16 +127,22 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   const status = (record.status ?? record.result) as string | undefined
   const lines = (record.lines as Record<string, unknown>[] | undefined) ?? []
-  // FK alanları için id → "kod — ad"; değilse normal format
+  // FK alanları için id → "kod — ad"; durum/sonuç enum'ları yerelleştirilmiş rozet; değilse normal format
   const showVal = (k: string, v: unknown) => {
     const res = fkFieldMap[k]
     if (res && typeof v === 'number' && refMaps[res]?.[v]) return refMaps[res][v]
+    if ((k === 'status' || k === 'result') && typeof v === 'string')
+      return <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_TR[v] ?? v}</Tag>
     return fmt(v)
   }
-  // Belge tesise bağlı (depoya değil) → Depo (warehouseId + null warehouse objesi) detayda gizli
-  const HIDDEN = ['createdById', 'companyId', 'documentId', ...(resource === 'documents' ? ['warehouseId', 'warehouse'] : [])]
+  // Belge tesise bağlı (depoya değil) → Depo (warehouseId + null warehouse objesi) detayda gizli.
+  // Belge Durumu (documentStatus) varsa ham enum "status" alanı mükerrer bilgi → gizli (rozet zaten başlıkta).
+  const hasDocStatusName = !!(record.documentStatus as { name?: string } | null)?.name
+  const HIDDEN = ['createdById', 'companyId', 'documentId',
+    ...(resource === 'documents' ? ['warehouseId', 'warehouse'] : []),
+    ...(hasDocStatusName ? ['status'] : [])]
   const headerFields = Object.keys(record).filter(
-    (k) => record[k] === null || (typeof record[k] !== 'object' && !HIDDEN.includes(k)),
+    (k) => !HIDDEN.includes(k) && (record[k] === null || typeof record[k] !== 'object'),
   )
   const actions = (DETAIL_ACTIONS[resource] ?? []).filter((a) => !status || a.when.includes(status))
 
@@ -165,7 +166,7 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
             {label} <span style={{ color: '#8696ae', fontWeight: 600 }}>#{String(record.id)}</span>
             {(() => {
               const ds = record.documentStatus as { name?: string; color?: string } | null
-              return ds?.name ? <Tag color={ds.color || 'default'}>{ds.name}</Tag> : status ? <Tag color={STATUS_COLOR[status] ?? 'default'}>{status}</Tag> : null
+              return ds?.name ? <Tag color={ds.color || 'default'}>{ds.name}</Tag> : status ? <Tag color={STATUS_COLOR[status] ?? 'default'}>{STATUS_TR[status] ?? status}</Tag> : null
             })()}
           </Space>
         }
