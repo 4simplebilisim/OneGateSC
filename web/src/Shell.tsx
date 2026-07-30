@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGetIdentity, useLogout } from '@refinedev/core'
 import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip } from 'antd'
-import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
+import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
@@ -18,7 +18,9 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   const { mode, toggle } = useThemeMode()
   const location = useLocation()
   const selected = location.pathname.split('/')[1] ?? ''
-  const [collapsed, setCollapsed] = useState(false)
+  // Daraltma tercihi kalıcı — Fiori tarzı ikon rayına düşer (56px), tamamen kaybolmaz
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('og_menu_collapsed') === '1')
+  const toggleCollapsed = () => setCollapsed((c) => { localStorage.setItem('og_menu_collapsed', c ? '0' : '1'); return !c })
   const [query, setQuery] = useState('')
   const [openKeys, setOpenKeys] = useState<string[]>(() => {
     const cur = RESOURCES.find((r) => r.name === selected)
@@ -33,7 +35,10 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   const menuItems = useMemo(() => {
     const q = query.trim().toLocaleLowerCase('tr')
     const match = (label: string) => !q || label.toLocaleLowerCase('tr').includes(q)
-    const pano = match('Dashboard') ? [{ key: 'dashboard', label: <Link to="/dashboard">Dashboard</Link> }] : []
+    const SECTION_ICON: Record<string, ReactNode> = {
+      'Tanımlamalar': <DatabaseOutlined />, 'İşlemler': <SwapOutlined />, 'Uyarlamalar': <SettingOutlined />, 'Raporlar': <BarChartOutlined />,
+    }
+    const pano = match('Dashboard') ? [{ key: 'dashboard', icon: <HomeOutlined />, label: <Link to="/dashboard">Dashboard</Link> }] : []
     const sections = SECTIONS.map((section) => {
       const inSection = RESOURCES.filter((r) => r.section === section && !r.hidden && screenAllowed(r.name))
       const groups = [...new Set(inSection.filter((r) => r.group).map((r) => r.group))]
@@ -51,7 +56,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         .filter((r) => !r.group && match(r.label))
         .map((r) => ({ key: r.name, label: <Link to={`/${r.name}`}>{r.label}</Link> }))
       const children = [...groupNodes, ...directNodes]
-      return children.length ? { key: section, label: section, children } : null
+      return children.length ? { key: section, icon: SECTION_ICON[section], label: section, children } : null
     }).filter(Boolean)
     return [...pano, ...sections]
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -78,7 +83,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header style={{ background: chrome.headerBg, borderBottom: chrome.headerBorder, display: 'flex', alignItems: 'center', padding: '0 16px', height: 56, lineHeight: '56px', boxShadow: chrome.headerShadow, position: 'sticky', top: 0, zIndex: 20 }}>
-        <Button type="text" onClick={() => setCollapsed((c) => !c)} style={{ color: chrome.icon, fontSize: 17, marginRight: 6 }} icon={<MenuOutlined />} aria-label="menü" />
+        <Button type="text" onClick={toggleCollapsed} style={{ color: chrome.icon, fontSize: 17, marginRight: 6 }} icon={<MenuOutlined />} aria-label="menü" />
         <img src="/OneGate-assets/onegate-icon.svg" width={30} height={30} alt="OneGate WMS" style={{ borderRadius: 7, marginRight: 10 }} />
         <Typography.Text strong style={{ color: chrome.brandText, fontSize: 19, letterSpacing: 0.3 }}>
           One<span style={{ color: '#44D4E3' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
@@ -106,7 +111,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
       </Layout.Header>
 
       <Layout>
-        <Layout.Sider width={240} collapsed={collapsed} collapsedWidth={0} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, overflowY: 'auto', height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
+        <Layout.Sider width={240} collapsed={collapsed} collapsedWidth={56} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, overflowY: 'auto', height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
           {!collapsed && (
             <div style={{ padding: '10px 10px 4px' }}>
               <Input size="small" allowClear prefix={<SearchOutlined style={{ color: chrome.searchPrefix }} />} placeholder="Menüde ara…" value={query} onChange={(e) => setQuery(e.target.value)} />
@@ -116,7 +121,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             theme={dark ? 'dark' : 'light'}
             mode="inline"
             selectedKeys={[selected]}
-            openKeys={openState as string[]}
+            openKeys={collapsed ? undefined : (openState as string[])}
             onOpenChange={(k) => setOpenKeys(k as string[])}
             items={menuItems as never}
             style={{ background: chrome.siderBg, borderInlineEnd: 'none' }}
