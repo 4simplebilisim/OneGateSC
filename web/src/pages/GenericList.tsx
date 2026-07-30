@@ -399,7 +399,6 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
           loading={loading}
           columns={columns}
           size="small"
-          sticky={{ offsetHeader: 56 }}
           locale={{
             emptyText: quickFind.trim() ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`"${quickFind.trim()}" ile eşleşen kayıt yok`} style={{ padding: '28px 0' }} />

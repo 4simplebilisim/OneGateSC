@@ -255,9 +255,6 @@ h1, h2, h3, h4, h5,
 /* List report: filtre şeridindeki hızlı arama */
 .og-quickfind.ant-input-affix-wrapper { max-width: 240px; }
 
-/* Yapışkan tablo başlığı gölgesi (Table sticky ile) */
-.ant-table-sticky-holder { box-shadow: 0 2px 8px rgba(16, 27, 46, 0.06); }
-
 /* ---- Giriş ekranı animasyonu ---- */
 @keyframes og-float {
   0%, 100% { transform: translateY(0); }

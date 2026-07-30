@@ -36,15 +36,20 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
   }, [])
   const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
 
-  // Bir ref alanının seçeneklerini (opsiyonel parent filtresiyle: dependsOn) çek
-  const loadRefOptions = useCallback((f: (typeof fields)[number], parentValue?: unknown) => {
-    if (!f.refResource) return
+  // Bir ref alanının seçeneklerini (opsiyonel parent filtresiyle: dependsOn) çek.
+  // allValues verilirse: refResourceBy (kaynak seçimi) + dependsOnWhen (koşullu bağımlılık) o değerlere göre çözülür.
+  const loadRefOptions = useCallback((f: (typeof fields)[number], parentValue?: unknown, allValues?: Record<string, unknown>) => {
+    // Kaynak: refResourceBy varsa bağlı alanın değerine göre (ör. Bağ. Tipi LOCATION_GROUP → location-groups)
+    const source = (f.refResourceBy && allValues ? f.refResourceBy.map[String(allValues[f.refResourceBy.field] ?? '')] : undefined) ?? f.refResource
+    if (!source) return
     const params: Record<string, unknown> = { pageSize: 200 }
     // Ref'leri SEÇİLİ FİRMAYA göre daralt — liste tüm firmaları gösterir ama formda yalnız seçili firmanın kayıtları seçilebilir.
     // Super-admin firmayı değiştirince companyId değişir → ref'ler o firmaya göre yeniden çekilir.
     if (companyId) params.companyId = companyId
-    if (f.dependsOn && parentValue != null) params[f.dependsOn] = parentValue
-    axiosInstance.get(`/api/${f.refResource}`, { params }).then((r) => {
+    // Koşullu bağımlılık: dependsOnWhen sağlanmıyorsa parametresiz (tam liste) yüklenir (ör. Ürün Grup modunda Birim daralmaz)
+    const depActive = !f.dependsOnWhen || (allValues != null && allValues[f.dependsOnWhen.field] === f.dependsOnWhen.equals)
+    if (f.dependsOn && parentValue != null && depActive) params[f.dependsOnParam ?? f.dependsOn] = parentValue
+    axiosInstance.get(`/api/${source}`, { params }).then((r) => {
       const raw = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
       const rows = f.refFilter ? raw.filter(f.refFilter) : raw
       setRefOptions((prev) => ({
@@ -72,8 +77,9 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
         form.setFieldsValue(r.data)
         setFormVals(r.data ?? {})
         if (r.data?.companyId) setCompanyId(r.data.companyId)
-        // bağımlı ref'leri (ör. Alan) parent değerine (Depo) göre yükle — seçili değer korunsun
-        fields.filter((f) => f.type === 'ref' && f.dependsOn).forEach((f) => loadRefOptions(f, r.data?.[f.dependsOn!]))
+        // bağımlı ref'leri (ör. Alan) parent değerine (Depo) göre yükle — seçili değer korunsun;
+        // refResourceBy'lılar da kayıttaki tip değerine göre doğru kaynaktan gelsin
+        fields.filter((f) => f.type === 'ref' && (f.dependsOn || f.refResourceBy)).forEach((f) => loadRefOptions(f, f.dependsOn ? r.data?.[f.dependsOn] : undefined, r.data))
       })
     } else if (mode === 'create' && copyFrom) {
       // Kopyala: kimlik/zaman/kod alanlarını at → kod yeni girilsin. Kaynak satır state ile geldiyse refetch yok
@@ -183,8 +189,20 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
               form.setFieldValue(f.name, undefined)
               setRefOptions((prev) => ({ ...prev, [f.name]: [] }))
               const pv = (changed as Record<string, unknown>)[f.dependsOn!]
-              if (pv != null) loadRefOptions(f, pv)
+              if (pv != null) loadRefOptions(f, pv, all as Record<string, unknown>)
             })
+          // Kaynak-değiştiren ref'ler (refResourceBy — ör. Lokasyon Bağ. Tipi): tip değişince seçim sıfırla + yeni kaynaktan yükle
+          fields
+            .filter((f) => f.type === 'ref' && f.refResourceBy && f.refResourceBy.field in changed)
+            .forEach((f) => {
+              form.setFieldValue(f.name, undefined)
+              setRefOptions((prev) => ({ ...prev, [f.name]: [] }))
+              loadRefOptions(f, undefined, all as Record<string, unknown>)
+            })
+          // Koşullu bağımlılık tetikleyicisi (dependsOnWhen.field — ör. Malzeme Bağ. Tipi) değişince birim listesi tazelensin
+          fields
+            .filter((f) => f.type === 'ref' && f.dependsOnWhen && f.dependsOnWhen.field in changed && !(f.refResourceBy && f.refResourceBy.field in changed))
+            .forEach((f) => loadRefOptions(f, f.dependsOn ? (all as Record<string, unknown>)[f.dependsOn] : undefined, all as Record<string, unknown>))
           // disabledWhen tetikleyicisi değişince bağımlı alanı temizle (ör. Bağ.=Hepsi → Cari/Ürün seçimi sıfırlansın)
           fields
             .filter((f) => f.disabledWhen && f.disabledWhen.field in changed)

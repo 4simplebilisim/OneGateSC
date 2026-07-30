@@ -16,8 +16,14 @@ const updateSchema = z.object({
 
 export async function unitRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
+    // ?productId=X → yalnız o ürünün tanımlı birimleri (ürün-birim bağı; kapasite/tolerans formları tüketir)
+    const q = request.query as { productId?: string }
+    const pid = q.productId ? Number(q.productId) : undefined
     return prisma.tBLUNIT.findMany({
-      where: companyListFilter(request),
+      where: {
+        ...companyListFilter(request),
+        ...(pid ? { productUnits: { some: { productId: pid } } } : {}),
+      },
       orderBy: { code: 'asc' },
     })
   })
