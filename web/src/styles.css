@@ -249,6 +249,14 @@ h1, h2, h3, h4, h5,
   font-weight: 700 !important;
   color: var(--og-muted) !important;
 }
+/* Kök düzeydeki tekil öğeler (Dashboard) bölüm başlıklarıyla AYNI görünsün */
+.ant-layout-sider .ant-menu-inline > .ant-menu-item {
+  font-weight: 700 !important;
+  color: var(--og-muted) !important;
+}
+.ant-layout-sider .ant-menu-inline > .ant-menu-item .ant-menu-title-content a {
+  color: inherit;
+}
 /* Light modda seçili menü öğesi — koyu moddaki marka vurgusunun açık eşleniği */
 .ant-menu-light.ant-menu-inline .ant-menu-item-selected {
   background: linear-gradient(90deg, rgba(78, 134, 255, 0.12), rgba(78, 134, 255, 0.05)) !important;
