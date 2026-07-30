@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import {
   dispatchShipment,
   deliverStop,
@@ -46,8 +46,8 @@ export async function shipmentRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const shipment = await prisma.tBLSHIPMENT.findUnique({
-      where: { id },
+    const shipment = await prisma.tBLSHIPMENT.findFirst({
+      where: { id, ...companyListFilter(request) },
       include: { vehicle: true, stops: { orderBy: { sequence: 'asc' } } },
     })
     if (!shipment) return reply.code(404).send({ error: 'Shipment not found' })

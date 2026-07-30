@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 import { nextSequence } from '../lib/sequence.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
@@ -73,7 +73,7 @@ export async function workOrderRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const wo = await prisma.tBLWORKORDER.findUnique({ where: { id }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+    const wo = await prisma.tBLWORKORDER.findFirst({ where: { id, ...companyListFilter(request) }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
     if (!wo) return reply.code(404).send({ error: 'Work order not found' })
     return wo
   })

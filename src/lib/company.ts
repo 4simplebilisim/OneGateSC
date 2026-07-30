@@ -57,6 +57,10 @@ export function companyListFilter(request: FastifyRequest): { companyId?: number
     if (raw === 'all') return {}
     const n = raw ? Number(raw) : NaN
     if (Number.isInteger(n) && n > 0) return { companyId: n }
+    // KAYIT-DÜZEYİ erişim (:id rotaları): süper aktif firmaya KİLİTLENMEZ — 'Tüm firmalar' listesinde
+    // görünen satır her zaman açılabilir/düzenlenebilir; companyId=null kayıtlar (firma-bağımsız süper
+    // hesaplar) da erişilebilir kalır. Header yalnız LİSTELERİ daraltır.
+    if ((request.params as { id?: string } | undefined)?.id != null) return {}
     const h = headerCompanyId(request)
     return h ? { companyId: h } : {}
   }

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 
 const bodySchema = z.object({
   productId: z.number().int().positive(),
@@ -12,7 +12,7 @@ export async function productSubstituteRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const q = request.query as { productId?: string }
     return prisma.tBLPRODUCTSUBSTITUTE.findMany({
-      where: { productId: q.productId ? Number(q.productId) : undefined },
+      where: { ...companyListFilter(request), productId: q.productId ? Number(q.productId) : undefined },
       include: { substitute: { select: { id: true, code: true, name: true } } },
       orderBy: { id: 'asc' },
     })

@@ -135,7 +135,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   useEffect(() => {
     const uniqueRefs = [...new Set(Object.values(fkFieldMap))]
     uniqueRefs.forEach((rr) => {
-      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500 } }).then((r) => {
+      // 'Tüm firmalar' / firma-N modunda FK'lar da aynı kapsamdan çözülsün (yoksa yabancı satırlar #id gösterir)
+      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500, ...(companyFilter ? { companyId: companyFilter } : {}) } }).then((r) => {
         const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
         const map: Record<number, string> = {}
         list.forEach((x: Record<string, unknown>) => {
@@ -145,7 +146,7 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
       }).catch(() => { /* ref yüklenemedi → id gösterilir */ })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fkResourcesKey])
+  }, [fkResourcesKey, companyFilter])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -303,7 +304,7 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
           <>
             {isSuper
               ? <Tag color={companyFilter === 'all' ? 'default' : 'blue'} style={{ marginInlineEnd: 6 }}>
-                  {companyFilter === 'all' ? 'Tüm firmalar' : typeof companyFilter === 'number' ? (companyMap[companyFilter] ?? `#${companyFilter}`) : (firmName || 'Aktif firma')}
+                  {companyFilter === 'all' ? 'Tüm firmalar' : typeof companyFilter === 'number' ? (companyMap[companyFilter] ?? `#${companyFilter}`) : (firmName || 'Tüm firmalar')}
                 </Tag>
               : (firmName ? <Tag color="blue" style={{ marginInlineEnd: 6 }}>{firmName}</Tag> : null)}
             {loading ? 'Yükleniyor…' : `${rows.length} kayıt`}

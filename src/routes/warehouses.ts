@@ -32,8 +32,8 @@ export async function warehouseRoutes(app: FastifyInstance) {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
 
-    const warehouse = await prisma.tBLWAREHOUSE.findUnique({
-      where: { id },
+    const warehouse = await prisma.tBLWAREHOUSE.findFirst({
+      where: { id, ...companyListFilter(request) },
       include: { locations: { orderBy: { code: 'asc' } } },
     })
     if (!warehouse) return reply.code(404).send({ error: 'Warehouse not found' })

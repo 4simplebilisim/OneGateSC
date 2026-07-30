@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, referenceGate, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
@@ -101,7 +101,7 @@ export async function documentRoutes(app: FastifyInstance) {
     }
     return prisma.tBLDOCUMENT.findMany({
       where: {
-        companyId,
+        ...companyListFilter(request), // süper: aktif firma / ?companyId=N / ?companyId=all — normal: kilitli
         warehouseId: num(q.warehouseId),
         operationTypeId: num(q.operationTypeId),
         partnerId: num(q.partnerId),
@@ -132,8 +132,8 @@ export async function documentRoutes(app: FastifyInstance) {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
 
-    const document = await prisma.tBLDOCUMENT.findUnique({
-      where: { id },
+    const document = await prisma.tBLDOCUMENT.findFirst({
+      where: { id, ...companyListFilter(request) },
       include: {
         operationType: true,
         documentStatus: { select: { code: true, name: true, color: true } },

@@ -32,7 +32,7 @@ export async function palletRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const pallet = await prisma.tBLPALLET.findUnique({ where: { id }, include: { palletType: true, childPallets: true } })
+    const pallet = await prisma.tBLPALLET.findFirst({ where: { id, ...companyListFilter(request) }, include: { palletType: true, childPallets: true } })
     if (!pallet) return reply.code(404).send({ error: 'Pallet not found' })
     return pallet
   })
