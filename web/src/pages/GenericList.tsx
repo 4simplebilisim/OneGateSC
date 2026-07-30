@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented, Select } from 'antd'
-import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined } from '@ant-design/icons'
+import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented, Select, Input } from 'antd'
+import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined, SearchOutlined } from '@ant-design/icons'
 import { hiddenColumns } from '../columnAuth'
 import { screenRight } from '../screenRight'
 import { paramInt } from '../params'
@@ -97,6 +97,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   const [companyFilter, setCompanyFilter] = useState<number | 'all' | undefined>(undefined)
   // Aktif firma (tenant) — normal kullanıcıda ekranda hangi firmanın verisine bakıldığı görünsün
   const [firmName, setFirmName] = useState('')
+  // Fiori list-report hızlı arama: yüklü satırlar üzerinde anlık süzme (tüm görünür alanlarda)
+  const [quickFind, setQuickFind] = useState('')
   useEffect(() => {
     const cid = Number(localStorage.getItem('og_company'))
     axiosInstance.get('/api/companies').then((r) => {
@@ -336,6 +338,11 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
 
       <Card className="og-toolbar" size="small" style={{ marginBottom: 14 }} styles={{ body: { padding: '9px 14px' } }}>
         <Space separator={<span style={{ display: 'inline-block', width: 1, height: 16, background: 'var(--og-border-soft)' }} />} wrap>
+          <Input
+            className="og-quickfind" size="small" allowClear
+            prefix={<SearchOutlined style={{ color: 'var(--og-muted)' }} />}
+            placeholder="Listede ara…" value={quickFind} onChange={(e) => setQuickFind(e.target.value)}
+          />
           {isDocuments && (
             <Segmented
               size="small"
@@ -382,13 +389,21 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
         <Alert type="error" title={`Yüklenemedi: ${error}`} showIcon />
       ) : (
         <Table
-          dataSource={rows}
+          dataSource={quickFind.trim()
+            ? rows.filter((r) => {
+                const q = quickFind.trim().toLocaleLowerCase('tr')
+                return Object.values(r).some((v) => v != null && typeof v !== 'object' && String(v).toLocaleLowerCase('tr').includes(q))
+              })
+            : rows}
           rowKey="id"
           loading={loading}
           columns={columns}
           size="small"
+          sticky={{ offsetHeader: 56 }}
           locale={{
-            emptyText: (
+            emptyText: quickFind.trim() ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`"${quickFind.trim()}" ile eşleşen kayıt yok`} style={{ padding: '28px 0' }} />
+            ) : (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Henüz kayıt yok" style={{ padding: '28px 0' }}>
                 {canCreate && (
                   <Space size={8}>
