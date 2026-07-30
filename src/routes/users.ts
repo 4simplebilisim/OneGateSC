@@ -84,8 +84,11 @@ const userSelect = {
 
 export async function userRoutes(app: FastifyInstance) {
   app.get('/', { preHandler: [app.authenticate, app.requireAdmin] }, async (request) => {
+    // Süper-admin aktif firmaya daraltılmışken firma-bağımsız (companyId=null) süper hesaplar listeden kaybolmasın
+    const scope = companyListFilter(request)
+    const isSuper = !!(request.user as { isSuperAdmin?: boolean } | undefined)?.isSuperAdmin
     return prisma.tBLUSER.findMany({
-      where: { ...companyListFilter(request) },
+      where: isSuper && scope.companyId != null ? { OR: [scope, { companyId: null }] } : scope,
       orderBy: { username: 'asc' },
       select: userSelect,
     })

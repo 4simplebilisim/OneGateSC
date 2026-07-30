@@ -42,17 +42,27 @@ export function getCompanyId(request: FastifyRequest): number {
 }
 
 /**
- * LİSTE filtreleme (GET /). getCompanyId'den FARKI: super-admin tek firmaya kilitlenmez.
- *  - Super-admin → TÜM firmalar görünür; yalnız açık `?companyId=X` query ile daraltır. (x-company-id header listede YOK SAYILIR.)
- *  - Normal kullanıcı → kendi firmasına KİLİTLİ (query yok sayılır) — kiracı izolasyonu korunur.
+ * LİSTE filtreleme (GET / + id-bazlı kayıt erişimi). Super-admin önceliği:
+ *  1. `?companyId=all` → TÜM firmalar (bilinçli birleşik görünüm — liste ekranındaki açık seçim)
+ *  2. `?companyId=N`   → o firma (ekran içi geçici daraltma)
+ *  3. `x-company-id` header → AKTİF firma (üstteki firma seçici) — kullanıcı beklentisi: seçili firma her yeri kapsar
+ *  4. hiçbiri yoksa → tüm firmalar
+ * Normal kullanıcı → kendi/izinli firmasına KİLİTLİ (query yok sayılır) — kiracı izolasyonu korunur.
  * Prisma where'e yayılır: `where: { ...companyListFilter(request), ...diğerFiltreler }`. Boş obje = tüm firmalar.
  */
 export function companyListFilter(request: FastifyRequest): { companyId?: number } {
   const user = request.user as { companyId?: number | null; isSuperAdmin?: boolean } | undefined
   if (user?.isSuperAdmin) {
     const raw = (request.query as { companyId?: string } | undefined)?.companyId
+    if (raw === 'all') return {}
     const n = raw ? Number(raw) : NaN
-    return Number.isInteger(n) && n > 0 ? { companyId: n } : {}
+    if (Number.isInteger(n) && n > 0) return { companyId: n }
+    // KAYIT-DÜZEYİ erişim (:id rotaları): süper aktif firmaya KİLİTLENMEZ — 'Tüm firmalar' listesinde
+    // görünen satır her zaman açılabilir/düzenlenebilir; companyId=null kayıtlar (firma-bağımsız süper
+    // hesaplar) da erişilebilir kalır. Header yalnız LİSTELERİ daraltır.
+    if ((request.params as { id?: string } | undefined)?.id != null) return {}
+    const h = headerCompanyId(request)
+    return h ? { companyId: h } : {}
   }
   return { companyId: getCompanyId(request) }
 }

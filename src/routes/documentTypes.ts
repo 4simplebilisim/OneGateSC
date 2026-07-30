@@ -22,7 +22,8 @@ export interface Delegate {
 export function simpleCrud(delegate: Delegate, createSchema: ZodTypeAny, updateSchema: ZodTypeAny, notFound: string, ownerField?: string, beforeWrite?: BeforeWrite) {
   return async function (app: FastifyInstance) {
     app.get('/', async (request) => {
-      const where: Record<string, unknown> = { companyId: getCompanyId(request) }
+      // companyListFilter: süper-admin'de aktif firma (header) / ?companyId=N / ?companyId=all tutarlılığı — wmsMasters ile aynı
+      const where: Record<string, unknown> = { ...companyListFilter(request) }
       if (ownerField) {
         const q = request.query as Record<string, string | undefined>
         if (q[ownerField]) where[ownerField] = Number(q[ownerField])

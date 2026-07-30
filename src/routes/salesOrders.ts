@@ -77,7 +77,7 @@ export async function salesOrderRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const order = await prisma.tBLSALESORDER.findUnique({ where: { id }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+    const order = await prisma.tBLSALESORDER.findFirst({ where: { id, ...companyListFilter(request) }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
     if (!order) return reply.code(404).send({ error: 'Sales order not found' })
     return order
   })
