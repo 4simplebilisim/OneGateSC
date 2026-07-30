@@ -97,7 +97,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   const isSuper = (() => { try { return !!(JSON.parse(localStorage.getItem('og_user') ?? '{}') as { isSuperAdmin?: boolean }).isSuperAdmin } catch { return false } })()
   const [companyMap, setCompanyMap] = useState<Record<number, string>>({})
   const [companyOpts, setCompanyOpts] = useState<{ value: number; label: string }[]>([])
-  const [companyFilter, setCompanyFilter] = useState<number | undefined>(undefined) // super-admin liste firma filtresi (?companyId)
+  // Super-admin liste firma filtresi (?companyId): boş = AKTİF firma (üstteki seçici, x-company-id) · sayı = o firma · 'all' = tüm firmalar
+  const [companyFilter, setCompanyFilter] = useState<number | 'all' | undefined>(undefined)
   // Aktif firma (tenant) — normal kullanıcıda ekranda hangi firmanın verisine bakıldığı görünsün
   const [firmName, setFirmName] = useState('')
   useEffect(() => {
@@ -301,7 +302,9 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
         subtitle={
           <>
             {isSuper
-              ? <Tag color={companyFilter ? 'blue' : 'default'} style={{ marginInlineEnd: 6 }}>{companyFilter ? (companyMap[companyFilter] ?? `#${companyFilter}`) : 'Tüm firmalar'}</Tag>
+              ? <Tag color={companyFilter === 'all' ? 'default' : 'blue'} style={{ marginInlineEnd: 6 }}>
+                  {companyFilter === 'all' ? 'Tüm firmalar' : typeof companyFilter === 'number' ? (companyMap[companyFilter] ?? `#${companyFilter}`) : (firmName || 'Aktif firma')}
+                </Tag>
               : (firmName ? <Tag color="blue" style={{ marginInlineEnd: 6 }}>{firmName}</Tag> : null)}
             {loading ? 'Yükleniyor…' : `${rows.length} kayıt`}
           </>
@@ -336,7 +339,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
           {isSuper && companyOpts.length > 0 && (
             <Select
               size="small" style={{ minWidth: 190 }} allowClear showSearch optionFilterProp="label"
-              placeholder="Tüm firmalar" value={companyFilter} onChange={(v) => setCompanyFilter(v)} options={companyOpts}
+              placeholder="Aktif firma" value={companyFilter} onChange={(v) => setCompanyFilter(v)}
+              options={[{ value: 'all' as const, label: 'Tüm firmalar' }, ...companyOpts]}
             />
           )}
           <Space size={6} wrap>
