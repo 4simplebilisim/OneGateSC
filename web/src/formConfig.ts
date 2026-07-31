@@ -10,6 +10,9 @@ export interface FieldDef {
   refResource?: string // type 'ref' için seçenekleri buradan çeker
   refFilter?: (row: Record<string, unknown>) => boolean // ref seçeneklerini süz (ör. sadece COUNT operasyon tipi)
   dependsOn?: string // bu ref, başka alanın (ör. warehouseId) değerine bağlı: o değişince /api/<refResource>?<dependsOn>=<val> ile yeniden çekilir + sıfırlanır
+  dependsOnParam?: string // dependsOn değerinin query param ADI farklıysa (ör. dependsOn:'materialLinkCode' → ?productId=<val>)
+  dependsOnWhen?: { field: string; equals: unknown } // bağımlılık yalnız bu koşulda uygulanır; değilse parametresiz (tam liste) yüklenir
+  refResourceBy?: { field: string; map: Record<string, string> } // ref KAYNAĞI başka alanın değerine göre seçilir (ör. Bağ. Tipi: LOCATION→locations, LOCATION_GROUP→location-groups); değer değişince seçenekler yenilenir + seçim sıfırlanır
   disabledWhen?: { field: string; equals: unknown } // başka alanın değeri eşitse bu alan tıklanamaz + kayıtta atılır (ör. Bağ.=Hepsi → Cari/Ürün seçilemez)
 }
 
@@ -750,11 +753,11 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   ],
   'location-capacities': [
     { name: 'locationLinkType', label: 'Lokasyon Bağ. Tipi', type: 'select', required: true, options: [{ value: 'LOCATION', label: 'Göz / Lokasyon' }, { value: 'LOCATION_GROUP', label: 'Lokasyon Grup' }] },
-    { name: 'locationLinkCode', label: 'Lokasyon', type: 'ref', required: true, refResource: 'locations' },
+    { name: 'locationLinkCode', label: 'Lokasyon', type: 'ref', required: true, refResource: 'locations', refResourceBy: { field: 'locationLinkType', map: { LOCATION: 'locations', LOCATION_GROUP: 'location-groups' } } },
     { name: 'materialLinkType', label: 'Malzeme Bağ. Tipi', type: 'select', options: [{ value: 'PRODUCT', label: 'Ürün' }, { value: 'PRODUCT_GROUP', label: 'Ürün Grup' }] },
-    { name: 'materialLinkCode', label: 'Ürün/Grup', type: 'ref', refResource: 'products' },
+    { name: 'materialLinkCode', label: 'Ürün/Grup', type: 'ref', refResource: 'products', refResourceBy: { field: 'materialLinkType', map: { PRODUCT: 'products', PRODUCT_GROUP: 'product-groups' } } },
     { name: 'quantity', label: 'Miktar', type: 'number' },
-    { name: 'unitId', label: 'Birim', type: 'ref', refResource: 'units' },
+    { name: 'unitId', label: 'Birim', type: 'ref', refResource: 'units', dependsOn: 'materialLinkCode', dependsOnParam: 'productId', dependsOnWhen: { field: 'materialLinkType', equals: 'PRODUCT' } },
     { name: 'palletQty', label: 'Palet Miktarı', type: 'number' },
     { name: 'toleranceQty', label: 'Tolerans Miktar', type: 'number' },
     { name: 'toleranceUnitId', label: 'Tolerans Birim', type: 'ref', refResource: 'units' },
