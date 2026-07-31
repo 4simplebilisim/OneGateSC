@@ -158,6 +158,11 @@ export default function App() {
           <Route path="rpt-palet-tarihce" element={<ReportCenter fixedCode="PALET-TARIHCE" />} />
           <Route path="rpt-sevkiyat" element={<ReportCenter fixedCode="SEVKIYAT" />} />
           <Route path="rpt-iade" element={<ReportCenter fixedCode="IADE" />} />
+          <Route path="rpt-urun-ekstre" element={<ReportCenter fixedCode="URUN-EKSTRE" />} />
+          <Route path="rpt-skt" element={<ReportCenter fixedCode="SKT-RISK" />} />
+          <Route path="rpt-lot-izleme" element={<ReportCenter fixedCode="LOT-IZLEME" />} />
+          <Route path="rpt-rezervasyon" element={<ReportCenter fixedCode="REZERVASYON" />} />
+          <Route path="rpt-sayim-fark" element={<ReportCenter fixedCode="SAYIM-FARK" />} />
           <Route path="stock-report" element={<StockReport />} />
           <Route path="documents-in-obs" element={<DocumentObservation direction="INBOUND" />} />
           <Route path="documents-out-obs" element={<DocumentObservation direction="OUTBOUND" />} />

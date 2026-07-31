@@ -257,7 +257,126 @@ async function runReport(companyId: number, sourceKey: string, c: Crit) {
   if (sourceKey === 'RETURNS') return runDocuments(companyId, c) // İade = seçilen (iade) operasyonun belgeleri
   if (sourceKey === 'DOC_LOG') return runDocLog(companyId, c) // Log / Belge Hareketleri (durum geçiş audit)
   if (sourceKey === 'OPERATION_MOVEMENTS') return runMovements(companyId, c) // Operasyon Hareketi — tüm yönler
+  // P1 raporları (RAPOR-ANALIZI.md)
+  if (sourceKey === 'PRODUCT_LEDGER') return runProductLedger(companyId, c) // Ürün Hareket Ekstresi (yürüyen bakiye)
+  if (sourceKey === 'EXPIRY_RISK') return runExpiryRisk(companyId, c) // SKT Yaklaşan/Geçen
+  if (sourceKey === 'BATCH_TRACK') return runBatchTrack(companyId, c) // Lot/Parti İzleme
+  if (sourceKey === 'RESERVATIONS') return runReservations(companyId, c) // Rezervasyon Raporu
+  if (sourceKey === 'COUNT_DIFF') return runCountDiff(companyId, c) // Sayım Fark Özeti
   return []
+}
+
+// ── P1 raporları ──
+// Ürün Hareket Ekstresi: kronolojik hareketler (runMovements) + yürüyen bakiye
+async function runProductLedger(companyId: number, c: Crit) {
+  const rows = await runMovements(companyId, c, undefined, { chronological: true })
+  let bakiye = 0
+  return rows.map((r) => {
+    bakiye += Number((r as Record<string, unknown>).giris ?? 0) - Number((r as Record<string, unknown>).cikis ?? 0)
+    return { ...r, bakiye: bakiye.toFixed(2) }
+  })
+}
+
+// Stok satırlarını ürün/lokasyon/depo adlarıyla zenginleştir (SKT/Lot/Rezervasyon ortak temeli)
+async function stockJoined(companyId: number, where: Record<string, unknown>) {
+  const stocks = await prisma.tBLSTOCK.findMany({ where: { companyId, ...where }, orderBy: { id: 'asc' }, take: 2000 })
+  const [prods, locs, whs] = await Promise.all([
+    prisma.tBLPRODUCT.findMany({ where: { companyId }, select: { id: true, code: true, name: true } }),
+    prisma.tBLLOCATION.findMany({ where: { companyId }, select: { id: true, code: true, warehouseId: true } }),
+    prisma.tBLWAREHOUSE.findMany({ where: { companyId }, select: { id: true, code: true } }),
+  ])
+  const p = new Map(prods.map((x) => [x.id, `${x.code} — ${x.name ?? ''}`]))
+  const l = new Map(locs.map((x) => [x.id, x]))
+  const w = new Map(whs.map((x) => [x.id, x.code]))
+  return { stocks, p, l, w }
+}
+const dstr = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : '—')
+
+async function runExpiryRisk(companyId: number, c: Crit) {
+  const days = Number(c.days ?? 0)
+  const limit = new Date(Date.now() + days * 86400000)
+  const { stocks, p, l, w } = await stockJoined(companyId, {
+    mainQty: { gt: 0 }, expiryDate: { not: null, lte: limit },
+    ...(c.productId ? { productId: Number(c.productId) } : {}),
+  })
+  const today = Date.now()
+  return stocks
+    .filter((s) => !c.warehouseId || l.get(s.locationId)?.warehouseId === Number(c.warehouseId))
+    .map((s) => ({
+      urun: p.get(s.productId) ?? `#${s.productId}`, lokasyon: l.get(s.locationId)?.code ?? `#${s.locationId}`,
+      batch: s.batchNo ?? '—', miktar: String(s.mainQty), skt: dstr(s.expiryDate),
+      kalanGun: s.expiryDate ? Math.floor((s.expiryDate.getTime() - today) / 86400000) : '—',
+    }))
+}
+
+async function runBatchTrack(companyId: number, c: Crit) {
+  const { stocks, p, l, w } = await stockJoined(companyId, {
+    mainQty: { gt: 0 }, batchNo: { contains: String(c.batchNo ?? ''), mode: 'insensitive' as const },
+    ...(c.productId ? { productId: Number(c.productId) } : {}),
+  })
+  return stocks.map((s) => ({
+    urun: p.get(s.productId) ?? `#${s.productId}`,
+    depo: w.get(l.get(s.locationId)?.warehouseId ?? -1) ?? '—',
+    lokasyon: l.get(s.locationId)?.code ?? `#${s.locationId}`,
+    batch: s.batchNo ?? '—', miktar: String(s.mainQty), rezerve: String(s.reservedQty), skt: dstr(s.expiryDate),
+  }))
+}
+
+async function runReservations(companyId: number, c: Crit) {
+  const { stocks, p, l } = await stockJoined(companyId, {
+    reservedQty: { gt: 0 },
+    ...(c.productId ? { productId: Number(c.productId) } : {}),
+  })
+  const docIds = [...new Set(stocks.map((s) => s.reservedDocumentId).filter((x): x is number => x != null))]
+  const docs = docIds.length ? await prisma.tBLDOCUMENT.findMany({ where: { id: { in: docIds } }, select: { id: true, documentNo: true, partner: { select: { code: true, name: true } } } }) : []
+  const dmap = new Map(docs.map((d) => [d.id, d]))
+  return stocks
+    .filter((s) => !c.warehouseId || l.get(s.locationId)?.warehouseId === Number(c.warehouseId))
+    .map((s) => {
+      const d = s.reservedDocumentId != null ? dmap.get(s.reservedDocumentId) : undefined
+      return {
+        urun: p.get(s.productId) ?? `#${s.productId}`, lokasyon: l.get(s.locationId)?.code ?? `#${s.locationId}`,
+        batch: s.batchNo ?? '—', rezerve: String(s.reservedQty),
+        belgeNo: d?.documentNo ?? (s.reservedDocumentId != null ? `#${s.reservedDocumentId}` : 'Bağsız blokaj'),
+        cari: d?.partner ? `${d.partner.code} — ${d.partner.name ?? ''}` : '—',
+      }
+    })
+}
+
+async function runCountDiff(companyId: number, c: Crit) {
+  const counts = await prisma.tBLSTOCKCOUNT.findMany({
+    where: {
+      companyId, status: 'COMPLETED',
+      ...(c.countNo ? { countNo: { contains: String(c.countNo), mode: 'insensitive' as const } } : {}),
+      countDate: {
+        ...(c.dateFrom ? { gte: new Date(String(c.dateFrom)) } : {}),
+        ...(c.dateTo ? { lte: new Date(String(c.dateTo) + 'T23:59:59.999Z') } : {}),
+      },
+    },
+    include: { lines: true },
+    orderBy: { id: 'desc' }, take: 100,
+  })
+  const [prods, locs] = await Promise.all([
+    prisma.tBLPRODUCT.findMany({ where: { companyId }, select: { id: true, code: true, name: true } }),
+    prisma.tBLLOCATION.findMany({ where: { companyId }, select: { id: true, code: true } }),
+  ])
+  const p = new Map(prods.map((x) => [x.id, `${x.code} — ${x.name ?? ''}`]))
+  const l = new Map(locs.map((x) => [x.id, x.code]))
+  const out: Record<string, unknown>[] = []
+  for (const cnt of counts) {
+    for (const ln of cnt.lines) {
+      const sistem = Number(ln.systemQty ?? 0)
+      const sayilan = ln.countedQty == null ? null : Number(ln.countedQty)
+      const fark = (sayilan ?? 0) - sistem
+      if (sayilan == null || fark === 0) continue
+      out.push({
+        sayimNo: cnt.countNo, urun: ln.productId != null ? (p.get(ln.productId) ?? `#${ln.productId}`) : '—',
+        lokasyon: ln.locationId != null ? (l.get(ln.locationId) ?? `#${ln.locationId}`) : '—',
+        sistem: sistem.toFixed(2), sayilan: sayilan.toFixed(2), fark: fark.toFixed(2),
+      })
+    }
+  }
+  return out
 }
 
 // ── Çalıştırma uçları: tanım (full) + run ──

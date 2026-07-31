@@ -165,6 +165,68 @@ const REPORTS: ReportDef[] = [
     ],
     fields: DOC_FIELDS,
   },
+  // ── P1 raporları (RAPOR-ANALIZI.md) ──
+  {
+    code: 'URUN-EKSTRE', name: 'Ürün Hareket Ekstresi', sourceKey: 'PRODUCT_LEDGER', category: 'Hareket',
+    criteria: [
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', required: true, sortOrder: 1 },
+      { fieldCode: 'warehouseId', label: 'Depo', type: 'REF', refResource: 'warehouses', sortOrder: 2 },
+      { fieldCode: 'dateFrom', label: 'Tarih Baş.', type: 'DATE', sortOrder: 3 },
+      { fieldCode: 'dateTo', label: 'Tarih Bit.', type: 'DATE', sortOrder: 4 },
+    ],
+    fields: [...MOVEMENT_FIELDS, { fieldCode: 'bakiye', label: 'Bakiye', align: 'right', sortOrder: 15 }],
+  },
+  {
+    code: 'SKT-RISK', name: 'SKT Yaklaşan / Geçen', sourceKey: 'EXPIRY_RISK', category: 'Stok',
+    criteria: [
+      { fieldCode: 'days', label: 'Gün Eşiği (bugün+N)', type: 'NUMBER', required: true, sortOrder: 1 },
+      { fieldCode: 'warehouseId', label: 'Depo', type: 'REF', refResource: 'warehouses', sortOrder: 2 },
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', sortOrder: 3 },
+    ],
+    fields: [
+      { fieldCode: 'urun', label: 'Ürün', sortOrder: 1 }, { fieldCode: 'lokasyon', label: 'Lokasyon', sortOrder: 2 },
+      { fieldCode: 'batch', label: 'Lot/Parti', sortOrder: 3 }, { fieldCode: 'miktar', label: 'Miktar', align: 'right', sortOrder: 4 },
+      { fieldCode: 'skt', label: 'SKT', sortOrder: 5 }, { fieldCode: 'kalanGun', label: 'Kalan Gün', align: 'right', sortOrder: 6 },
+    ],
+  },
+  {
+    code: 'LOT-IZLEME', name: 'Lot / Parti İzleme', sourceKey: 'BATCH_TRACK', category: 'Stok',
+    criteria: [
+      { fieldCode: 'batchNo', label: 'Lot/Parti No', type: 'TEXT', required: true, sortOrder: 1 },
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', sortOrder: 2 },
+    ],
+    fields: [
+      { fieldCode: 'urun', label: 'Ürün', sortOrder: 1 }, { fieldCode: 'depo', label: 'Depo', sortOrder: 2 },
+      { fieldCode: 'lokasyon', label: 'Lokasyon', sortOrder: 3 }, { fieldCode: 'batch', label: 'Lot/Parti', sortOrder: 4 },
+      { fieldCode: 'miktar', label: 'Miktar', align: 'right', sortOrder: 5 }, { fieldCode: 'rezerve', label: 'Rezerve', align: 'right', sortOrder: 6 },
+      { fieldCode: 'skt', label: 'SKT', sortOrder: 7 },
+    ],
+  },
+  {
+    code: 'REZERVASYON', name: 'Rezervasyon Raporu', sourceKey: 'RESERVATIONS', category: 'Stok',
+    criteria: [
+      { fieldCode: 'warehouseId', label: 'Depo', type: 'REF', refResource: 'warehouses', sortOrder: 1 },
+      { fieldCode: 'productId', label: 'Ürün', type: 'REF', refResource: 'products', sortOrder: 2 },
+    ],
+    fields: [
+      { fieldCode: 'urun', label: 'Ürün', sortOrder: 1 }, { fieldCode: 'lokasyon', label: 'Lokasyon', sortOrder: 2 },
+      { fieldCode: 'batch', label: 'Lot/Parti', sortOrder: 3 }, { fieldCode: 'rezerve', label: 'Rezerve', align: 'right', sortOrder: 4 },
+      { fieldCode: 'belgeNo', label: 'Rezerve Belge', sortOrder: 5 }, { fieldCode: 'cari', label: 'Cari', sortOrder: 6 },
+    ],
+  },
+  {
+    code: 'SAYIM-FARK', name: 'Sayım Fark Özeti', sourceKey: 'COUNT_DIFF', category: 'Sayım',
+    criteria: [
+      { fieldCode: 'countNo', label: 'Sayım No', type: 'TEXT', sortOrder: 1 },
+      { fieldCode: 'dateFrom', label: 'Tarih Baş.', type: 'DATE', sortOrder: 2 },
+      { fieldCode: 'dateTo', label: 'Tarih Bit.', type: 'DATE', sortOrder: 3 },
+    ],
+    fields: [
+      { fieldCode: 'sayimNo', label: 'Sayım No', sortOrder: 1 }, { fieldCode: 'urun', label: 'Ürün', sortOrder: 2 },
+      { fieldCode: 'lokasyon', label: 'Lokasyon', sortOrder: 3 }, { fieldCode: 'sistem', label: 'Sistem', align: 'right', sortOrder: 4 },
+      { fieldCode: 'sayilan', label: 'Sayılan', align: 'right', sortOrder: 5 }, { fieldCode: 'fark', label: 'Fark', align: 'right', sortOrder: 6 },
+    ],
+  },
   // Log / Belge Hareketleri — belge durum geçiş logu (audit: kimden→kime, olay, kullanıcı).
   {
     code: 'LOG-BELGE', name: 'Log / Belge Hareketleri', sourceKey: 'DOC_LOG', category: 'Belge',
