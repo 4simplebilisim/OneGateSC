@@ -241,7 +241,7 @@ h1, h2, h3, h4, h5,
 .ant-layout-sider .ant-menu .ant-menu-submenu-title,
 .ant-layout-sider .ant-menu .ant-menu-item {
   font-size: 11.5px !important;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em; /* uzun etiketler (Çıkış Koşul...) sığsın — geniş aralık kesiyordu */
   text-transform: uppercase;
   font-weight: 400 !important;
 }

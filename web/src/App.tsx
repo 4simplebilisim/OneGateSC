@@ -149,6 +149,15 @@ export default function App() {
           <Route path="count-differences" element={<CountDifferences />} />
           <Route path="pallets" element={<PalletOps />} />
           <Route path="report-center" element={<ReportCenter />} />
+          <Route path="rpt-acik-belge" element={<ReportCenter fixedCode="ACIK-BELGE" />} />
+          <Route path="rpt-hrk-giris" element={<ReportCenter fixedCode="HRK-GIRIS" />} />
+          <Route path="rpt-hrk-cikis" element={<ReportCenter fixedCode="HRK-CIKIS" />} />
+          <Route path="rpt-hrk-transfer" element={<ReportCenter fixedCode="HRK-TRANSFER" />} />
+          <Route path="rpt-doluluk" element={<ReportCenter fixedCode="DOLULUK" />} />
+          <Route path="rpt-palet-izleme" element={<ReportCenter fixedCode="PALET-IZLEME" />} />
+          <Route path="rpt-palet-tarihce" element={<ReportCenter fixedCode="PALET-TARIHCE" />} />
+          <Route path="rpt-sevkiyat" element={<ReportCenter fixedCode="SEVKIYAT" />} />
+          <Route path="rpt-iade" element={<ReportCenter fixedCode="IADE" />} />
           <Route path="stock-report" element={<StockReport />} />
           <Route path="documents-in-obs" element={<DocumentObservation direction="INBOUND" />} />
           <Route path="documents-out-obs" element={<DocumentObservation direction="OUTBOUND" />} />

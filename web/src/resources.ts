@@ -176,10 +176,18 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'user-groups', label: 'Kullanıcı Grup', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'auth-center', label: 'Ekran Yetkileri', section: 'Uyarlamalar', group: 'Sistem' },
 
-  // ── Raporlar ──
-  { name: 'stock-report', label: 'Stok Raporu', section: 'Raporlar', group: '' },
-  // metadata-driven rapor merkezi (Başlık/Kriter/Saha'dan dinamik)
-  { name: 'report-center', label: 'Rapor Merkezi', section: 'Raporlar', group: '' },
+  // ── Raporlar — her rapor AYRI menü öğesi (tek çatı Rapor Merkezi kaldırıldı; motor aynı: report-run + fixedCode) ──
+  { name: 'stock-report', label: 'Stok Raporu', section: 'Raporlar', group: 'Stok' },
+  { name: 'rpt-doluluk', label: 'Doluluk (Lokasyon)', section: 'Raporlar', group: 'Stok' },
+  { name: 'rpt-hrk-giris', label: 'Giriş Hareketleri', section: 'Raporlar', group: 'Hareket' },
+  { name: 'rpt-hrk-cikis', label: 'Çıkış Hareketleri', section: 'Raporlar', group: 'Hareket' },
+  { name: 'rpt-hrk-transfer', label: 'Transfer Hareketleri', section: 'Raporlar', group: 'Hareket' },
+  { name: 'rpt-acik-belge', label: 'Açık Belgeler', section: 'Raporlar', group: 'Belge' },
+  { name: 'rpt-sevkiyat', label: 'Sevkiyat', section: 'Raporlar', group: 'Belge' },
+  { name: 'rpt-iade', label: 'İade', section: 'Raporlar', group: 'Belge' },
+  { name: 'rpt-palet-izleme', label: 'Palet İzleme', section: 'Raporlar', group: 'Palet' },
+  { name: 'rpt-palet-tarihce', label: 'Palet Tarihçesi', section: 'Raporlar', group: 'Palet' },
+  // report-center rotası derin bağlantılar için durur (menüde yok)
 ]
 
 export const sectionOf = (name: string) => RESOURCES.find((r) => r.name === name)?.section ?? SECTIONS[0]

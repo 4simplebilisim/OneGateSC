@@ -16,7 +16,8 @@ const parseOpts = (s?: string | null): Opt[] =>
     return { value: value!, label: label ?? value! }
   })
 
-export const ReportCenter = () => {
+// fixedCode verilirse TEK RAPOR ekranı olur (menüde ayrı öğe): seçici gizlenir, rapor otomatik açılır.
+export const ReportCenter = ({ fixedCode }: { fixedCode?: string }) => {
   const { message } = App.useApp()
   const [form] = Form.useForm()
   const [reports, setReports] = useState<Head[]>([])
@@ -27,8 +28,15 @@ export const ReportCenter = () => {
   const [ran, setRan] = useState(false)
 
   useEffect(() => {
-    axiosInstance.get('/api/report-run').then((r) => setReports(r.data))
-  }, [])
+    axiosInstance.get('/api/report-run').then((r) => {
+      setReports(r.data)
+      if (fixedCode) {
+        const hit = (r.data as Head[]).find((h) => h.code === fixedCode)
+        if (hit) selectReport(hit.id)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixedCode])
 
   const selectReport = async (id: number) => {
     form.resetFields(); setRows([]); setRan(false)
@@ -71,14 +79,17 @@ export const ReportCenter = () => {
 
   return (
     <div className="og-page">
-      <PageHeader title="Raporlar" subtitle="Rapor seç → kriterleri gir → çalıştır (kriter/saha tanıma göre dinamik)" />
+      <PageHeader title={fixedCode ? (def?.name ?? 'Rapor') : 'Raporlar'}
+        subtitle={fixedCode ? 'Kriterleri girip çalıştırın' : 'Rapor seç → kriterleri gir → çalıştır (kriter/saha tanıma göre dinamik)'} />
 
-      <Card className="og-section-card" size="small" title="Rapor">
-        <Select
-          style={{ minWidth: 320 }} showSearch optionFilterProp="label" placeholder="Rapor seçiniz" onChange={selectReport}
-          options={reports.map((r) => ({ value: r.id, label: `${r.category ? r.category + ' · ' : ''}${r.name}` }))}
-        />
-      </Card>
+      {!fixedCode && (
+        <Card className="og-section-card" size="small" title="Rapor">
+          <Select
+            style={{ minWidth: 320 }} showSearch optionFilterProp="label" placeholder="Rapor seçiniz" onChange={selectReport}
+            options={reports.map((r) => ({ value: r.id, label: `${r.category ? r.category + ' · ' : ''}${r.name}` }))}
+          />
+        </Card>
+      )}
 
       {def && (
         <Card className="og-section-card" size="small" title={`Kriterler — ${def.name}`}>

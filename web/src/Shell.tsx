@@ -111,7 +111,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
       </Layout.Header>
 
       <Layout>
-        <Layout.Sider width={240} collapsed={collapsed} collapsedWidth={56} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
+        <Layout.Sider width={280} collapsed={collapsed} collapsedWidth={56} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
           {/* Menü kendi İÇ konteynerinde kayar — sticky Sider'da dış overflow güvenilmez (scroll yutuluyordu) */}
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             {!collapsed && (
@@ -121,6 +121,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             )}
             <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
               <Menu
+                inlineIndent={12}
                 theme={dark ? 'dark' : 'light'}
                 mode="inline"
                 selectedKeys={[selected]}
