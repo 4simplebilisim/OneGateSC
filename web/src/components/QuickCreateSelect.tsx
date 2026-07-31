@@ -90,7 +90,8 @@ export function QuickCreateSelect({ value, onChange, options, resource, onCreate
           </>
         )}
       />
-      <Modal title={`Yeni ${label}`} open={open} onOk={submit} confirmLoading={saving} onCancel={() => setOpen(false)} okText="Kaydet" cancelText="İptal" destroyOnHidden>
+      <Modal title={`Yeni ${label}`} open={open} onOk={submit} confirmLoading={saving} onCancel={() => setOpen(false)} okText="Kaydet" cancelText="İptal" destroyOnHidden
+        centered styles={{ body: { maxHeight: '62vh', overflowY: 'auto', paddingRight: 6 } }}>
         <Form form={form} layout="vertical" initialValues={modalFields.some((f) => f.name === 'isActive') ? { isActive: true } : undefined}>
           {modalFields.map((f) =>
             f.type === 'bool' ? (
