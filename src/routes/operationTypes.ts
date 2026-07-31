@@ -39,9 +39,17 @@ const baseShape = {
   logControlDays: z.number().int().nullish(),
   ...boolShape,
 }
-// Enum kolonları NOT NULL (default'lu) — null geleni gönderme (mevcut/default değer korunur)
-const dropNullEnums = (data: Record<string, unknown>) => {
-  for (const k of ['documentType', 'controlMode', 'stockRotation']) if (data[k] === null) delete data[k]
+// Enum kolonları NOT NULL (default'lu) — null gelen enum GÖNDERİLMEZ (mevcut/default korunur); tipli ayıklama
+const splitEnums = <T extends { documentType?: string | null; controlMode?: string | null; stockRotation?: string | null }>(data: T) => {
+  const { documentType, controlMode, stockRotation, ...rest } = data
+  return {
+    rest,
+    enums: {
+      ...(documentType != null ? { documentType: documentType as never } : {}),
+      ...(controlMode != null ? { controlMode: controlMode as never } : {}),
+      ...(stockRotation != null ? { stockRotation: stockRotation as never } : {}),
+    },
+  }
 }
 
 const createSchema = z.object({
@@ -101,7 +109,7 @@ export async function operationTypeRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    dropNullEnums(parsed.data as Record<string, unknown>)
+
     const companyId = getCompanyId(request)
     const revErr = await reverseDirectionError(companyId, parsed.data.direction, parsed.data.reverseOperationTypeId)
     if (revErr) return reply.code(400).send({ error: revErr })
@@ -112,7 +120,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     // COUNT (Sayım) operasyonu stok HAREKETİ postlamaz — stok yalnız sayım motoru (equalize) ile düzeltilir → affectsStock DAİMA kapalı (çift-düzeltme önlenir)
     if (parsed.data.direction === 'COUNT') (parsed.data as Record<string, unknown>).affectsStock = false
     try {
-      const opType = await prisma.tBLOPERATIONTYPE.create({ data: { ...parsed.data, companyId } })
+      const { rest: createRest, enums: createEnums } = splitEnums(parsed.data)
+      const opType = await prisma.tBLOPERATIONTYPE.create({ data: { ...createRest, ...createEnums, companyId } })
       return reply.code(201).send(opType)
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') return reply.code(409).send({ error: 'Operasyon tipi kodu zaten var' })
@@ -125,7 +134,7 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    dropNullEnums(parsed.data as Record<string, unknown>)
+
     const companyId = getCompanyId(request)
     const existing = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id, companyId } })
     if (!existing) return reply.code(404).send({ error: 'Operation type not found' })
@@ -140,7 +149,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (lnkErr) return reply.code(400).send({ error: lnkErr })
     const refErr = await opRefsIssue(companyId, parsed.data)
     if (refErr) return reply.code(400).send({ error: refErr })
-    return prisma.tBLOPERATIONTYPE.update({ where: { id }, data: parsed.data })
+    const { rest: updRest, enums: updEnums } = splitEnums(parsed.data)
+    return prisma.tBLOPERATIONTYPE.update({ where: { id }, data: { ...updRest, ...updEnums } })
   })
 
   app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
