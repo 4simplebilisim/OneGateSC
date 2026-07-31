@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import {
   createInvoiceFromPurchaseOrder,
   createInvoiceFromSalesOrder,
@@ -33,7 +33,7 @@ export async function invoiceRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const inv = await prisma.tBLINVOICE.findUnique({ where: { id }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+    const inv = await prisma.tBLINVOICE.findFirst({ where: { id, ...companyListFilter(request) }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
     if (!inv) return reply.code(404).send({ error: 'Invoice not found' })
     return inv
   })

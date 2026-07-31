@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { simpleCrud, type Delegate } from './documentTypes.js'
 
 const pInt = z.number().int().positive()
@@ -11,8 +11,8 @@ const ctrl = z.enum(['MANUAL', 'REQUIRE_BATCH', 'REQUIRE_SERIAL', 'REQUIRE_REASO
 // Giriş Koşulu Parametresi (legacy TBLSBGIRISKOSULPARAMETRE)
 const entryParam = z.object({
   entryConditionTypeId: pInt,
-  cariLinkType: scope.optional(), cariLinkId: pInt.optional(),
-  materialLinkType: scope.optional(), materialLinkId: pInt.optional(),
+  cariLinkType: scope.optional(), cariLinkId: pInt.nullish(),
+  materialLinkType: scope.optional(), materialLinkId: pInt.nullish(),
   controlType: ctrl.optional(),
   conditionBreakAllowed: z.boolean().optional(),
   exclude: z.boolean().optional(),
@@ -24,10 +24,10 @@ export const entryConditionParameterRoutes = simpleCrud(prisma.tBLENTRYCONDITION
 // Çıkış Koşulu Parametresi (legacy TBLSBCIKISKOSULPARAMETRE)
 const exitParam = z.object({
   exitConditionTypeId: pInt,
-  cariLinkType: scope.optional(), cariLinkId: pInt.optional(),
-  materialLinkType: scope.optional(), materialLinkId: pInt.optional(),
+  cariLinkType: scope.optional(), cariLinkId: pInt.nullish(),
+  materialLinkType: scope.optional(), materialLinkId: pInt.nullish(),
   controlType: ctrl.optional(),
-  controlFieldId: pInt.optional(),
+  controlFieldId: pInt.nullish(),
   toleranceValue: z.number().optional(),
   percentValue: z.number().optional(),
   dayCount: z.number().int().optional(),
@@ -55,7 +55,7 @@ export function conditionBreakLogRoutes(app: FastifyInstance) {
   app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const res = await prisma.tBLCONDITIONBREAKLOG.deleteMany({ where: { id, companyId: getCompanyId(request) } })
+    const res = await prisma.tBLCONDITIONBREAKLOG.deleteMany({ where: { id, ...companyListFilter(request) } })
     if (res.count === 0) return reply.code(404).send({ error: 'Log bulunamadı' })
     return { deleted: res.count }
   })

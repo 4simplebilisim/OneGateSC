@@ -2,6 +2,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { suggestPutawayLocations } from './routing.js'
 import { writeLedger } from './ledger.js'
+import { refreshDocStatus } from './documentStatus.js'
+import { nextSequence } from './sequence.js'
 
 /** Hareket motoru hatası — route'larda 409'a map'lenir. */
 export class MovementError extends Error {
@@ -29,13 +31,152 @@ function cariScopeMatches(type: Scope, linkId: number | null, partnerId: number 
   if (type === 'SPECIFIC') return linkId != null && linkId === partnerId
   return false
 }
-/** Lokasyon kapsamı bir lokasyona uyuyor mu? (null/Hepsi→serbest, Grup→lokasyon o gruba üye, Belirli→lokasyon eşleşir) */
+/** Lokasyon kapsamı bir lokasyona uyuyor mu? (Hepsi→serbest, Grup→lokasyon o gruba üye, Belirli→lokasyon eşleşir)
+ *  Tip BOŞ ama belirli lokasyon verilmişse → o lokasyona kilit (SPECIFIC) — "lokasyon seçmek = kısıtlamak" sezgisi. */
 function locationScopeMatches(type: Scope, linkId: number | null, locationId: number | null, locationGroupIds: number[]): boolean {
-  if (!type || type === 'ALL') return true
+  const effType: Exclude<Scope, null> = type ?? (linkId != null ? 'SPECIFIC' : 'ALL')
+  if (effType === 'ALL') return true
   if (locationId == null) return false
-  if (type === 'GROUP') return linkId != null && locationGroupIds.includes(linkId)
-  if (type === 'SPECIFIC') return linkId != null && linkId === locationId
+  if (effType === 'GROUP') return linkId != null && locationGroupIds.includes(linkId)
+  if (effType === 'SPECIFIC') return linkId != null && linkId === locationId
   return false
+}
+
+/**
+ * Okutma (kapsam) doğrulaması — operasyonun TANIMLI statü/lokasyon kurallarına uyuyor mu?
+ * Movement'taki non-scope kontrollerin (statü-geçiş + lokasyon-kapsamı) okutma-zamanı eşi; böylece
+ * yanlış lokasyon/statüden okutma anında reddedilir (eskiden yalnız complete'te, scope yolu ise atlıyordu).
+ * Döner: hata mesajı (uyumsuzsa) | null (uygun). Kural TANIMLI DEĞİLSE o boyut serbesttir.
+ */
+export async function validateScopeAgainstOperation(
+  client: Prisma.TransactionClient,
+  companyId: number,
+  op: { id: number; direction: 'INBOUND' | 'OUTBOUND' | 'INTERNAL' | 'COUNT'; qualityControl: boolean },
+  ctx: { partnerId: number | null; partnerGroupId: number | null; productId: number; productGroupId: number | null },
+  scope: { sourceLocationId: number | null; targetLocationId: number | null; sourceStatusId: number | null; targetStatusId: number | null },
+): Promise<string | null> {
+  const dir = op.direction
+  // Statü uyumu: operasyonda geçiş tanımlıysa okutulan statü uygun olmalı (INBOUND+kalite kontrol → karantina zorlandığı için atlanır)
+  const transitions = await client.tBLOPERATIONTYPESTATUS.findMany({ where: { operationTypeId: op.id, companyId } })
+  if (transitions.length > 0 && !(dir === 'INBOUND' && op.qualityControl)) {
+    const valid =
+      dir === 'INBOUND' ? transitions.some((t) => t.targetStatusId === scope.targetStatusId)
+        : dir === 'OUTBOUND' ? transitions.some((t) => t.sourceStatusId === scope.sourceStatusId)
+          : transitions.some((t) => t.sourceStatusId === scope.sourceStatusId && t.targetStatusId === scope.targetStatusId)
+    if (!valid) return 'Statü uyumsuz — okutulan statü bu operasyon tanımında yok'
+  }
+  // Lokasyon uyumu: kapsamı (cari+malzeme) eşleşen lokasyon kuralı varsa okutulan lokasyon izinli listede olmalı
+  const locationRules = await client.tBLOPERATIONTYPELOCATION.findMany({ where: { operationTypeId: op.id, companyId } })
+  if (locationRules.length > 0) {
+    const scoped = locationRules.filter((r) =>
+      cariScopeMatches(r.cariLinkType as Scope, r.cariLinkId, ctx.partnerId, ctx.partnerGroupId) &&
+      materialScopeMatches(r.materialLinkType as Scope, r.materialLinkId, ctx.productId, ctx.productGroupId),
+    )
+    if (scoped.length > 0) {
+      if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
+        const groups = scope.sourceLocationId != null
+          ? (await client.tBLLOCATIONGROUPLINK.findMany({ where: { companyId, locationId: scope.sourceLocationId }, select: { locationGroupId: true } })).map((g) => g.locationGroupId)
+          : []
+        if (!scoped.some((r) => locationScopeMatches(r.sourceLinkType as Scope, r.sourceLocationId, scope.sourceLocationId, groups))) {
+          return 'Lokasyon uyumsuz — kaynak lokasyon bu operasyonda okutulamaz'
+        }
+      }
+      if (dir === 'INBOUND' || dir === 'INTERNAL') {
+        const groups = scope.targetLocationId != null
+          ? (await client.tBLLOCATIONGROUPLINK.findMany({ where: { companyId, locationId: scope.targetLocationId }, select: { locationGroupId: true } })).map((g) => g.locationGroupId)
+          : []
+        if (!scoped.some((r) => locationScopeMatches(r.targetLinkType as Scope, r.targetLocationId, scope.targetLocationId, groups))) {
+          return 'Lokasyon uyumsuz — hedef lokasyon bu operasyonda okutulamaz'
+        }
+      }
+    }
+  }
+  return null
+}
+
+// ── Operasyon toleransı (TBLOPERATIONTYPETOLERANCE + birim detayı) ──
+// Kontrollü toplamada sınırlar: üst = miktar×(1+üst%), alt = miktar×(1−alt%). Tanım yoksa 0/0 (esneme yok).
+export type ToleranceRow = {
+  cariLinkType: string | null; cariLinkId: number | null
+  materialLinkType: string | null; materialLinkId: number | null
+  details: { unitId: number | null; lowerPercent: Prisma.Decimal | null; upperPercent: Prisma.Decimal | null }[]
+}
+export async function loadTolerances(client: Prisma.TransactionClient, companyId: number, operationTypeId: number): Promise<ToleranceRow[]> {
+  return client.tBLOPERATIONTYPETOLERANCE.findMany({
+    where: { companyId, operationTypeId, isActive: true },
+    select: { cariLinkType: true, cariLinkId: true, materialLinkType: true, materialLinkId: true, details: { select: { unitId: true, lowerPercent: true, upperPercent: true } } },
+  })
+}
+/** Cari+malzeme kapsamı eşleşen tolerans kaydının BİRİM detayından alt/üst yüzde (birim detayı yoksa birimsiz genel detay). */
+export function pickTolerance(
+  rows: ToleranceRow[],
+  ctx: { partnerId: number | null; partnerGroupId: number | null; productId: number; productGroupId: number | null },
+  unitId: number,
+): { lowerPct: Prisma.Decimal; upperPct: Prisma.Decimal } {
+  const zero = new Prisma.Decimal(0)
+  for (const t of rows) {
+    if (!cariScopeMatches(t.cariLinkType as Scope, t.cariLinkId, ctx.partnerId, ctx.partnerGroupId)) continue
+    if (!materialScopeMatches(t.materialLinkType as Scope, t.materialLinkId, ctx.productId, ctx.productGroupId)) continue
+    const det = t.details.find((d) => d.unitId === unitId) ?? t.details.find((d) => d.unitId == null)
+    if (det) return { lowerPct: det.lowerPercent ?? zero, upperPct: det.upperPercent ?? zero }
+  }
+  return { lowerPct: zero, upperPct: zero }
+}
+const pctBelow = (qty: Prisma.Decimal, pct: Prisma.Decimal) => qty.mul(new Prisma.Decimal(1).sub(pct.div(100))) // alt sınır
+const pctAbove = (qty: Prisma.Decimal, pct: Prisma.Decimal) => qty.mul(new Prisma.Decimal(1).add(pct.div(100))) // üst sınır
+export { pctAbove as toleranceUpperBound }
+
+/**
+ * Toplama eksiği — KONTROLLÜ operasyonda her satır tam toplanmalı (Σ okutma ≥ miktar; ALT TOLERANS tanımlıysa
+ * miktar×(1−alt%) yeterli). İlk eksik satırı döner (yoksa null). Kontrolsüz op / stok-etkisiz → her zaman null.
+ * "satır bazlı her şey toplanmalı, emin ol öyle onaya gönder" kuralı — confirm + complete + böl kararı için.
+ */
+export async function collectionShortfall(client: Prisma.TransactionClient, documentId: number): Promise<{ lineNo: number; collected: string; quantity: string } | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    include: {
+      operationType: { select: { id: true, controlMode: true, affectsStock: true } },
+      partner: { select: { partnerGroupId: true } },
+      lines: { orderBy: { lineNo: 'asc' }, include: { scopes: { select: { quantity: true } }, product: { select: { productGroupId: true } } } },
+    },
+  })
+  if (!doc || !doc.operationType.affectsStock || doc.operationType.controlMode === 'UNCONTROLLED') return null
+  const tolerances = await loadTolerances(client, doc.companyId, doc.operationType.id)
+  for (const line of doc.lines) {
+    const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+    const { lowerPct } = pickTolerance(tolerances, { partnerId: doc.partnerId, partnerGroupId: doc.partner?.partnerGroupId ?? null, productId: line.productId, productGroupId: line.product?.productGroupId ?? null }, line.unitId)
+    if (collected.lt(pctBelow(line.quantity, lowerPct))) return { lineNo: line.lineNo, collected: collected.toString(), quantity: line.quantity.toString() }
+  }
+  return null
+}
+
+/**
+ * KONTROLSÜZ okutma kapısı — legacy: kontrolsüz belge BOŞ açılır, içerik el terminali okutmalarıyla
+ * oluşur (okutma ŞART). Hiç okutma yoksa onaya gönderilemez/onaylanamaz → hata mesajı döner (yoksa null).
+ * (Kontrollü = içerik plandan belli, o taraf collectionShortfall ile satır-bazlı denetlenir.)
+ */
+export async function uncontrolledScanGate(client: Prisma.TransactionClient, documentId: number): Promise<string | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    include: { operationType: { select: { controlMode: true, affectsStock: true } }, lines: { select: { _count: { select: { scopes: true } } } } },
+  })
+  if (!doc || !doc.operationType.affectsStock || doc.operationType.controlMode !== 'UNCONTROLLED') return null
+  const totalScopes = doc.lines.reduce((n, l) => n + l._count.scopes, 0)
+  if (totalScopes === 0) return 'Kontrolsüz belge okutmayla oluşur — el terminalinden okutma yapılmadan onaya gönderilemez/onaylanamaz'
+  return null
+}
+
+/**
+ * REFERANS KONTROLLÜ kapısı — bu operasyonun belgesi referanstan (bağlı çıkış onayı) doğmuş olmalı.
+ * Elle/serbest açılmış (referanssız) belge onay akışına giremez → hata mesajı döner (uygunsa null).
+ */
+export async function referenceGate(client: Prisma.TransactionClient, documentId: number): Promise<string | null> {
+  const doc = await client.tBLDOCUMENT.findUnique({
+    where: { id: documentId },
+    select: { referenceDocumentId: true, operationType: { select: { controlMode: true } } },
+  })
+  if (!doc || doc.operationType.controlMode !== 'REFERENCE_CONTROLLED' || doc.referenceDocumentId != null) return null
+  return 'Referans kontrollü belge referanssız onaylanamaz — bağlı çıkış onayıyla otomatik oluşmalıdır'
 }
 
 // Giriş/Çıkış koşulu kontrol tipi — SSP yerine yerleşik kontroller
@@ -89,7 +230,29 @@ interface MoveCtx {
  * Yoksa ve delta>0 ise yeni satır açar; delta<0 ve satır yoksa/yetersizse hata.
  * Her başarılı değişim hareket defterine (ledger) işaretli qtyDelta ile yazılır.
  */
-async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null) {
+// ── Rezerv taşıma (op.reserveTransfer, legacy BYTREZERVETRANSFEREDILSIN) ──
+// Transferde belgeye bağlı rezerv stokla birlikte hedefe taşınır: kaynaktan kaldır (lift) → hareket → hedefe koy (land).
+// Bağsız blokaj (reservedDocumentId=null) TAŞINMAZ — koruma engel olarak kalır (blokajlı stok yerinden oynatılamaz).
+type ReserveCarry = { qty: Prisma.Decimal; docId: number } | null
+async function liftReservation(tx: Tx, key: StockKey, qty: Prisma.Decimal): Promise<ReserveCarry> {
+  const s = await tx.tBLSTOCK.findFirst({ where: key })
+  if (!s || s.reservedDocumentId == null || s.reservedQty.lte(0)) return null
+  const moved = s.reservedQty.lte(qty) ? s.reservedQty : qty
+  const rest = s.reservedQty.sub(moved)
+  await tx.tBLSTOCK.update({ where: { id: s.id }, data: { reservedQty: rest, ...(rest.lte(0) ? { reservedDocumentId: null } : {}) } })
+  return { qty: moved, docId: s.reservedDocumentId }
+}
+async function landReservation(tx: Tx, key: StockKey, carry: ReserveCarry): Promise<void> {
+  if (!carry || carry.qty.lte(0)) return
+  const s = await tx.tBLSTOCK.findFirst({ where: key })
+  if (!s) return // hedef satır az önce adjustStock ile yaratıldı/artırıldı — pratikte hep bulunur
+  if (s.reservedDocumentId != null && s.reservedDocumentId !== carry.docId) {
+    throw new MovementError(`Hedef stokta başka belgenin rezervi var (belge #${s.reservedDocumentId}) — rezerv taşınamaz`)
+  }
+  await tx.tBLSTOCK.update({ where: { id: s.id }, data: { reservedQty: s.reservedQty.add(carry.qty), reservedDocumentId: carry.docId } })
+}
+
+async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.Decimal, ctx: MoveCtx, expiryDate?: Date | null, productionDate?: Date | null) {
   const existing = await tx.tBLSTOCK.findFirst({ where: key })
 
   if (existing) {
@@ -99,9 +262,26 @@ async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.
         `Yetersiz stok (lokasyon ${key.locationId}, ürün ${key.productId}, statü ${key.statusId}): mevcut ${existing.mainQty.toString()}, talep ${delta.abs().toString()}`,
       )
     }
-    // Fiziksel miktar rezervenin altına düşerse rezerveyi kıs (sevk rezerveyi tüketir)
     const data: Prisma.TBLSTOCKUpdateInput = { mainQty: newQty }
-    if (existing.reservedQty.greaterThan(newQty)) data.reservedQty = newQty
+    // Rezerv koruması (legacy LNGREZERVEBELGEKOD): rezerve stok YALNIZ sahibi belgede çekilir.
+    if (delta.isNegative() && existing.reservedQty.greaterThan(0)) {
+      const ownDoc = existing.reservedDocumentId != null && existing.reservedDocumentId === (ctx.documentId ?? null)
+      if (ownDoc) {
+        // Kendi belgesi: sevk rezervini tüketir; rezerv biterse belge bağı kalkar
+        const consume = existing.reservedQty.lte(delta.abs()) ? existing.reservedQty : delta.abs()
+        const newReserved = existing.reservedQty.sub(consume)
+        data.reservedQty = newReserved
+        if (newReserved.lte(0)) data.reservedDocumentId = null
+      } else if (newQty.lessThan(existing.reservedQty)) {
+        // Başka belgenin rezervi (veya bağsız blokaj/satış tahsisi) — serbest kısmın ötesi ÇEKİLEMEZ
+        const owner = existing.reservedDocumentId != null
+          ? `belge #${existing.reservedDocumentId} rezervi`
+          : 'blokaj/tahsis rezervi'
+        throw new MovementError(
+          `Rezerve stok — çekilemez (lokasyon ${key.locationId}, ürün ${key.productId}): serbest ${existing.mainQty.sub(existing.reservedQty).toString()}, talep ${delta.abs().toString()} (${existing.reservedQty.toString()} ${owner})`,
+        )
+      }
+    }
     await tx.tBLSTOCK.update({ where: { id: existing.id }, data })
   } else {
     if (delta.isNegative()) {
@@ -109,7 +289,7 @@ async function adjustStock(tx: Tx, key: StockKey, unitId: number, delta: Prisma.
         `Stok bulunamadı (lokasyon ${key.locationId}, ürün ${key.productId}, statü ${key.statusId}) — çıkış yapılamaz`,
       )
     }
-    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta, ...(expiryDate ? { expiryDate } : {}) } })
+    await tx.tBLSTOCK.create({ data: { ...key, unitId, mainQty: delta, ...(expiryDate ? { expiryDate } : {}), ...(productionDate ? { productionDate } : {}) } })
   }
 
   // Hareket defteri (legacy TBLSBLOGBELGE) — append-only, stok değişimiyle aynı transaction
@@ -191,6 +371,57 @@ async function enforceCapacity(
   }
 }
 
+// AKTİF SAYIM DONMASI (stockMoveOnActiveCount): belge stok işlerken, dokunduğu (lokasyon, ürün) AKTİF bir
+// sayımın (COUNTING) kapsamındaysa VE o sayımın parametresinde "Aktif Sayımda Stok Hareketi" KAPALI ise → engellenir.
+// Kapsam sayımın AÇILDIĞI yere göre: tüm depo (locationId null) veya belirli lokasyon + malzeme kapsamı (Hepsi/Kod/Grup).
+async function assertNoActiveCountBlock(
+  tx: Prisma.TransactionClient,
+  doc: { companyId: number; warehouseId: number | null; lines: { productId: number; sourceLocationId: number | null; targetLocationId: number | null; scopes?: { sourceLocationId: number | null; targetLocationId: number | null }[] }[] },
+): Promise<void> {
+  // Hiç aktif sayım yoksa hızlı çık (yaygın durum — tek sayaç sorgusu)
+  if ((await tx.tBLSTOCKCOUNT.count({ where: { companyId: doc.companyId, status: 'COUNTING' } })) === 0) return
+  // Belgenin dokunduğu (lokasyon, ürün) çiftleri (satır + okutma scope'ları; lokasyon yoksa depo geneli = null)
+  const touched: { locationId: number | null; productId: number }[] = []
+  for (const line of doc.lines) {
+    const locs = new Set<number>()
+    if (line.sourceLocationId) locs.add(line.sourceLocationId)
+    if (line.targetLocationId) locs.add(line.targetLocationId)
+    for (const sc of line.scopes ?? []) { if (sc.sourceLocationId) locs.add(sc.sourceLocationId); if (sc.targetLocationId) locs.add(sc.targetLocationId) }
+    if (locs.size === 0) touched.push({ locationId: null, productId: line.productId })
+    else for (const l of locs) touched.push({ locationId: l, productId: line.productId })
+  }
+  if (!touched.length) return
+  const locIds = [...new Set(touched.map((t) => t.locationId).filter((x): x is number => x != null))]
+  const locWh = locIds.length ? await tx.tBLLOCATION.findMany({ where: { id: { in: locIds } }, select: { id: true, warehouseId: true } }) : []
+  const whByLoc = new Map(locWh.map((l) => [l.id, l.warehouseId]))
+  const whIds = new Set<number>(locWh.map((l) => l.warehouseId))
+  if (doc.warehouseId) whIds.add(doc.warehouseId)
+  if (!whIds.size) return
+  const counts = await tx.tBLSTOCKCOUNT.findMany({
+    where: { companyId: doc.companyId, status: 'COUNTING', warehouseId: { in: [...whIds] } },
+    select: { countNo: true, warehouseId: true, locationId: true, materialLinkType: true, materialLinkId: true, operationTypeId: true },
+  })
+  if (!counts.length) return
+  // Blok = sayımın operasyon parametresinde stockMoveOnActiveCount === false. Op/param yoksa bloklamaz.
+  const opIds = [...new Set(counts.map((c) => c.operationTypeId).filter((x): x is number => x != null))]
+  const params = opIds.length ? await tx.tBLCOUNTPARAMETER.findMany({ where: { companyId: doc.companyId, operationTypeId: { in: opIds } }, select: { operationTypeId: true, stockMoveOnActiveCount: true } }) : []
+  const blockByOp = new Map(params.map((p) => [p.operationTypeId, p.stockMoveOnActiveCount === false]))
+  const prodIds = [...new Set(touched.map((t) => t.productId))]
+  const prodGroup = new Map((await tx.tBLPRODUCT.findMany({ where: { id: { in: prodIds } }, select: { id: true, productGroupId: true } })).map((p) => [p.id, p.productGroupId]))
+  for (const count of counts) {
+    if (!(count.operationTypeId != null && (blockByOp.get(count.operationTypeId) ?? false))) continue // sayım bloklamıyor
+    for (const t of touched) {
+      const tWh = t.locationId != null ? whByLoc.get(t.locationId) : doc.warehouseId
+      if (tWh !== count.warehouseId) continue
+      if (count.locationId != null && count.locationId !== t.locationId) continue // lokasyon-scope sayım: yalnız o lokasyon
+      const mt = count.materialLinkType, mid = count.materialLinkId
+      const matCovers = !mt || mt === 'ALL' || (mt === 'SPECIFIC' && mid === t.productId) || (mt === 'GROUP' && mid != null && prodGroup.get(t.productId) === mid)
+      if (!matCovers) continue
+      throw new MovementError(`Aktif sayım (${count.countNo}) devam ediyor — sayım tamamlanana kadar bu ${count.locationId ? 'lokasyonda' : 'depoda'} stok hareketi yapılamaz`)
+    }
+  }
+}
+
 export async function completeDocument(documentId: number, breakOpts: CompleteOpts = {}) {
   return prisma.$transaction(async (tx) => {
     const doc = await tx.tBLDOCUMENT.findUniqueOrThrow({
@@ -250,7 +481,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       ...exitParams.map((p) => ({ id: p.id, dir: 'EXIT' as const, cariLinkType: p.cariLinkType as Scope, cariLinkId: p.cariLinkId, materialLinkType: p.materialLinkType as Scope, materialLinkId: p.materialLinkId, controlType: p.controlType as CtrlType, conditionBreakAllowed: p.conditionBreakAllowed, exclude: p.exclude, controlFieldName: p.controlFieldId != null ? (ctrlFieldMap.get(p.controlFieldId) ?? null) : null, dayCount: p.dayCount })),
     ]
     // Operasyon ↔ tolerans: kapsamı eşleşen kural + satırda referenceQty varsa miktar tolerans bandında olmalı
-    const toleranceRules = await tx.tBLOPERATIONTYPETOLERANCE.findMany({ where: { operationTypeId: op.id, companyId: doc.companyId, isActive: true } })
+    const toleranceRules = await tx.tBLOPERATIONTYPETOLERANCE.findMany({ where: { operationTypeId: op.id, companyId: doc.companyId, isActive: true }, include: { details: true } })
     // Directed putaway: ürün başına önerilen lokasyonlar (yönlendirme kuralı varsa hedef bu listede olmalı) — ürün bazında cache
     const putawayCache = new Map<number, Set<number>>()
     // Koşul kırma geçerli mi? Şifre + neden birlikte gerekli; şifre aktif kırma-şifresi tablosunda (cari null veya belge carisi) olmalı
@@ -261,8 +492,22 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       breakOk = !!pw
     }
 
+    // KONTROLSÜZ okutma kapısı: kontrolsüz belge okutmayla oluşur — hiç okutma yoksa stok işlenemez (legacy)
+    if (doc.operationType.affectsStock && op.controlMode === 'UNCONTROLLED') {
+      const totalScopes = doc.lines.reduce((n, l) => n + (l.scopes?.length ?? 0), 0)
+      if (totalScopes === 0) throw new MovementError('Kontrolsüz belge okutmayla oluşur — el terminalinden okutma yapılmadan onaylanamaz')
+    }
+    // REFERANS KONTROLLÜ kapısı: belge referanstan doğmuş olmalı (elle/serbest belge stok işleyemez)
+    if (op.controlMode === 'REFERENCE_CONTROLLED' && doc.referenceDocumentId == null) {
+      throw new MovementError('Referans kontrollü belge referanssız onaylanamaz — bağlı çıkış onayıyla otomatik oluşmalıdır')
+    }
+
     if (doc.operationType.affectsStock) {
+      await assertNoActiveCountBlock(tx, doc) // Aktif sayım donması: sayım kapsamındaki stokta hareket engellenir (param kapalıysa)
+      const tolerances = await loadTolerances(tx, doc.companyId, op.id) // kontrollü toplama alt/üst sınırları
       for (const line of doc.lines) {
+        // Okutmasız + sıfır-miktar satır (okutması silinmiş kontrolsüz satır): işlenecek bir şey yok — atla
+        if ((!line.scopes || line.scopes.length === 0) && line.quantity.lte(0)) continue
         // Pasif ürün: operasyon izin vermiyorsa (passiveProductUse=false) pasif ürün hareket edemez
         const product = await tx.tBLPRODUCT.findUnique({ where: { id: line.productId }, select: { isActive: true, code: true, productGroupId: true, shelfLifeDays: true } })
         if (product && !product.isActive && !op.passiveProductUse) {
@@ -278,6 +523,17 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           if (blocked) throw new MovementError(`Satır ${line.lineNo}: ürün (${product?.code}) bu operasyonda yasaklı`)
         }
 
+        // Kontrollü operasyon (Kontrollü/Referans Kontrollü): satır OKUTMA (toplama) ile tamamlanmadan onaylanamaz.
+        // ALT TOLERANS tanımlıysa miktar×(1−alt%) kadar eksik kabul edilir (StokBar tolerans semantiği).
+        if (op.controlMode !== 'UNCONTROLLED') {
+          const collected = (line.scopes ?? []).reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+          const { lowerPct } = pickTolerance(tolerances, { partnerId: doc.partnerId, partnerGroupId: docPartnerGroupId, productId: line.productId, productGroupId: product?.productGroupId ?? null }, line.unitId)
+          const minRequired = line.quantity.mul(new Prisma.Decimal(1).sub(lowerPct.div(100)))
+          if (collected.lt(minRequired)) {
+            throw new MovementError(`Satır ${line.lineNo}: kontrollü operasyon — toplama tamamlanmadan onaylanamaz (toplanan ${collected.toString()} / ${line.quantity.toString()}${lowerPct.gt(0) ? `, alt tolerans %${lowerPct}` : ''}, okutma gerekli)`)
+          }
+        }
+
         // ── KAPSAM (okutma) katmanı — satırda scope varsa: her scope = bir fiili hareket (legacy DETAY→N KAPSAM) ──
         // Scope'ta loc/statü/palet/batch/seri/cari/PO scope'tan gelir. Satır-seviyesi alan validasyonları (batch/seri/
         // statü-geçiş/koşul/tolerans) scope yolunda atlanır — scope kaynak gerçektir (MVP; tam per-scope validasyon: follow-up).
@@ -290,14 +546,23 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
               batchNo: sc.batchNo, serialNo: sc.serialNo, palletId: sc.palletId,
               customerId: sc.customerId, poNo: sc.poNo, poLine: sc.poLine,
             }
+            // Rezerv taşıma: transferde belgeye bağlı rezerv stokla birlikte hedefe gider (op.reserveTransfer)
+            let carry: ReserveCarry = null
             if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
               if (sc.sourceLocationId == null || sc.sourceStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: kaynak lokasyon/statü gerekli`)
-              await adjustStock(tx, { ...sCommon, locationId: sc.sourceLocationId, statusId: sc.sourceStatusId }, sc.unitId, sc.quantity.negated(), moveCtx)
+              const srcKey = { ...sCommon, locationId: sc.sourceLocationId, statusId: sc.sourceStatusId }
+              if (dir === 'INTERNAL' && op.reserveTransfer) carry = await liftReservation(tx, srcKey, sc.quantity)
+              await adjustStock(tx, srcKey, sc.unitId, sc.quantity.negated(), moveCtx)
             }
             if (dir === 'INBOUND' || dir === 'INTERNAL') {
               if (sc.targetLocationId == null || sc.targetStatusId == null) throw new MovementError(`Satır ${line.lineNo} okutma ${sc.scopeNo}: hedef lokasyon/statü gerekli`)
               await enforceCapacity(tx, doc.companyId, sc.targetLocationId, line.productId, sc.quantity, line.lineNo)
-              await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }, sc.unitId, sc.quantity, moveCtx)
+              // toplamada okutulan üretim/SKT stok'a taşınır. SKT önceliği: (1) okutulan SKT (barkod/elle),
+              // (2) INBOUND + raf ömrü → SKT = (okutulan üretim tarihi ?? bugün) + raf ömrü gün.
+              const scExpiry = sc.expiryDate ?? (dir === 'INBOUND' && product?.shelfLifeDays ? new Date((sc.productionDate ?? new Date()).getTime() + product.shelfLifeDays * 86400000) : null)
+              const tgtKey = { ...sCommon, locationId: sc.targetLocationId, statusId: sc.targetStatusId }
+              await adjustStock(tx, tgtKey, sc.unitId, sc.quantity, moveCtx, scExpiry, sc.productionDate)
+              await landReservation(tx, tgtKey, carry)
             }
             collected = collected.add(sc.quantity)
           }
@@ -428,18 +693,25 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           }
         }
 
-        // Operasyon Toleransı: referenceQty varsa miktar, tolerans bandı (± yüzde + ± mutlak) dışındaysa bloke
+        // Operasyon Toleransı: referenceQty varsa miktar, satır biriminin alt/üst yüzde bandı dışındaysa bloke
         if (toleranceRules.length > 0 && line.referenceQty != null) {
           const rule = toleranceRules.find((r) =>
             cariScopeMatches(r.cariLinkType as Scope, r.cariLinkId, doc.partnerId, docPartnerGroupId) &&
             materialScopeMatches(r.materialLinkType as Scope, r.materialLinkId, line.productId, product?.productGroupId ?? null))
-          if (rule && (rule.tolerancePercent != null || rule.toleranceQty != null)) {
+          if (rule && rule.details.length > 0) {
             const ref = line.referenceQty
-            let allowed = new Prisma.Decimal(0)
-            if (rule.tolerancePercent != null) allowed = allowed.add(ref.abs().mul(rule.tolerancePercent).div(100))
-            if (rule.toleranceQty != null && rule.toleranceQty.greaterThan(allowed)) allowed = rule.toleranceQty
-            if (line.quantity.sub(ref).abs().greaterThan(allowed)) {
-              throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referans (${ref}) toleransı dışında (izin ±${allowed})`)
+            const refAbs = ref.abs()
+            // Satırın birimine ait detayı seç (kg %10, adet %15 gibi birim-bazlı); birim eşleşmesi yoksa birimsiz (genel) detaya düş
+            const detail = rule.details.find((d) => d.unitId === line.unitId) ?? rule.details.find((d) => d.unitId == null)
+            if (detail) {
+              // Alt/üst izin = referansın yüzdesi (alt %5 → ref'in %5'i kadar eksik, üst %10 → %10 fazla kabul)
+              const lowerAllowed = detail.lowerPercent == null ? null : refAbs.mul(detail.lowerPercent).div(100)
+              const upperAllowed = detail.upperPercent == null ? null : refAbs.mul(detail.upperPercent).div(100)
+              const diff = line.quantity.sub(ref) // + fazla, − eksik
+              if (lowerAllowed != null && diff.lessThan(lowerAllowed.negated()))
+                throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referansın (${ref}) ALT toleransı dışında (izin −%${detail.lowerPercent})`)
+              if (upperAllowed != null && diff.greaterThan(upperAllowed))
+                throw new MovementError(`Satır ${line.lineNo}: miktar (${line.quantity}) referansın (${ref}) ÜST toleransı dışında (izin +%${detail.upperPercent})`)
             }
           }
         }
@@ -468,18 +740,15 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
         }
         const moveCtx: MoveCtx = { direction: dir, documentId: doc.id, documentLineId: line.id, operationTypeId: op.id, userId: breakOpts.userId ?? null }
 
-        // Çıkış: kaynak azalt
+        // Çıkış: kaynak azalt (transferde belgeye bağlı rezerv stokla taşınır — op.reserveTransfer)
+        let carry: ReserveCarry = null
         if (dir === 'OUTBOUND' || dir === 'INTERNAL') {
           if (line.sourceLocationId == null || line.sourceStatusId == null) {
             throw new MovementError(`Satır ${line.lineNo}: kaynak lokasyon ve statü gerekli (${dir})`)
           }
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.sourceLocationId, statusId: line.sourceStatusId },
-            line.unitId,
-            qty.negated(),
-            moveCtx,
-          )
+          const srcKey = { ...common, locationId: line.sourceLocationId, statusId: line.sourceStatusId }
+          if (dir === 'INTERNAL' && op.reserveTransfer) carry = await liftReservation(tx, srcKey, qty)
+          await adjustStock(tx, srcKey, line.unitId, qty.negated(), moveCtx)
         }
 
         // Giriş: hedef artır
@@ -494,23 +763,151 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
             dir === 'INBOUND' && product?.shelfLifeDays
               ? new Date(Date.now() + product.shelfLifeDays * 86400000)
               : undefined
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.targetLocationId, statusId: line.targetStatusId },
-            line.unitId,
-            qty,
-            moveCtx,
-            inboundExpiry,
-          )
+          const tgtKey = { ...common, locationId: line.targetLocationId, statusId: line.targetStatusId }
+          await adjustStock(tx, tgtKey, line.unitId, qty, moveCtx, inboundExpiry)
+          await landReservation(tx, tgtKey, carry)
         }
       }
     }
 
-    return tx.tBLDOCUMENT.update({
+    // ── REFERANS KONTROLLÜ: operasyonda bağlı giriş operasyonu tanımlıysa karşı belge OTOMATİK doğar ──
+    // A tesisi çıkışı onaylar → B tesisinin GİRİŞ belgesi içeriğiyle (5 elma, 3 armut) hazır oluşur;
+    // B serbest toplamaz, bu plana karşı toplar (giriş op'u REFERENCE_CONTROLLED → tam-toplama kapısı işler).
+    let referenceDocument: { id: number; documentNo: string } | null = null
+    // Eşleme kaynağı: 1) Otomatik Ref. Kontrollü Belge tanımı (kaynak op → hedef op; tesis kırılımlı ekran)
+    //                 2) operasyondaki linkedEntryOperationTypeId (API-uyumluluk fallback)
+    const autoRefRow = await tx.tBLAUTOREFERENCEDOCUMENT.findFirst({
+      where: { companyId: doc.companyId, sourceOperationTypeId: op.id, isActive: true },
+      orderBy: { id: 'asc' }, select: { targetOperationTypeId: true },
+    })
+    const linkedOpId = autoRefRow?.targetOperationTypeId ?? doc.operationType.linkedEntryOperationTypeId
+    if (linkedOpId != null) {
+      // idempotent: reverse→yeniden onay durumunda ikinci belge üretme (bu belgeden türeyen zaten varsa onu bildir).
+      // operationTypeId filtresi: SIRALI operasyonun doğurduğu belgeyle karışmasın (aynı referenceDocumentId'yi kullanır)
+      const existing = await tx.tBLDOCUMENT.findFirst({
+        where: { companyId: doc.companyId, referenceDocumentId: doc.id, operationTypeId: linkedOpId },
+        select: { id: true, documentNo: true },
+      })
+      if (existing) {
+        referenceDocument = existing
+      } else {
+        const linkedOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: linkedOpId, companyId: doc.companyId }, include: { sequence: true } })
+        const srcLines = doc.lines.filter((l) => l.quantity.gt(0))
+        if (linkedOp && srcLines.length > 0) {
+          // Belge no: bağlı operasyonun SAYACINDAN (tx içinde — atomik); sayaç yoksa kaynak-no türevi (-R)
+          const refNo = linkedOp.sequence
+            ? (await nextSequence(doc.companyId, linkedOp.sequence.code, tx)).formatted
+            : `${doc.documentNo.slice(0, 37)}-R`
+          const created = await tx.tBLDOCUMENT.create({
+            data: {
+              companyId: doc.companyId, documentNo: refNo, operationTypeId: linkedOp.id, status: 'DRAFT',
+              createdById: doc.createdById, partnerId: doc.partnerId, referenceDocumentId: doc.id,
+              note: `Referans belge: ${doc.documentNo}`,
+              lines: {
+                create: srcLines.map((l, i) => ({
+                  companyId: doc.companyId, lineNo: i + 1, productId: l.productId, unitId: l.unitId,
+                  quantity: l.quantity, batchNo: l.batchNo, serialNo: l.serialNo, collectedQty: 0,
+                })),
+              },
+            },
+            select: { id: true, documentNo: true },
+          })
+          await refreshDocStatus(tx, created.id, { source: 'reference-create', userId: breakOpts.userId ?? null }) // → Bekliyor
+          referenceDocument = created
+        }
+      }
+    }
+
+    // ── SIRALI OPERASYON (legacy TBLSBSIRALIOPERASYON): ilk operasyonun belgesi TAMAMLANINCA
+    // ikinci operasyonun belgesi otomatik doğar (ör. mal kabul → yerleştirme transferi).
+    // Kapsam filtreleri: cari (belge düzeyi), malzeme + lokasyon (satır düzeyi). İdempotent (reverse→re-complete üretmez).
+    let sequentialDocument: { id: number; documentNo: string } | null = null
+    const seqRules = await tx.tBLSEQUENTIALOPERATION.findMany({
+      where: {
+        companyId: doc.companyId, firstOperationId: op.id, isActive: true,
+        OR: [{ facilityId: null }, { facilityId: op.facilityId ?? -1 }],
+      },
+      orderBy: { id: 'asc' },
+    })
+    if (seqRules.length) {
+      // Cari kapsamı (belge düzeyi): ALL/boş geçer; SPECIFIC=cari, GROUP=cari grubu eşleşmeli
+      const partnerGroupId = doc.partnerId
+        ? (await tx.tBLBUSINESSPARTNER.findUnique({ where: { id: doc.partnerId }, select: { partnerGroupId: true } }))?.partnerGroupId ?? null
+        : null
+      const cariOk = (r: (typeof seqRules)[number]) =>
+        !r.cariLinkType || r.cariLinkType === 'ALL' ||
+        (r.cariLinkType === 'SPECIFIC' && doc.partnerId === r.cariLinkId) ||
+        (r.cariLinkType === 'GROUP' && partnerGroupId != null && partnerGroupId === r.cariLinkId)
+      const rule = seqRules.find(cariOk)
+      if (rule) {
+        const existingSeq = await tx.tBLDOCUMENT.findFirst({
+          where: { companyId: doc.companyId, referenceDocumentId: doc.id, operationTypeId: rule.secondOperationId },
+          select: { id: true, documentNo: true },
+        })
+        if (existingSeq) {
+          sequentialDocument = existingSeq
+        } else {
+          const secondOp = await tx.tBLOPERATIONTYPE.findFirst({ where: { id: rule.secondOperationId, companyId: doc.companyId }, include: { sequence: true } })
+          if (secondOp) {
+            // Malzeme kapsamı: SPECIFIC=ürün, GROUP=ürün grubu (satır düzeyi)
+            const prodGroups = new Map(
+              (await tx.tBLPRODUCT.findMany({ where: { id: { in: doc.lines.map((l) => l.productId) } }, select: { id: true, productGroupId: true } }))
+                .map((p) => [p.id, p.productGroupId]),
+            )
+            // Devir birimleri: okutmalı satırda SCOPE'lar gerçek kaynaktır (kontrolsüzde lot/hedef okutmada taşınır);
+            // okutmasız (plan) satırda satırın kendisi. Aynı (ürün|lot|seri|hedef) birleşir. Lokasyon kapsamı hedefe göre.
+            type SeqUnit = { productId: number; unitId: number; quantity: Prisma.Decimal; batchNo: string | null; serialNo: string | null; fromLocId: number | null; fromStaId: number | null }
+            const units = new Map<string, SeqUnit>()
+            for (const l of doc.lines) {
+              if (l.quantity.lte(0)) continue
+              if (rule.materialLinkType === 'SPECIFIC' && l.productId !== rule.materialLinkId) continue
+              if (rule.materialLinkType === 'GROUP' && prodGroups.get(l.productId) !== rule.materialLinkId) continue
+              const push = (qty: Prisma.Decimal, batchNo: string | null, serialNo: string | null, locId: number | null, staId: number | null) => {
+                if (qty.lte(0)) return
+                if (rule.locationLinkType === 'SPECIFIC' && locId !== rule.locationLinkId) return
+                const key = [l.productId, l.unitId, batchNo ?? '', serialNo ?? '', locId ?? '', staId ?? ''].join('|')
+                const ex = units.get(key)
+                if (ex) ex.quantity = ex.quantity.add(qty)
+                else units.set(key, { productId: l.productId, unitId: l.unitId, quantity: qty, batchNo, serialNo, fromLocId: locId, fromStaId: staId })
+              }
+              if (l.scopes.length) for (const sc of l.scopes) push(sc.quantity, sc.batchNo ?? l.batchNo, sc.serialNo ?? l.serialNo, sc.targetLocationId ?? l.targetLocationId, sc.targetStatusId ?? l.targetStatusId)
+              else push(l.quantity, l.batchNo, l.serialNo, l.targetLocationId, l.targetStatusId)
+            }
+            if (units.size > 0) {
+              const seqNo = secondOp.sequence
+                ? (await nextSequence(doc.companyId, secondOp.sequence.code, tx)).formatted
+                : `${doc.documentNo.slice(0, 37)}-S`
+              // İkinci belge yönü çıkış/transfer ise kaynak = ilk belgenin HEDEFİ (mal oraya kondu, oradan alınacak)
+              const inheritSource = secondOp.direction === 'OUTBOUND' || secondOp.direction === 'INTERNAL'
+              const createdSeq = await tx.tBLDOCUMENT.create({
+                data: {
+                  companyId: doc.companyId, documentNo: seqNo, operationTypeId: secondOp.id, status: 'DRAFT',
+                  createdById: doc.createdById, partnerId: doc.partnerId, referenceDocumentId: doc.id,
+                  note: `Sıralı operasyon: ${doc.documentNo}`,
+                  lines: {
+                    create: [...units.values()].map((u, i) => ({
+                      companyId: doc.companyId, lineNo: i + 1, productId: u.productId, unitId: u.unitId,
+                      quantity: u.quantity, batchNo: u.batchNo ?? undefined, serialNo: u.serialNo ?? undefined, collectedQty: 0,
+                      ...(inheritSource ? { sourceLocationId: u.fromLocId ?? undefined, sourceStatusId: u.fromStaId ?? undefined } : {}),
+                    })),
+                  },
+                },
+                select: { id: true, documentNo: true },
+              })
+              await refreshDocStatus(tx, createdSeq.id, { source: 'sequential-create', userId: breakOpts.userId ?? null }) // → Bekliyor
+              sequentialDocument = createdSeq
+            }
+          }
+        }
+      }
+    }
+
+    const updated = await tx.tBLDOCUMENT.update({
       where: { id: documentId },
       data: { status: 'COMPLETED', completedAt: new Date() },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
+    return Object.assign(updated, { referenceDocument, sequentialDocument })
   })
 }
 
@@ -538,7 +935,13 @@ export async function reverseDocument(documentId: number) {
           for (const sc of line.scopes) {
             const sCommon = { companyId: doc.companyId, productId: line.productId, batchNo: sc.batchNo, serialNo: sc.serialNo, palletId: sc.palletId, customerId: sc.customerId, poNo: sc.poNo, poLine: sc.poLine }
             if (dir === 'OUTBOUND' || dir === 'INTERNAL') await adjustStock(tx, { ...sCommon, locationId: sc.sourceLocationId!, statusId: sc.sourceStatusId! }, sc.unitId, sc.quantity, mCtx)
-            if (dir === 'INBOUND' || dir === 'INTERNAL') await adjustStock(tx, { ...sCommon, locationId: sc.targetLocationId!, statusId: sc.targetStatusId! }, sc.unitId, sc.quantity.negated(), mCtx)
+            if (dir === 'INBOUND' || dir === 'INTERNAL') {
+              const tgtKey = { ...sCommon, locationId: sc.targetLocationId!, statusId: sc.targetStatusId! }
+              // Rezerv taşımalı transferin tersi: rezerv hedefe taşınmıştı → hedeften kaldır, kaynağa geri koy
+              const carry = dir === 'INTERNAL' && doc.operationType.reserveTransfer ? await liftReservation(tx, tgtKey, sc.quantity) : null
+              await adjustStock(tx, tgtKey, sc.unitId, sc.quantity.negated(), mCtx)
+              await landReservation(tx, { ...sCommon, locationId: sc.sourceLocationId!, statusId: sc.sourceStatusId! }, carry)
+            }
           }
           continue
         }
@@ -566,21 +969,71 @@ export async function reverseDocument(documentId: number) {
           )
         }
         if (dir === 'INBOUND' || dir === 'INTERNAL') {
-          await adjustStock(
-            tx,
-            { ...common, locationId: line.targetLocationId!, statusId: line.targetStatusId! },
-            line.unitId,
-            qty.negated(),
-            moveCtx,
-          )
+          const tgtKey = { ...common, locationId: line.targetLocationId!, statusId: line.targetStatusId! }
+          // Rezerv taşımalı transferin tersi: rezervi hedeften kaldır, kaynağa geri koy
+          const carry = dir === 'INTERNAL' && doc.operationType.reserveTransfer ? await liftReservation(tx, tgtKey, qty) : null
+          await adjustStock(tx, tgtKey, line.unitId, qty.negated(), moveCtx)
+          await landReservation(tx, { ...common, locationId: line.sourceLocationId!, statusId: line.sourceStatusId! }, carry)
         }
       }
     }
 
+    // Onay İptal: stok geri alındı → belge DRAFT'a döner (terminal CANCELLED değil) → düzeltilip/toplanıp yeniden onaylanabilir.
+    // completedAt temizlenir; okutmalar (scope) KORUNUR (collectedQty duruyor → tekrar onaya hazır).
     return tx.tBLDOCUMENT.update({
       where: { id: documentId },
-      data: { status: 'CANCELLED' },
+      data: { status: 'DRAFT', completedAt: null },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
+  })
+}
+
+/**
+ * Belge BÖL — toplanan kısmı YENİ belgeye ayırır (tam-toplanmış → onaya hazır), toplanmamış kalan orijinalde durur (Bekliyor).
+ * Kısmi satır: toplanan miktar → yeni satır (okutmalar/scope taşınır), kalan miktar → orijinal (collectedQty=0).
+ * Tam-toplanan satır tamamen taşınır; hiç-toplanmamış satır orijinalde kalır. "Eksik toplamada bölmeden onaya gidilemez" kuralı.
+ * Yalnız DRAFT belge. Döner: { originalId, newDocumentId, newDocumentNo }.
+ */
+export async function splitDocument(documentId: number, userId?: number) {
+  return prisma.$transaction(async (tx) => {
+    const doc = await tx.tBLDOCUMENT.findUniqueOrThrow({
+      where: { id: documentId },
+      include: { operationType: { include: { sequence: true } }, lines: { orderBy: { lineNo: 'asc' }, include: { scopes: true } } },
+    })
+    if (doc.status !== 'DRAFT') throw new MovementError('Yalnız bekleyen (DRAFT) belge bölünebilir')
+    const collectedOf = (line: (typeof doc.lines)[number]) => line.scopes.reduce((s, sc) => s.add(sc.quantity), new Prisma.Decimal(0))
+    if (!doc.lines.some((l) => collectedOf(l).gt(0))) throw new MovementError('Toplanmış satır yok — bölünecek bir şey yok')
+    if (doc.lines.every((l) => collectedOf(l).gte(l.quantity))) throw new MovementError('Tüm satırlar toplanmış — bölmeye gerek yok, doğrudan onaya gönderin')
+
+    const newNo = doc.operationType.sequence ? (await nextSequence(doc.companyId, doc.operationType.sequence.code)).formatted : `${doc.documentNo}-B`
+    const newDoc = await tx.tBLDOCUMENT.create({
+      data: {
+        companyId: doc.companyId, documentNo: newNo, operationTypeId: doc.operationTypeId, warehouseId: doc.warehouseId,
+        partnerId: doc.partnerId, reasonId: doc.reasonId, createdById: userId ?? doc.createdById, documentStatusId: doc.documentStatusId,
+        note: doc.note ? `${doc.note} · bölündü← ${doc.documentNo}` : `Bölündü ← ${doc.documentNo}`,
+      },
+    })
+    let newLineNo = 0
+    for (const line of doc.lines) {
+      const collected = collectedOf(line)
+      if (collected.lte(0)) continue // toplanmamış → orijinalde kalır
+      newLineNo++
+      const newLine = await tx.tBLDOCUMENTLINE.create({
+        data: {
+          companyId: doc.companyId, documentId: newDoc.id, lineNo: newLineNo,
+          productId: line.productId, unitId: line.unitId, quantity: collected, collectedQty: collected,
+          sourceLocationId: line.sourceLocationId, sourceStatusId: line.sourceStatusId,
+          targetLocationId: line.targetLocationId, targetStatusId: line.targetStatusId,
+          batchNo: line.batchNo, serialNo: line.serialNo, palletId: line.palletId,
+        },
+      })
+      await tx.tBLDOCUMENTLINESCOPE.updateMany({ where: { documentLineId: line.id }, data: { documentLineId: newLine.id } }) // okutmalar yeni satıra
+      const remaining = line.quantity.sub(collected)
+      if (remaining.lte(0)) await tx.tBLDOCUMENTLINE.delete({ where: { id: line.id } }) // tamamı taşındı
+      else await tx.tBLDOCUMENTLINE.update({ where: { id: line.id }, data: { quantity: remaining, collectedQty: new Prisma.Decimal(0) } })
+    }
+    await refreshDocStatus(tx, newDoc.id) // toplanan kısım → Onay Bekliyor (tam)
+    await refreshDocStatus(tx, documentId) // kalan → Bekliyor (toplanmamış)
+    return { originalId: documentId, newDocumentId: newDoc.id, newDocumentNo: newNo }
   })
 }

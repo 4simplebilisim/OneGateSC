@@ -1,16 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, DatePicker, Form, Input, Select, Spin, Switch } from 'antd'
-import dayjs from 'dayjs'
+import { App, Button, Card, Form, Input, Select, Spin, Switch } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
-
-const ROLE_OPTS = [
-  { value: 'ADMIN', label: 'Yönetici (ADMIN)' },
-  { value: 'OPERATOR', label: 'Operatör (OPERATOR)' },
-  { value: 'VIEWER', label: 'İzleyici (VIEWER)' },
-]
 
 type Company = { id: number; code: string; name: string }
 
@@ -23,6 +16,8 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [groups, setGroups] = useState<{ id: number; code: string; name: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(mode === 'edit')
+  const isAdmin = Form.useWatch('isAdmin', form) // süper-admin (tüm firmalar) → Firma opsiyonel
+  const selectedCompanyId = Form.useWatch('companyId', form) // grup listesi bu firmaya göre yüklenir (og_company değil)
 
   useEffect(() => {
     axiosInstance.get('/api/companies').then((r) => {
@@ -30,10 +25,16 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       setCompanies(list)
       if (mode === 'create' && list.length === 1) form.setFieldValue('companyId', list[0].id)
     }).catch(() => { /* yetki yoksa boş */ })
-    axiosInstance.get('/api/user-groups').then((r) => {
-      setGroups((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])
-    }).catch(() => { /* boş */ })
   }, [mode, form])
+
+  // Kullanıcı grupları DÜZENLENEN kullanıcının firmasından yüklenir (global seçili firmadan DEĞİL).
+  // Aksi halde başka firmadaki bir kullanıcı düzenlenirken grup listede olmaz → Select ham id gösterir ("15").
+  useEffect(() => {
+    const cfg = selectedCompanyId ? { headers: { 'x-company-id': String(selectedCompanyId) } } : undefined
+    axiosInstance.get('/api/user-groups', cfg).then((r) => {
+      setGroups((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])
+    }).catch(() => setGroups([]))
+  }, [selectedCompanyId])
 
   useEffect(() => {
     if (mode !== 'edit' || !id) return
@@ -42,11 +43,10 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       form.setFieldsValue({
         username: u.username, email: u.email, fullName: u.fullName,
         companyId: u.companyId, isActive: u.isActive,
-        roles: (u.userRoles ?? []).map((ur: { role: { code: string } }) => ur.role.code),
+        isAdmin: u.isSuperAdmin === true, // Yönetici (Admin) = firma-bağımsız süper-admin
+        isMobileUser: u.isMobileUser === true,
         groups: (u.groupMemberships ?? []).map((gm: { groupId: number }) => gm.groupId),
-        userType: u.userType ?? undefined, isApproved: u.isApproved,
-        phone: u.phone ?? undefined, alias: u.alias ?? undefined,
-        validUntil: u.validUntil ? dayjs(u.validUntil) : undefined,
+        isApproved: u.isApproved,
         passwordNeverExpires: u.passwordNeverExpires,
         mustChangePassword: u.mustChangePassword,
         cannotChangePassword: u.cannotChangePassword,
@@ -56,12 +56,12 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   const onFinish = async (values: Record<string, unknown>) => {
     setSaving(true)
-    // DatePicker dayjs nesnesi döner → backend'e 'YYYY-MM-DD' string gönder
-    if (values.validUntil && dayjs.isDayjs(values.validUntil)) {
-      values.validUntil = (values.validUntil as dayjs.Dayjs).format('YYYY-MM-DD')
-    } else {
-      delete values.validUntil
-    }
+    // Yönetici toggle → firma-BAĞIMSIZ süper-admin (tüm firmalar, god-mode). Kapalı = normal kullanıcı (firmaya kilitli).
+    const admin = !!values.isAdmin
+    values.isSuperAdmin = admin
+    values.roles = admin ? ['ADMIN'] : ['OPERATOR']
+    delete values.isAdmin
+    if (admin && !values.companyId) values.companyId = undefined // süper-admin firma-bağımsız (companyId boş bırakılabilir)
     try {
       if (mode === 'create') {
         await axiosInstance.post('/api/users', values)
@@ -82,12 +82,12 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     <div className="og-page" style={{ maxWidth: 640 }}>
       <PageHeader
         title={mode === 'create' ? 'Yeni Kullanıcı' : 'Kullanıcı Düzenle'}
-        subtitle="Kullanıcı bilgileri, firma ve roller"
+        subtitle="Kullanıcı bilgileri, firma ve yönetici yetkisi"
         extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/users')}>Liste</Button>}
       />
       <Card className="og-section-card" size="small">
         <Spin spinning={loading}>
-        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, roles: ['OPERATOR'], isApproved: true, passwordNeverExpires: true }}>
+        <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, isAdmin: false, isApproved: true, passwordNeverExpires: true }}>
           <Form.Item name="username" label="Kullanıcı Adı" rules={[{ required: mode === 'create', message: 'Zorunlu' }]}>
             <Input disabled={mode === 'edit'} placeholder="kullanici01" />
           </Form.Item>
@@ -101,29 +101,23 @@ export const UserForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             rules={mode === 'create' ? [{ required: true, min: 6, message: 'En az 6 karakter' }] : [{ min: 6, message: 'En az 6 karakter' }]}>
             <Input.Password placeholder="••••••" autoComplete="new-password" />
           </Form.Item>
-          <Form.Item name="companyId" label="Firma" rules={[{ required: true, message: 'Zorunlu' }]}>
-            <Select placeholder="Firma seçin" disabled={companies.length <= 1}
-              options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
+          <Form.Item name="isAdmin" label="Yönetici (Admin)" valuePropName="checked"
+            tooltip="Açık: TÜM firmalar için tam yetkili süper-admin (firma-bağımsız god-mode) — tesis/depo/operasyon yetki tanımı gerekmez. Kapalı: yalnız kendi firmasında, tanımlı yetki ve haklarla sınırlı.">
+            <Switch checkedChildren="Admin — tüm firmalar" unCheckedChildren="Normal kullanıcı" />
           </Form.Item>
-          <Form.Item name="roles" label="Roller" rules={[{ required: true, message: 'En az bir rol' }]}>
-            <Select mode="multiple" placeholder="Rol seçin" options={ROLE_OPTS} />
+          <Form.Item name="companyId" label="Firma" rules={[{ required: !isAdmin, message: 'Zorunlu' }]}
+            tooltip={isAdmin ? 'Süper-admin firma-bağımsızdır — boş bırakılabilir (tüm firmalara erişir). İsterseniz varsayılan firma seçin.' : undefined}>
+            <Select placeholder={isAdmin ? 'Tüm firmalar (opsiyonel)' : 'Firma seçin'} allowClear={isAdmin}
+              disabled={!isAdmin && companies.length <= 1}
+              options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} />
           </Form.Item>
           <Form.Item name="groups" label="Kullanıcı Grupları (yetki miras alınır)">
             <Select mode="multiple" placeholder="Grup seçin — gruptan yetki miras alınır" optionFilterProp="label" showSearch allowClear
               options={groups.map((g) => ({ value: g.id, label: `${g.code} — ${g.name}` }))} />
           </Form.Item>
-          <Form.Item name="userType" label="Tip">
-            <Select allowClear placeholder="Tip seçin"
-              options={[{ value: 'CENTRAL', label: 'Merkez' }, { value: 'BRANCH', label: 'Şube' }]} />
-          </Form.Item>
-          <Form.Item name="phone" label="Cep Tel">
-            <Input placeholder="05xx xxx xx xx" />
-          </Form.Item>
-          <Form.Item name="alias" label="Alias">
-            <Input placeholder="Kısa ad / takma ad" />
-          </Form.Item>
-          <Form.Item name="validUntil" label="Geçerlilik Tarihi">
-            <DatePicker format="DD.MM.YYYY" placeholder="GG.AA.YYYY" style={{ width: '100%' }} />
+          <Form.Item name="isMobileUser" label="Mobil Kullanıcı" valuePropName="checked"
+            tooltip="Açık: bu kullanıcı el terminali (mobil) kullanıcısıdır.">
+            <Switch checkedChildren="El Terminali" unCheckedChildren="Hayır" />
           </Form.Item>
           <Form.Item name="isApproved" label="Onay" valuePropName="checked">
             <Switch />

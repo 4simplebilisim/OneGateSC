@@ -3,13 +3,15 @@ import { prisma } from '../lib/prisma.js'
 import { simpleCrud, type Delegate } from './documentTypes.js'
 
 // Ek Saha (custom field) — Dinamik + Statik TEK tabloda (fieldKind ayırt-edici).
-// "Tesis" = firma = companyId (örtük, otomatik enjekte). Legacy TBLEKSAHATANIMLAMA + TBLSBSTATIKSAHATANIMLAMA.
+// Tenant (companyId, örtük enjekte) ≠ Tesis (facilityId, opsiyonel): bir firmanın birden çok tesisi olabilir,
+// ek saha tesise göre tanımlanabilir (boş=tüm tesisler). Legacy TBLEKSAHATANIMLAMA + TBLSBSTATIKSAHATANIMLAMA.
 const pInt = z.number().int().positive()
 const kind = z.enum(['DYNAMIC', 'STATIC'])
 const entity = z.enum(['MATERIAL', 'PARTNER', 'DOC_HEADER', 'DOC_DETAIL', 'DOC_SCOPE', 'PALLET', 'STOCK', 'PALLET_NOTIFY_HEADER', 'OPERATION_DOC_DETAIL'])
 const dataType = z.enum(['MULTI_SELECT_FIXED', 'TEXT', 'NUMERIC', 'DATE', 'LOOKUP'])
 
 const extraField = z.object({
+  facilityId: pInt.nullable().optional(), // tesis (opsiyonel — boş=tüm tesisler)
   fieldKind: kind.optional(),
   entityType: entity,
   trackingCode: z.string().max(40).optional(),

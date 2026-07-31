@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { completeDocument } from './movement.js'
-import { docStatusId, DOC_STATUS } from './documentStatus.js'
+import { docStatusId, DOC_STATUS, refreshDocStatus } from './documentStatus.js'
 import { nextSequence } from './sequence.js'
 
 const ZERO = new Prisma.Decimal(0)
@@ -164,8 +164,7 @@ export async function shipOrder(orderId: number, shipments: ShipmentLine[], user
     },
   })
   await completeDocument(doc.id) // OUTBOUND → stok düşer (yetersizse MovementError)
-  const onyId = await docStatusId(order.companyId, DOC_STATUS.APPROVED)
-  if (onyId) await prisma.tBLDOCUMENT.update({ where: { id: doc.id }, data: { documentStatusId: onyId } })
+  await refreshDocStatus(prisma, doc.id) // COMPLETED → ONY — tek doğru kaynağı
 
   for (const s of shipments) {
     await prisma.tBLSALESORDERLINE.update({

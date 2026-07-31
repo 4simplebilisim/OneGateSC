@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react'
 import { useLogin } from '@refinedev/core'
-import { Button, Checkbox, Form, Input, Typography, ConfigProvider } from 'antd'
+import { Alert, Button, Checkbox, Form, Input, Typography, ConfigProvider } from 'antd'
 import { makeTheme } from '../theme'
 
 const GRADIENT = 'linear-gradient(140deg, #44d4e3 0%, #4e86ff 50%, #9b5cf6 100%)'
@@ -23,6 +24,12 @@ const Stat = ({ value, label }: { value: string; label: string }) => (
 
 export const Login = () => {
   const { mutate: login } = useLogin()
+  const [sessionMsg, setSessionMsg] = useState<string | null>(null)
+  // Tek oturum: başka cihazda giriş yüzünden atıldıysa authProvider mesaj bırakır → burada göster
+  useEffect(() => {
+    const m = localStorage.getItem('og_session_msg')
+    if (m) { setSessionMsg(m); localStorage.removeItem('og_session_msg') }
+  }, [])
 
   return (
     <ConfigProvider theme={makeTheme('light')}>
@@ -80,6 +87,8 @@ export const Login = () => {
             Hesabınızla giriş yapın
           </Typography.Paragraph>
 
+          {sessionMsg && <Alert type="warning" showIcon closable title={sessionMsg} style={{ marginBottom: 18 }} onClose={() => setSessionMsg(null)} />}
+
           <Form layout="vertical" size="large" requiredMark={false} initialValues={{ remember: true }} onFinish={(values) => login(values)}>
             <Form.Item name="username" label="Kullanıcı" rules={[{ required: true, message: 'Kullanıcı adı gerekli' }]}>
               <Input placeholder="admin" autoFocus />
@@ -103,9 +112,12 @@ export const Login = () => {
             </Button>
           </Form>
 
-          <Typography.Paragraph type="secondary" style={{ marginTop: 24, fontSize: 12, textAlign: 'center' }}>
-            Demo: <code>admin / admin123</code> · <code>operator / operator123</code> · <code>viewer / viewer123</code>
-          </Typography.Paragraph>
+          {/* Demo kimlikleri yalnız LOKAL geliştirmede göster — canlıda şifreler rotasyonlu, bu satır yanıltır + kullanıcı adlarını ifşa eder */}
+          {!import.meta.env.PROD && (
+            <Typography.Paragraph type="secondary" style={{ marginTop: 24, fontSize: 12, textAlign: 'center' }}>
+              Demo: <code>admin / admin123</code> · <code>operator / operator123</code> · <code>viewer / viewer123</code>
+            </Typography.Paragraph>
+          )}
         </div>
       </div>
     </div>

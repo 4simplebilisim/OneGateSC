@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { App, Button, Card, Empty, Input, InputNumber, Select, Space, Spin, Switch, Table, Typography } from 'antd'
-import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { canWrite, FORM_CONFIG, type FieldDef } from '../formConfig'
@@ -19,6 +19,7 @@ export const OwnerLines = ({ resource, ownerField, ownerResource, backTo, title,
   const [owner, setOwner] = useState<Record<string, unknown> | null>(null)
   const [refOpts, setRefOpts] = useState<Record<string, Opt[]>>({})
   const [draft, setDraft] = useState<Record<string, unknown>>({})
+  const [editId, setEditId] = useState<number | null>(null) // null = yeni ekle; sayı = o satırı düzenle
   const [loading, setLoading] = useState(true)
   const writable = canWrite()
 
@@ -47,21 +48,39 @@ export const OwnerLines = ({ resource, ownerField, ownerResource, backTo, title,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resource])
 
-  const add = async () => {
+  // Satırı taslağa çevir — number alanları Decimal'den string gelebilir → sayıya çevir (yoksa PATCH'te zod 400)
+  const toDraft = (row: Record<string, unknown>) => {
+    const d: Record<string, unknown> = {}
+    fields.forEach((f) => { let v = row[f.name]; if (f.type === 'number' && typeof v === 'string' && v !== '') v = Number(v); d[f.name] = v })
+    return d
+  }
+  const startEdit = (row: Record<string, unknown>) => { setEditId(row.id as number); setDraft(toDraft(row)) }
+  const startCopy = (row: Record<string, unknown>) => { setEditId(null); setDraft(toDraft(row)) } // yeni kayıt olarak (id yok)
+  const cancelEdit = () => { setEditId(null); setDraft({}) }
+
+  const save = async () => {
     const required = fields.filter((f) => f.required).find((f) => draft[f.name] == null || draft[f.name] === '')
     if (required) { message.warning(`${required.label} zorunlu`); return }
+    // number alanları sayıya zorla (Decimal API'den string gelebilir)
+    const payload: Record<string, unknown> = { ...draft }
+    fields.forEach((f) => { if (f.type === 'number' && typeof payload[f.name] === 'string' && payload[f.name] !== '') payload[f.name] = Number(payload[f.name]) })
     try {
-      await axiosInstance.post(`/api/${resource}`, { [ownerField]: Number(id), ...draft })
-      setDraft({})
-      message.success('Satır eklendi')
+      if (editId != null) {
+        await axiosInstance.patch(`/api/${resource}/${editId}`, payload)
+        message.success('Satır güncellendi')
+      } else {
+        await axiosInstance.post(`/api/${resource}`, { [ownerField]: Number(id), ...payload })
+        message.success('Satır eklendi')
+      }
+      setDraft({}); setEditId(null)
       load()
     } catch (e) {
-      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Eklenemedi')
+      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'İşlem başarısız')
     }
   }
 
   const remove = async (rid: number) => {
-    try { await axiosInstance.delete(`/api/${resource}/${rid}`); message.success('Silindi'); load() } catch { message.error('Silinemedi') }
+    try { await axiosInstance.delete(`/api/${resource}/${rid}`); message.success('Silindi'); if (editId === rid) cancelEdit(); load() } catch { message.error('Silinemedi') }
   }
 
   const control = (f: FieldDef) => {
@@ -100,7 +119,8 @@ export const OwnerLines = ({ resource, ownerField, ownerResource, backTo, title,
                 {control(f)}
               </div>
             ))}
-            <Button type="primary" icon={<PlusOutlined />} onClick={add}>Ekle</Button>
+            <Button type="primary" icon={editId != null ? <SaveOutlined /> : <PlusOutlined />} onClick={save}>{editId != null ? 'Güncelle' : 'Ekle'}</Button>
+            {editId != null && <Button onClick={cancelEdit}>Vazgeç</Button>}
           </Space>
         )}
         {rows.length === 0 ? <Empty description="Satır yok" /> : (
@@ -108,7 +128,13 @@ export const OwnerLines = ({ resource, ownerField, ownerResource, backTo, title,
             columns={[
               { title: '#', dataIndex: 'id', width: 56 },
               ...fields.map((f) => ({ title: f.label, key: f.name, render: (_: unknown, row: Record<string, unknown>) => cell(f, row) })),
-              ...(writable ? [{ title: '', key: 'x', width: 56, render: (_: unknown, row: Record<string, unknown>) => <Typography.Link type="danger" onClick={() => remove(row.id as number)}>Sil</Typography.Link> }] : []),
+              ...(writable ? [{ title: '', key: 'x', width: 150, render: (_: unknown, row: Record<string, unknown>) => (
+                <Space size={10}>
+                  <Typography.Link onClick={() => startEdit(row)}>Düzelt</Typography.Link>
+                  <Typography.Link onClick={() => startCopy(row)}>Kopyala</Typography.Link>
+                  <Typography.Link type="danger" onClick={() => remove(row.id as number)}>Sil</Typography.Link>
+                </Space>
+              ) }] : []),
             ]} />
         )}
       </Card>

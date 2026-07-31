@@ -8,7 +8,9 @@ export const authProvider: AuthProvider = {
       localStorage.setItem('og_token', data.token)
       localStorage.setItem('og_user', JSON.stringify(data.user))
       if (data.user.companyId) localStorage.setItem('og_company', String(data.user.companyId))
-      return { success: true, redirectTo: '/' }
+      // Mobil (el terminali) kullanıcı → backoffice yerine el terminaline düşer
+      if (!data.user.isMobileUser) localStorage.setItem('og_notif_greet', '1') // ilk girişte zil popup'ı (backoffice)
+      return { success: true, redirectTo: data.user.isMobileUser ? '/m' : '/' }
     } catch {
       return { success: false, error: { name: 'Giriş hatası', message: 'Kullanıcı adı veya şifre hatalı' } }
     }
@@ -30,7 +32,12 @@ export const authProvider: AuthProvider = {
     return raw ? (JSON.parse(raw).roles ?? []) : []
   },
   onError: async (error) => {
-    if ((error as { response?: { status?: number } })?.response?.status === 401) {
+    const resp = (error as { response?: { status?: number; data?: { code?: string } } })?.response
+    if (resp?.status === 401) {
+      // Tek oturum: başka cihazda giriş yapıldıysa kullanıcıya açıkla (Login ekranı gösterir)
+      if (resp.data?.code === 'SESSION_SUPERSEDED') {
+        localStorage.setItem('og_session_msg', 'Hesabınız başka bir cihazda/oturumda açıldığı için buradaki oturumunuz kapatıldı.')
+      }
       return { logout: true, redirectTo: '/login' }
     }
     return {}

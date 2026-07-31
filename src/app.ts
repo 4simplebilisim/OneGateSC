@@ -16,7 +16,7 @@ import { lookupRoutes } from './routes/lookup.js'
 import { printerRoutes } from './routes/printers.js'
 import { documentStatusActionRoutes, documentStatusCriteriaRoutes, documentApprovalTypeRoutes } from './routes/documentTypes.js'
 import {
-  reasonCategoryRoutes, operationGroupLinkRoutes, operationToleranceRoutes, forbiddenProductRoutes,
+  reasonCategoryRoutes, operationGroupLinkRoutes, operationToleranceRoutes, operationToleranceDetailRoutes, forbiddenProductRoutes,
   conversionRoutes, sequentialOperationRoutes, autoReferenceDocumentRoutes, bulkActionRoutes,
   productAdditionalGroupRoutes, productBasedCollectionRoutes, tripBasedCollectionRoutes,
 } from './routes/operationConfig.js'
@@ -62,6 +62,7 @@ import { vehicleRoutes } from './routes/vehicles.js'
 import { shipmentRoutes } from './routes/shipments.js'
 import { stockCountRoutes, countDifferenceRoutes } from './routes/stockCounts.js'
 import { integrationLogRoutes } from './routes/integration.js'
+import { integrationPackageRoutes, integrationAddressRoutes, integrationQueryRoutes, integrationQueryColumnRoutes, integrationWriteParamRoutes, integrationXmlConvertRoutes } from './routes/integrationPackages.js'
 import { reportDefRoutes, reportCriteriaRoutes, reportFieldRoutes, reportRunRoutes } from './routes/reportBuilder.js'
 import { suggestionListRoutes } from './routes/suggestions.js'
 import { extraFieldRoutes, extraFieldOptionRoutes, operationTypeExtraFieldRoutes } from './routes/extraFields.js'
@@ -73,7 +74,8 @@ import { invoiceRoutes } from './routes/invoices.js'
 import { reportRoutes } from './routes/reports.js'
 import { productGroupRoutes } from './routes/productGroups.js'
 import { sequenceRoutes } from './routes/sequences.js'
-import { reasonRoutes, locationGroupRoutes, operationGroupRoutes, labelTypeRoutes, productSubGroupRoutes, entryConditionTypeRoutes, exitConditionTypeRoutes, routingTypeRoutes, facilityRoutes, regionRoutes, partnerGroupRoutes, statusRoutes, palletTypeRoutes, barcodeTypeRoutes, parameterRoutes, documentStatusRoutes } from './routes/wmsMasters.js'
+import { reasonRoutes, locationGroupRoutes, operationGroupRoutes, labelTypeRoutes, productSubGroupRoutes, entryConditionTypeRoutes, exitConditionTypeRoutes, routingTypeRoutes, facilityRoutes, regionRoutes, partnerGroupRoutes, statusRoutes, palletTypeRoutes, parameterRoutes, documentStatusRoutes } from './routes/wmsMasters.js'
+import { barcodeTypeRoutes, barcodeSegmentRoutes } from './routes/barcodeTypes.js'
 import { routingRuleRoutes } from './routes/routing.js'
 import { productUnitRoutes } from './routes/productUnits.js'
 import { operationTypeStatusRoutes, operationTypeLocationRoutes, operationTypeReasonRoutes, operationTypePalletTypeRoutes } from './routes/operationLinks.js'
@@ -81,7 +83,9 @@ import { locationCapacityRoutes } from './routes/locationCapacity.js'
 import { locationGroupLinkRoutes } from './routes/locationGroupLinks.js'
 import { palletRoutes } from './routes/pallets.js'
 import { workOrderRoutes } from './routes/workOrders.js'
+import { notificationRoutes } from './routes/notifications.js'
 import { requireRole } from './lib/rbac.js'
+import { prisma } from './lib/prisma.js'
 
 // OneGate-assets/ proje kökünde (src/ -> ..)
 const assetsDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'OneGate-assets')
@@ -150,6 +154,15 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     } catch {
       return reply.code(401).send({ error: 'Unauthorized' })
     }
+    // Tek oturum (single-session): JWT'deki sid, DB'deki aktif sessionId ile eşleşmeli.
+    // Aynı kullanıcı başka cihazda giriş yaptıysa sessionId değişmiştir → eski token 401 (SESSION_SUPERSEDED).
+    const u = request.user as { sub?: number; sid?: string }
+    if (u?.sub) {
+      const row = await prisma.tBLUSER.findUnique({ where: { id: u.sub }, select: { sessionId: true } })
+      if (!row || !u.sid || row.sessionId !== u.sid) {
+        return reply.code(401).send({ error: 'Oturumunuz başka bir cihazda açıldı', code: 'SESSION_SUPERSEDED' })
+      }
+    }
   })
 
   // Routes
@@ -196,6 +209,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(stockCountRoutes, { prefix: '/api/stock-counts' })
   await app.register(countDifferenceRoutes, { prefix: '/api/count-differences' })
   await app.register(integrationLogRoutes, { prefix: '/api/integration-logs' })
+  await app.register(integrationPackageRoutes, { prefix: '/api/integration-packages' })
+  await app.register(integrationAddressRoutes, { prefix: '/api/integration-addresses' })
+  await app.register(integrationQueryRoutes, { prefix: '/api/integration-queries' })
+  await app.register(integrationQueryColumnRoutes, { prefix: '/api/integration-query-columns' })
+  await app.register(integrationWriteParamRoutes, { prefix: '/api/integration-write-params' })
+  await app.register(integrationXmlConvertRoutes, { prefix: '/api/integration-xml-converts' })
   await app.register(reportDefRoutes, { prefix: '/api/report-defs' })
   await app.register(reportCriteriaRoutes, { prefix: '/api/report-criteria' })
   await app.register(reportFieldRoutes, { prefix: '/api/report-fields' })
@@ -227,6 +246,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(productSubGroupRoutes, { prefix: '/api/product-subgroups' })
   await app.register(palletRoutes, { prefix: '/api/pallets' })
   await app.register(workOrderRoutes, { prefix: '/api/work-orders' })
+  await app.register(notificationRoutes, { prefix: '/api/notifications' })
   await app.register(entryConditionTypeRoutes, { prefix: '/api/entry-condition-types' })
   await app.register(exitConditionTypeRoutes, { prefix: '/api/exit-condition-types' })
   await app.register(routingTypeRoutes, { prefix: '/api/routing-types' })
@@ -243,6 +263,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(operationTypePalletTypeRoutes, { prefix: '/api/operation-type-pallet-types' })
   await app.register(locationCapacityRoutes, { prefix: '/api/location-capacities' })
   await app.register(barcodeTypeRoutes, { prefix: '/api/barcode-types' })
+  await app.register(barcodeSegmentRoutes, { prefix: '/api/barcode-segments' })
   await app.register(parameterRoutes, { prefix: '/api/parameters' })
   await app.register(documentStatusRoutes, { prefix: '/api/document-statuses' })
   await app.register(documentStatusActionRoutes, { prefix: '/api/document-status-actions' })
@@ -251,6 +272,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(reasonCategoryRoutes, { prefix: '/api/reason-categories' })
   await app.register(operationGroupLinkRoutes, { prefix: '/api/operation-group-links' })
   await app.register(operationToleranceRoutes, { prefix: '/api/operation-tolerances' })
+  await app.register(operationToleranceDetailRoutes, { prefix: '/api/operation-tolerance-details' })
   await app.register(forbiddenProductRoutes, { prefix: '/api/operation-forbidden-products' })
   await app.register(conversionRoutes, { prefix: '/api/operation-conversions' })
   await app.register(sequentialOperationRoutes, { prefix: '/api/sequential-operations' })

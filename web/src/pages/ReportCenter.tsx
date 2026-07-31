@@ -40,7 +40,7 @@ export const ReportCenter = () => {
     refs.forEach((rr) => {
       axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500 } }).then((rsp) => {
         const list = Array.isArray(rsp.data) ? rsp.data : (rsp.data.data ?? [])
-        setRefOpts((p) => ({ ...p, [rr]: list.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code ?? x.id}${x.name ? ' — ' + x.name : ''}` })) }))
+        setRefOpts((p) => ({ ...p, [rr]: list.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code ?? x.palletNo ?? x.id}${x.name ? ' — ' + x.name : ''}` })) }))
       })
     })
   }

@@ -5,6 +5,8 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { reserveStock, releaseStock, type StockKey } from '../lib/stock.js'
 import { MovementError } from '../lib/movement.js'
+import { assertLocationAuthorized, assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
+import { bulkStockOperation, BulkStockError } from '../lib/bulkStock.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 
 const keySchema = z.object({
@@ -23,17 +25,31 @@ const keySchema = z.object({
 const num = (v?: string) => (v ? Number(v) : undefined)
 
 export async function stockRoutes(app: FastifyInstance) {
-  // FEFO sıralı stok sorgu (uygun miktar hesaplı, sayfalı)
+  // FEFO sıralı stok sorgu (uygun miktar hesaplı, sayfalı) — tesis/depo/lokasyon/ürün/statü ile süzülür
   app.get('/', async (request) => {
     const companyId = getCompanyId(request)
     const q = request.query as Record<string, string | undefined>
     const warehouseId = num(q.warehouseId)
+    const facilityId = num(q.facilityId)
+    // Tesis + depo lokasyon ilişkisinden süzülür (tesis = depodan türer)
+    const locFilter: Prisma.TBLLOCATIONWhereInput = {}
+    if (warehouseId) locFilter.warehouseId = warehouseId
+    if (facilityId) locFilter.warehouse = { facilityId }
+    // SKT aralığı (Toplu İşlem ekranı filtresi)
+    const expFilter = {
+      ...(q.expiryFrom ? { gte: new Date(q.expiryFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}),
+      ...(q.expiryTo ? { lte: new Date(q.expiryTo.slice(0, 10) + 'T23:59:59.999Z') } : {}),
+    }
     const where = {
       companyId,
       productId: num(q.productId),
       locationId: num(q.locationId),
       statusId: num(q.statusId),
-      ...(warehouseId ? { location: { warehouseId } } : {}),
+      ...(q.batchNo ? { batchNo: { contains: q.batchNo, mode: 'insensitive' as const } } : {}),
+      ...(q.serialNo ? { serialNo: { contains: q.serialNo, mode: 'insensitive' as const } } : {}),
+      ...(q.palletNo ? { pallet: { palletNo: { contains: q.palletNo, mode: 'insensitive' as const } } } : {}),
+      ...(Object.keys(expFilter).length ? { expiryDate: expFilter } : {}),
+      ...(Object.keys(locFilter).length ? { location: locFilter } : {}),
       ...(q.includeZero === 'true' ? {} : { mainQty: { gt: 0 } }),
     }
     const p = parsePagination(request)
@@ -43,8 +59,11 @@ export async function stockRoutes(app: FastifyInstance) {
         orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }], // FEFO
         include: {
           product: { select: { id: true, code: true, name: true } },
-          location: { select: { id: true, code: true, warehouseId: true } },
-          status: { select: { id: true, code: true } },
+          // Tesis (depodan) + depo adları çözümlü — stok raporu kolonları
+          location: { select: { id: true, code: true, warehouseId: true,
+            warehouse: { select: { id: true, code: true, name: true, facility: { select: { id: true, code: true, name: true } } } },
+          } },
+          status: { select: { id: true, code: true, name: true } },
           unit: { select: { id: true, code: true } },
           pallet: { select: { id: true, palletNo: true } },
         },
@@ -101,13 +120,38 @@ export async function stockRoutes(app: FastifyInstance) {
     return { productId, movementCount: movements.length, movements }
   })
 
+  // TOPLU İŞLEM (StokBar): seçili stok satırlarına operasyon uygula — belge otomatik doğar + tamamlanır
+  app.post('/bulk-action', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = z.object({
+      operationTypeId: z.number().int().positive(),
+      stockIds: z.array(z.number().int().positive()).min(1).max(1000),
+      targetLocationId: z.number().int().positive().nullish(), // Transfer: toplu taşıma hedefi (boş = yerinde statü değişimi)
+    }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    try {
+      const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: parsed.data.operationTypeId, companyId }, select: { facilityId: true } })
+      if (!op) return reply.code(404).send({ error: 'Operasyon bulunamadı' })
+      await assertUserAuthorized(request, { operationTypeId: parsed.data.operationTypeId, facilityId: op.facilityId })
+      await assertLocationAuthorized(request, parsed.data.targetLocationId) // hedef deponun yetkisi
+      const userId = Number((request.user as { sub?: number | string })?.sub) || null
+      return await bulkStockOperation(companyId, parsed.data.operationTypeId, parsed.data.stockIds, userId, parsed.data.targetLocationId ?? null)
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      if (err instanceof BulkStockError) return reply.code(err.httpCode).send({ error: err.message })
+      throw err
+    }
+  })
+
   app.post('/reserve', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const parsed = keySchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const { quantity, ...key } = parsed.data
     try {
+      await assertLocationAuthorized(request, key.locationId) // depo/tesis yetkisi (lokasyondan türer)
       return await reserveStock({ companyId: getCompanyId(request), ...(key as Omit<StockKey, 'companyId'>) }, quantity)
     } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err
     }
@@ -118,8 +162,10 @@ export async function stockRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const { quantity, ...key } = parsed.data
     try {
+      await assertLocationAuthorized(request, key.locationId)
       return await releaseStock({ companyId: getCompanyId(request), ...(key as Omit<StockKey, 'companyId'>) }, quantity)
     } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
       throw err
     }
@@ -134,6 +180,12 @@ export async function stockRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const src = await prisma.tBLSTOCK.findFirst({ where: { id, companyId } })
     if (!src) return reply.code(404).send({ error: 'Stok bulunamadı' })
+    try {
+      await assertLocationAuthorized(request, src.locationId) // kimlik değişimi de depo yetkisine tabi
+    } catch (err) {
+      if (err instanceof AuthorizationError) return reply.code(403).send({ error: err.message })
+      throw err
+    }
     const newProductId = parsed.data.productId ?? src.productId
     const newBatch = parsed.data.batchNo !== undefined ? parsed.data.batchNo : src.batchNo
     const newSerial = parsed.data.serialNo !== undefined ? parsed.data.serialNo : src.serialNo

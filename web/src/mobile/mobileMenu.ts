@@ -4,7 +4,7 @@ export type MobileMenuItem = { key: string; to: string; label: string }
 export const MOBILE_MENU: MobileMenuItem[] = [
   { key: 'm/receipt', to: '/m/receipt', label: 'Mal Kabul' },
   { key: 'm/pick', to: '/m/pick', label: 'Toplama' },
-  { key: 'm/count', to: '/m/count', label: 'Sayım' },
+  // Sayım (m/count): menüden kaldırıldı — ekran hâlâ stub (mobil sayım yapılınca geri gelir; rota durur)
   { key: 'm/stock', to: '/m/stock', label: 'Stok Sorgu' },
 ]
 

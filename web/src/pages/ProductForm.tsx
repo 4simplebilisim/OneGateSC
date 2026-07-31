@@ -37,14 +37,16 @@ const GUVENLI_ST_FIELDS: LF[] = [
 
 type Opt = { value: number; label: string }
 
-function useOpts(path: string) {
+function useOpts(path: string, companyId?: number | null) {
   const [opts, setOpts] = useState<Opt[]>([])
   useEffect(() => {
-    axiosInstance.get(`/api/${path}`, { params: { pageSize: 300 } }).then((r) => {
+    const params: Record<string, unknown> = { pageSize: 300 }
+    if (companyId) params.companyId = companyId // ref'ler seçili firmaya scoped (super-admin liste tüm firmalar olsa da)
+    axiosInstance.get(`/api/${path}`, { params }).then((r) => {
       const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
       setOpts(list.map((x: Record<string, unknown>) => ({ value: x.id as number, label: `${x.code ?? x.id}${x.name ? ' — ' + x.name : ''}` })))
     })
-  }, [path])
+  }, [path, companyId])
   return opts
 }
 
@@ -109,7 +111,7 @@ function ProductUnitDrawer({
   onClose: () => void
   onSaved: () => void
 }) {
-  const { message } = App.useApp()
+  const { message, modal } = App.useApp()
   const [form] = Form.useForm()
   const [saving, setSaving] = useState(false)
 
@@ -120,6 +122,20 @@ function ProductUnitDrawer({
 
   const save = async (vals: Record<string, unknown>) => {
     if (!unitRow) return
+    // Ana birim DEĞİŞİMİ (bu birim ana değilken ana yapılıyorsa) → onay sor (backend stok/belge varsa zaten engeller)
+    if (vals.isBaseUnit && !unitRow.isBaseUnit) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        modal.confirm({
+          title: 'Onay gerekiyor',
+          content: 'Bu ürünün zaten bir ana birimi var. Ana birimi bununla değiştirmek istediğinize emin misiniz? (Stok/belge hareketi varsa değiştirilemez.)',
+          okText: 'Evet, değiştir',
+          cancelText: 'Vazgeç',
+          onOk: () => resolve(true),
+          onCancel: () => resolve(false),
+        })
+      })
+      if (!proceed) return
+    }
     setSaving(true)
     try {
       await axiosInstance.patch(`/api/product-units/${unitRow.id}`, vals)
@@ -254,18 +270,19 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   const [editUnit, setEditUnit] = useState<Record<string, unknown> | null>(null)
   const [unitKey, setUnitKey] = useState(0)
 
-  const units = useOpts('units')
-  const productGroups = useOpts('product-groups')
-  const productSubGroups = useOpts('product-subgroups')
-  const productTypes = useOpts('product-types')
-  const productDetailTypes = useOpts('product-detail-types')
-  const facilities = useOpts('facilities')
-
   // Firma (tenant) — ürün hangi firmaya ait: edit'te üründen, create'te seçili firmadan (og_company)
   // Super-admin yeni üründe firmayı KARTTAN seçebilir; normal admin tek firmasına kilitli (salt-okunur).
   const isSuper = (() => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } })()
   const [companies, setCompanies] = useState<{ id: number; code: string; name: string }[]>([])
   const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+
+  // Ref'ler SEÇİLİ FİRMAYA göre — firma değişince hepsi yeniden çekilir (liste tüm firmalar; formda seçili firma)
+  const units = useOpts('units', companyId)
+  const productGroups = useOpts('product-groups', companyId)
+  const productSubGroups = useOpts('product-subgroups', companyId)
+  const productTypes = useOpts('product-types', companyId)
+  const productDetailTypes = useOpts('product-detail-types', companyId)
+  const facilities = useOpts('facilities', companyId)
   useEffect(() => {
     axiosInstance.get('/api/companies').then((r) => setCompanies((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[])).catch(() => { /* boş */ })
   }, [])
@@ -309,6 +326,13 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
       )}
       <Card className="og-section-card" size="small" title="Ürün Tanımı">
         <Row gutter={[20, 0]}>
+          {/* Firma + Tesisler EN ÜSTTE — önce bunlar seçilir, diğer alanlar (grup/tip) seçilen firmaya göre gelir */}
+          <Col xs={24} sm={8}><Form.Item label="Firma (tenant)" tooltip={isSuper && mode === 'create' ? 'Önce firmayı seçin — grup/tip/birim o firmaya göre listelenir' : 'Ürünün ait olduğu firma'}>
+            {isSuper && mode === 'create'
+              ? <Select value={companyId ?? undefined} onChange={(v) => { setCompanyId(v); form.resetFields(['productGroupId', 'productSubGroupId', 'productTypeId', 'detailTypeId', 'facilities']) }} options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} showSearch optionFilterProp="label" placeholder="Firma seçiniz" />
+              : <Input value={firmLabel} disabled />}
+          </Form.Item></Col>
+          <Col xs={24} sm={16}><Form.Item name="facilities" label="Kullanılabilir Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa ürün tüm tesislerde kullanılabilir" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="code" label="Ürün Kodu" rules={[{ required: true, message: 'Zorunlu' }]}><Input disabled={mode === 'edit'} /></Form.Item></Col>
           <Col xs={24} sm={10}><Form.Item name="name" label="Tanım" rules={[{ required: true, message: 'Zorunlu' }]}><Input /></Form.Item></Col>
           <Col xs={24} sm={6}><Form.Item name="shortName" label="Kısa Ad"><Input maxLength={50} /></Form.Item></Col>
@@ -316,12 +340,6 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Col xs={24} sm={8}><Form.Item name="productSubGroupId" label="Ürün Alt-Grubu"><Select options={productSubGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productTypeId" label="Ürün Tipi"><Select options={productTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="detailTypeId" label="Detay Tipi"><Select options={productDetailTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
-          <Col xs={24} sm={8}><Form.Item label="Firma (tenant)" tooltip={isSuper && mode === 'create' ? 'Ürünün kaydedileceği firmayı seçin' : 'Ürünün ait olduğu firma'}>
-            {isSuper && mode === 'create'
-              ? <Select value={companyId ?? undefined} onChange={(v) => setCompanyId(v)} options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} showSearch optionFilterProp="label" placeholder="Firma seçiniz" />
-              : <Input value={firmLabel} disabled />}
-          </Form.Item></Col>
-          <Col xs={24} sm={16}><Form.Item name="facilities" label="Kullanılabilir Tesisler (boş = tüm tesisler)"><Select mode="multiple" options={facilities} showSearch optionFilterProp="label" allowClear placeholder="Boş bırakılırsa ürün tüm tesislerde kullanılabilir" /></Form.Item></Col>
           <Col xs={24} sm={8}>
             <div className="og-switchrow" style={{ marginTop: 30 }}>
               <span className="og-switchrow__label">Aktif</span>
@@ -362,6 +380,7 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           ownerId={id!}
           resource="product-units"
           fields={UNIT_FIELDS}
+          confirmOn={(vals, rows) => (vals.isBaseUnit && rows.some((r) => r.isBaseUnit) ? 'Bu ürünün zaten bir ana birimi var. Ana birimi bununla değiştirmek istediğinize emin misiniz? (Stok/belge hareketi varsa değiştirilemez.)' : null)}
           extraActions={(row) => (
             <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setEditUnit(row)}>Düzenle</Button>
           )}

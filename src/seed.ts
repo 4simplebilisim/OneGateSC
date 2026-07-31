@@ -6,7 +6,7 @@ async function main() {
   const company = await prisma.tBLCOMPANY.upsert({
     where: { code: 'ONEGATE' },
     update: {},
-    create: { code: 'ONEGATE', name: 'OneGate Demo Firma', taxNumber: '1234567890' },
+    create: { code: 'ONEGATE', name: 'OneGate Demo Firma' },
   })
   const companyId = company.id
 
@@ -42,7 +42,7 @@ async function main() {
   const facility = await prisma.tBLFACILITY.upsert({
     where: { companyId_code: { companyId, code: 'TESIS-1' } },
     update: {},
-    create: { companyId, code: 'TESIS-1', name: 'Merkez Tesis', city: 'İstanbul' },
+    create: { companyId, code: 'TESIS-1', name: 'Merkez Tesis' },
   })
 
   // --- Statuses (stok statüsü, tablo-driven) — her statü tek tesise (facility) aittir ---
@@ -54,22 +54,22 @@ async function main() {
   ]
   for (const s of statuses) {
     await prisma.tBLSTATUS.upsert({
-      where: { companyId_code: { companyId, code: s.code } },
+      where: { companyId_facilityId_code: { companyId, facilityId: facility.id, code: s.code } },
       update: {},
       create: { companyId, facilityId: facility.id, ...s },
     })
   }
-  const available = await prisma.tBLSTATUS.findUniqueOrThrow({
-    where: { companyId_code: { companyId, code: 'AVAILABLE' } },
+  const available = await prisma.tBLSTATUS.findFirstOrThrow({
+    where: { companyId, facilityId: facility.id, code: 'AVAILABLE' },
   })
 
   // --- Belge durumları (legacy TBLSBBELGEDURUM) — yaşam döngüsü + renk ---
   const docStatuses = [
-    { code: 'BKL', name: 'Bekliyor', color: '#9ca3af', sortOrder: 10 },
-    { code: 'TPL', name: 'Toplanıyor', color: '#ca8a04', sortOrder: 20 },
-    { code: 'OBK', name: 'Onay Bekliyor', color: '#84cc16', sortOrder: 30 },
-    { code: 'ONY', name: 'Onaylandı', color: '#16a34a', sortOrder: 40 },
-    { code: 'IPT', name: 'İptal', color: '#ef4444', sortOrder: 50 },
+    { code: 'BKL', name: 'Bekliyor', color: '#9ca3af' },
+    { code: 'TPL', name: 'Toplanıyor', color: '#ca8a04' },
+    { code: 'OBK', name: 'Onay Bekliyor', color: '#84cc16' },
+    { code: 'ONY', name: 'Onaylandı', color: '#16a34a' },
+    { code: 'IPT', name: 'İptal', color: '#ef4444' },
   ]
   for (const s of docStatuses) {
     await prisma.tBLDOCUMENTSTATUS.upsert({
@@ -363,8 +363,8 @@ async function main() {
   }
 
   // ── Operasyon konfig dünyası: ek statüler + GR statü geçişi + op-palet ──
-  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'QUARANTINE' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'QUARANTINE', name: 'Karantina' } })
-  await prisma.tBLSTATUS.upsert({ where: { companyId_code: { companyId, code: 'REJECTED' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'REJECTED', name: 'Red' } })
+  await prisma.tBLSTATUS.upsert({ where: { companyId_facilityId_code: { companyId, facilityId: facility.id, code: 'QUARANTINE' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'QUARANTINE', name: 'Karantina' } })
+  await prisma.tBLSTATUS.upsert({ where: { companyId_facilityId_code: { companyId, facilityId: facility.id, code: 'REJECTED' } }, update: {}, create: { companyId, facilityId: facility.id, code: 'REJECTED', name: 'Red' } })
   const grOp = await prisma.tBLOPERATIONTYPE.findUniqueOrThrow({ where: { companyId_code: { companyId, code: 'GR' } } })
   // GR (mal kabul) → hedef statü AVAILABLE (mal kabulde statü buradan türetilir)
   const exGrSt = await prisma.tBLOPERATIONTYPESTATUS.findFirst({ where: { companyId, operationTypeId: grOp.id, targetStatusId: available.id } })

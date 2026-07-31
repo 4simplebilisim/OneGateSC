@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import {
   submitSalesOrder,
   approveSalesOrder,
@@ -77,7 +77,7 @@ export async function salesOrderRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const order = await prisma.tBLSALESORDER.findUnique({ where: { id }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
+    const order = await prisma.tBLSALESORDER.findFirst({ where: { id, ...companyListFilter(request) }, include: { lines: { orderBy: { lineNo: 'asc' } } } })
     if (!order) return reply.code(404).send({ error: 'Sales order not found' })
     return order
   })
@@ -136,7 +136,7 @@ export async function salesOrderRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = editSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const order = await prisma.tBLSALESORDER.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    const order = await prisma.tBLSALESORDER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!order) return reply.code(404).send({ error: 'Sales order not found' })
     if (order.status !== 'DRAFT') return reply.code(409).send({ error: `Sadece DRAFT sipariş düzenlenebilir (mevcut: ${order.status})` })
 

@@ -15,7 +15,6 @@ model TBLCOMPANY {
   id        Int      @id @default(autoincrement())
   code      String   @unique @db.VarChar(40)
   name      String   @db.VarChar(150)
-  taxNumber String?  @db.VarChar(20)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -53,6 +52,7 @@ model TBLCOMPANY {
   partnerGroups       TBLPARTNERGROUP[]
   locationCapacities  TBLLOCATIONCAPACITY[]
   barcodeTypes        TBLBARCODETYPE[]
+  integrationPackages TBLINTEGRATIONPACKAGE[]
   parameters          TBLPARAMETER[]
   printers            TBLPRINTER[]
   documentStatuses    TBLDOCUMENTSTATUS[]
@@ -81,8 +81,10 @@ model TBLUSER {
   isActive     Boolean   @default(true)
   isSuperAdmin Boolean   @default(false)
   lastLoginAt  DateTime?
+  sessionId    String?   @db.VarChar(64) // Tek oturum: aktif oturum kimliği (JWT sid ile eşleşmeli; yeni giriş eskisini düşürür)
   // StokBar Kullanıcı kartı alanları (B)
-  userType             String?   @db.VarChar(20) // Tip: CENTRAL (Merkez) / BRANCH (Şube)
+  isMobileUser         Boolean   @default(false) // El terminali (mobil) kullanıcısı
+  userType             String?   @db.VarChar(20) // Tip: CENTRAL (Merkez) / BRANCH (Şube) — UI'dan kaldırıldı (dormant)
   isApproved           Boolean   @default(true) // Onay durumu
   phone                String?   @db.VarChar(30) // Cep Tel No
   validUntil           DateTime? @db.Date // Geçerlilik Tarihi
@@ -144,6 +146,7 @@ model TBLUSERAUTHORIZATION {
   scopeType     UserScopeType
   referenceId   Int? // entity scope (FACILITY/WAREHOUSE/OPERATION_TYPE) → ilgili tablo id'si
   referenceCode String?       @db.VarChar(60) // SCREEN scope → ekran/menü anahtarı (resource adı)
+  deny          Boolean       @default(false) // KULLANICI > GRUP: kullanıcı seviyesinde bir yetkiyi YASAKLA (grubun verdiğini kaldırır). grant=izin, deny=yasak
   isActive      Boolean       @default(true)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -163,6 +166,7 @@ model TBLUSERAUTHORIZATION {
 }
 
 enum UserScopeType {
+  COMPANY // firma (tenant) erişimi — kullanıcı birden fazla firmada işlem yapabilir (referenceId = companyId)
   FACILITY
   WAREHOUSE
   OPERATION_TYPE
@@ -344,6 +348,7 @@ model TBLWAREHOUSE {
 model TBLAREA {
   id          Int      @id @default(autoincrement())
   companyId   Int
+  facilityId  Int? // Tesis — depodan türetilir (depo bir tesise ait); firma>tesis>depo>alan hiyerarşisi
   warehouseId Int
   code        String   @db.VarChar(40)
   name        String?  @db.VarChar(100)
@@ -352,11 +357,13 @@ model TBLAREA {
   updatedAt   DateTime @updatedAt
 
   company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
+  facility  TBLFACILITY?  @relation(fields: [facilityId], references: [id])
   warehouse TBLWAREHOUSE  @relation(fields: [warehouseId], references: [id])
   locations TBLLOCATION[]
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([facilityId])
   @@index([warehouseId])
   @@schema("wms")
 }
@@ -364,6 +371,7 @@ model TBLAREA {
 model TBLLOCATION {
   id          Int            @id @default(autoincrement())
   companyId   Int
+  facilityId  Int? // Tesis — depodan türetilir (firma>tesis>depo>alan>lokasyon hiyerarşisi)
   warehouseId Int
   areaId      Int?
   parentId    Int?
@@ -379,6 +387,7 @@ model TBLLOCATION {
   updatedAt   DateTime       @updatedAt
 
   company             TBLCOMPANY             @relation(fields: [companyId], references: [id])
+  facility            TBLFACILITY?           @relation(fields: [facilityId], references: [id])
   warehouse           TBLWAREHOUSE           @relation(fields: [warehouseId], references: [id])
   area                TBLAREA?               @relation(fields: [areaId], references: [id])
   parent              TBLLOCATION?           @relation("LocationTree", fields: [parentId], references: [id])
@@ -390,6 +399,7 @@ model TBLLOCATION {
 
   @@unique([companyId, warehouseId, code])
   @@index([companyId])
+  @@index([facilityId])
   @@index([warehouseId])
   @@index([areaId])
   @@index([parentId])
@@ -556,7 +566,7 @@ model TBLSTATUS {
   sourceDocumentLines TBLDOCUMENTLINE[] @relation("LineSourceStatus")
   targetDocumentLines TBLDOCUMENTLINE[] @relation("LineTargetStatus")
 
-  @@unique([companyId, code])
+  @@unique([companyId, facilityId, code]) // kod TESİS+firma bazında benzersiz — aynı kod farklı tesiste serbest
   @@index([companyId])
   @@index([facilityId])
   @@schema("wms")
@@ -653,6 +663,7 @@ model TBLSTOCK {
   poLine         String?   @db.VarChar(100)
   mainQty        Decimal   @default(0) @db.Decimal(28, 8)
   reservedQty    Decimal   @default(0) @db.Decimal(28, 8)
+  reservedDocumentId Int? // legacy LNGREZERVEBELGEKOD — rezervin sahibi belge; rezerve stok YALNIZ o belgede okutulur/çekilir (null+reservedQty>0 = bağsız blokaj/satış tahsisi)
   unitId         Int
   netWeight      Decimal?  @db.Decimal(28, 8)
   grossWeight    Decimal?  @db.Decimal(28, 8)
@@ -675,6 +686,7 @@ model TBLSTOCK {
   @@index([statusId])
   @@index([palletId])
   @@index([expiryDate])
+  @@index([reservedDocumentId])
   @@schema("wms")
 }
 
@@ -962,11 +974,16 @@ model TBLOPERATIONTYPE {
   groupSequenceId  Int? // legacy LNGGRUPSAYACKOD
   operationGroupId Int? // legacy LNGKONTROLGRUPKOD
   reverseOperationTypeId Int? // legacy LNGTERSOPERASYONKOD — ters/iptal operasyonu
+  linkedEntryOperationTypeId Int? // Referans Kontrollü: onayda bağlı GİRİŞ belgesini otomatik üretir (legacy TXTREFERANSBASLIKSSP/DETAYSSP SSP mekanizmasının yerleşik karşılığı; tesisler-arası çıkış→giriş)
   cancelLocationId Int? // legacy LNGIPTALLOKASYONKOD
   logControlDays   Int? // legacy LNGLOGKONTROLGUNSAYISI
 
   // Genel
   emailSend        Boolean @default(false) // BYTMAILGONDERILSIN
+  bulkAction       Boolean @default(false) // BYTTOPLUISLEM — işaretliyse yönüne göre Toplu İşlem ekranında görünür
+  reservation      Boolean @default(false) // Rezervasyon parametresi (StokBar toplu-işlem tipi RESERVATION'ın sade karşılığı)
+  applyAssignment  Boolean @default(false) // İş Ataması Uygula — açıksa el terminalinde kullanıcı YALNIZ kendine/grubuna atanmış belgeleri görür; kapalıysa (yetkisi olan) tüm belgeler
+  stockRotation    StockRotation @default(NONE) // Çıkış toplama yönlendirmesi: FEFO (SKT en yakın önce) / FIFO (üretim en eski önce) / NONE — öneri sıralar + yanlış lot okutmada uyarır
   // Stok Hareketi
   equivalentApplication Boolean @default(false) // BYTMUADILUYGULAMASI
   materialBasedCollection Boolean @default(false) // BYTMALBAZINDATOPLAMA
@@ -993,6 +1010,7 @@ model TBLOPERATIONTYPE {
   palletBreaking   Boolean @default(false) // BYTPALETBOZMA
   originalQtyUpdate Boolean @default(false) // BYTORJMIKGUNCELLENSIN
   reserveTransfer  Boolean @default(false) // BYTREZERVETRANSFEREDILSIN
+  partialUsage     Boolean @default(false) // BYTPARCALIKULLANIM — parçalı/kısmi kullanım yapılsın
 
   isActive         Boolean           @default(true)
   createdAt        DateTime          @default(now())
@@ -1025,10 +1043,11 @@ model TBLDOCUMENT {
   operationTypeId Int
   status          DocumentStatus @default(DRAFT) // iç yaşam döngüsü (motor): DRAFT/CONFIRMED/COMPLETED/CANCELLED
   documentStatusId Int? // kullanıcı-yüzlü Belge Durumu (Bekliyor→Toplanıyor→Onay Bekliyor→Onaylandı)
-  warehouseId     Int
+  warehouseId     Int? // opsiyonel — belge tesise (operationType.facilityId) bağlı, depoya değil; stok satır lokasyonlarından
   createdById     Int
   partnerId       Int?
   reasonId        Int? // legacy LNGOPERASYONNEDENKOD
+  referenceDocumentId Int? // legacy LNGREFBELGENO — referans zinciri: bu belge hangi belgeden üredi (Referans Kontrollü oto-giriş)
   documentDate    DateTime       @default(now())
   completedAt     DateTime?
   note            String?        @db.VarChar(500)
@@ -1038,7 +1057,7 @@ model TBLDOCUMENT {
   company        TBLCOMPANY         @relation(fields: [companyId], references: [id])
   operationType  TBLOPERATIONTYPE   @relation(fields: [operationTypeId], references: [id])
   documentStatus TBLDOCUMENTSTATUS? @relation(fields: [documentStatusId], references: [id])
-  warehouse     TBLWAREHOUSE        @relation(fields: [warehouseId], references: [id])
+  warehouse     TBLWAREHOUSE?       @relation(fields: [warehouseId], references: [id])
   createdBy     TBLUSER             @relation("DocumentCreatedBy", fields: [createdById], references: [id])
   partner       TBLBUSINESSPARTNER? @relation(fields: [partnerId], references: [id])
   reason        TBLREASON?          @relation(fields: [reasonId], references: [id])
@@ -1051,6 +1070,7 @@ model TBLDOCUMENT {
   @@index([operationTypeId])
   @@index([partnerId])
   @@index([status])
+  @@index([referenceDocumentId])
   @@schema("wms")
 }
 
@@ -1118,6 +1138,8 @@ model TBLDOCUMENTLINESCOPE {
   palletId         Int?
   batchNo          String?  @db.VarChar(100)
   serialNo         String?  @db.VarChar(100)
+  productionDate   DateTime? @db.Date // toplamada okutulan üretim tarihi (stok'a taşınır)
+  expiryDate       DateTime? @db.Date // SKT (son kullanma) — toplamada okutulur, stok'a taşınır
   customerId       Int? // legacy LNGCARIKOD
   poNo             String?  @db.VarChar(50)
   poLine           String?  @db.VarChar(50)
@@ -1210,6 +1232,48 @@ enum MovementDirection {
   OUTBOUND // Çıkış
   INTERNAL // Transfer
   COUNT // Sayım
+
+  @@schema("wms")
+}
+
+// Çıkış toplama stok rotasyonu (operasyon tipinde) — yönlendirme + yanlış-lot uyarısı
+enum StockRotation {
+  NONE // rotasyon yok — plan/id sırası
+  FIFO // First In First Out — üretim tarihi en eski önce
+  FEFO // First Expired First Out — SKT (expiryDate) en yakın önce
+
+  @@schema("wms")
+}
+
+// Barkod çözümleme modu (barkod tipinde)
+enum BarcodeMode {
+  EAN // ürün-birim barkodu tam eşleşme → ürün + birim
+  PALLET // palet anahtarı → paletin stok içeriği (SP'siz)
+  SEGMENT // gömülü alanlar → segmentlere böl
+  SCRIPT // ileri seviye: parseScript güvenli sandbox'ta (QuickJS/WASM) — legacy TXTSCRIPT birebir port
+
+  @@schema("wms")
+}
+
+// Barkod segment alanı — segmentin hangi veriye gittiği
+enum BarcodeField {
+  PALLET // palet no
+  PRODUCT // ürün kodu/barkodu
+  BATCH // parti/lot
+  PRODUCTION // üretim tarihi
+  EXPIRY // SKT (son kullanma)
+  QUANTITY // miktar
+  UNIT // birim kodu
+  SERIAL // seri no
+  IGNORE // yoksay
+
+  @@schema("wms")
+}
+
+// Segment ayrıştırma türü
+enum BarcodeParseType {
+  FIXED // sabit N karakter
+  UNTIL // ayraca kadar
 
   @@schema("wms")
 }
@@ -1551,10 +1615,19 @@ model TBLSTOCKCOUNT {
   companyId   Int
   countNo     String      @db.VarChar(40)
   warehouseId Int
+  locationId  Int?        // Sayım kapsam lokasyonu (null = tüm depo) — aktif-sayım donması kapsamı + snapshot filtresi
   countType   String?     @db.VarChar(20) // Sayım Tipi (ZSYM vb.)
   status      CountStatus @default(DRAFT)
   countDate   DateTime    @default(now())
   note        String?     @db.VarChar(500)
+  // Kapsam kısıtları (StokBar Sayım Belge — Bağlantı Tipi: Hepsi/Grup/Kod)
+  materialLinkType LinkScope? // Malzeme Bağlantı Tipi — ALL(Hepsi)/GROUP(Grup)/SPECIFIC(Kod)
+  materialLinkId   Int?       // GROUP→ürün grubu, SPECIFIC→ürün
+  userLinkType     LinkScope? // Kullanıcı Bağlantı Tipi
+  userLinkId       Int?       // GROUP→kullanıcı grubu, SPECIFIC→kullanıcı
+  // Sayım Parametreleri (TBLCOUNTPARAMETER) — sayım operasyonundan çözülür
+  operationTypeId  Int?       // Sayım Operasyonu (parametre kaynağı)
+  equalize         Boolean  @default(true) // Eşitleme — false ise tamamlamada stok DÜZELTİLMEZ (yalnız fark raporu)
   createdById Int
   completedAt DateTime?
   createdAt   DateTime    @default(now())
@@ -1851,6 +1924,15 @@ model TBLCONDITIONBREAKLOG {
 }
 
 // Entegrasyon aktarım logu (legacy TBLSBENTEGRASYONAKTARIM — sadeleştirilmiş): dış sistem izleme + manuel tetikleme
+// Entegrasyon paketi tipi (legacy BYTPAKETTIPI) — bağlantı/kimlik şekli tipe göre değişir
+enum IntegrationPackageType {
+  GENERIC_REST // düz REST hedefi (özel/3. parti)
+  NETSIS_REST // Netsis NetOpenX REST (/api/v2 + OAuth2 password: DbName/DbUser/Branch/NetsisUser)
+  LOGO_REST // Logo Objects REST (ClientId/Secret Basic → Bearer; firmNr/periodNr)
+
+  @@schema("wms")
+}
+
 enum IntegrationDirection {
   IN // Gelen Aktarım
   OUT // Giden Aktarım
@@ -1866,19 +1948,174 @@ enum IntegrationStatus {
   @@schema("wms")
 }
 
+// Entegrasyon Paketi (legacy TBLSBENTEGRASYONPAKET) — ERP bağlantı profili (Netsis NetOpenX REST / Logo Objects REST).
+// Netsis: baseUrl=/api/v2 kökü + DbName/DbUser/BranchCode + Netsis kullanıcı; Logo: REST anahtarı (ClientId/Secret) + firma/dönem no.
+model TBLINTEGRATIONPACKAGE {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  code         String   @db.VarChar(40)
+  name         String?  @db.VarChar(150)
+  packageType  IntegrationPackageType @default(GENERIC_REST) // legacy BYTPAKETTIPI
+  baseUrl      String?  @db.VarChar(300) // legacy TXTSUNUCUADI — http://host:port(/api/v2)
+  username     String?  @db.VarChar(100) // legacy TXTKULLANICI (ERP kullanıcısı)
+  password     String?  @db.VarChar(200) // legacy TXTSIFRE
+  clientId     String?  @db.VarChar(150) // Logo REST anahtar sahibi (ClientId)
+  clientSecret String?  @db.VarChar(200) // Logo REST anahtar değeri (ClientSecret)
+  dbType       String?  @db.VarChar(30) // legacy BYTDBTIP (Netsis: vtMSSQL vb.)
+  dbName       String?  @db.VarChar(100) // legacy TXTDBADI
+  dbUser       String?  @db.VarChar(100) // legacy TXTDBKULLANICI
+  dbPassword   String?  @db.VarChar(200) // legacy TXTDBSIFRE
+  branchCode   String?  @db.VarChar(20) // legacy TXTSUBE (Netsis şube)
+  firmNr       String?  @db.VarChar(10) // Logo firma no (BYTCOKLUFIRMAAKTARIMI bağlamı)
+  periodNr     String?  @db.VarChar(10) // legacy TXTDONEM (Logo dönem)
+  logging      Boolean  @default(false) // legacy BYTLOGLAMA
+  logoVersion  Int?     @db.SmallInt // legacy BYTLOGOVERSIYON (1=LOGO 2.02 üstü, 0=öncesi)
+  multiCompanyTransfer Boolean @default(false) // legacy BYTCOKLUFIRMAAKTARIMI
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company   TBLCOMPANY              @relation(fields: [companyId], references: [id])
+  addresses TBLINTEGRATIONADDRESS[]
+  logs      TBLINTEGRATIONLOG[]
+  queries   TBLINTEGRATIONQUERY[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Entegrasyon Adresi (legacy TBLSBENTEGRASYONADRES) — operasyon × olay → hedef uç eşlemesi.
+// Tetikler legacy bayrak karşılıkları: yaratma/ilk okutma/onay/kaydetme → onCreate/onFirstScan/onConfirm/onComplete.
+model TBLINTEGRATIONADDRESS {
+  id              Int      @id @default(autoincrement())
+  companyId       Int
+  packageId       Int
+  operationTypeId Int? // legacy LNGOPERASYONTIPKOD (null = genel)
+  facilityId      Int? // legacy LNGDISTKOD
+  name            String?  @db.VarChar(150) // legacy TXTTANIMI
+  path            String   @db.VarChar(300) // legacy TXTADRES — uç yolu (/ItemSlips, /salesDispatches) veya tam URL
+  sortOrder       Int      @default(0) // legacy BYTENTEGRASYON_SIRA
+  onCreate        Boolean  @default(false) // legacy BYTYARATMAENTEGRASYONU
+  onFirstScan     Boolean  @default(false) // legacy BYTILKOKUTMAENTEGRASYONU
+  onConfirm       Boolean  @default(false) // legacy BYTONAYENTEGRASYONU
+  onComplete      Boolean  @default(false) // legacy BYTKAYDETMEENTEGRASYONU
+  logging         Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  package     TBLINTEGRATIONPACKAGE     @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  logs        TBLINTEGRATIONLOG[]
+  writeParams TBLINTEGRATIONWRITEPARAM[]
+
+  @@index([companyId])
+  @@index([packageId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Entegrasyon Okuma Sorgusu (legacy TBLSBENTEGRASYONSORGU) — GELEN aktarımın kaynak tanımı.
+// Legacy'de SQL SELECT; REST modelde '/uç/yolu' yazılırsa motor adressiz aktarımda bunu kullanır (bilinen uçtan önce).
+model TBLINTEGRATIONQUERY {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  packageId Int // legacy LNGPAKETKOD
+  queryType String   @db.VarChar(20) // legacy BYTSORGUTIP — MALZEME/CARI/SIPARIS/FATURA/TALEP
+  query     String // legacy TXTSORGU — SQL (legacy) veya REST uç yolu
+  ordering  String?  @db.VarChar(300) // legacy TXTSIRALAMA
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  package TBLINTEGRATIONPACKAGE       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  columns TBLINTEGRATIONQUERYCOLUMN[]
+
+  @@index([companyId])
+  @@index([packageId])
+  @@schema("wms")
+}
+
+// Sorgu Kolon Dönüşümü (legacy TBLSBENTEGRASYONSORGUKOLONDONUSUM) — kaynak kolon → OneGate alanı eşlemesi.
+model TBLINTEGRATIONQUERYCOLUMN {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  queryId      Int // legacy LNGSORGUKOD
+  sourceColumn String   @db.VarChar(100) // legacy TXTSORGUKOLON
+  targetField  String   @db.VarChar(40) // legacy BYTSBKOLON (tinyint kod) — anlamlı alan kodu (PRODUCT_CODE, QUANTITY...)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  query TBLINTEGRATIONQUERY @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([queryId])
+  @@schema("wms")
+}
+
+// Entegrasyon Yazma Parametresi (legacy TBLSBENTYAZMAPARAMETRE) — GİDEN aktarım kırılım bayrakları.
+// Legacy TXTKOD = operasyon tipi dönüşüm kodu → bizde conversionId (TBLOPERATIONTYPECONVERSION ref'i, ilişkisiz).
+model TBLINTEGRATIONWRITEPARAM {
+  id                  Int      @id @default(autoincrement())
+  companyId           Int
+  facilityId          Int? // legacy LNGDISTKOD
+  conversionId        Int? // legacy TXTKOD (operasyon tipi dönüşüm)
+  addressId           Int // legacy LNGENTADRESKOD
+  bulkAction          Boolean  @default(false) // legacy BYTTOPLUISLEM
+  batchTransfer       Boolean  @default(false) // legacy BYTBATCHAKTARIMI
+  palletBatchTransfer Boolean  @default(false) // legacy BYTPALETBATCHAKTARIMI
+  serialTransfer      Boolean  @default(false) // legacy BYTSERIAKTARIMI
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  address TBLINTEGRATIONADDRESS @relation(fields: [addressId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([addressId])
+  @@schema("wms")
+}
+
+// Entegrasyon XML Convert (legacy TBLSBENTEGRASYONXMLCONVERT) — gövde dönüşüm şablonları (XML + XSL).
+// REST veri eşleme turunda JSON şablonun temeli; şimdilik tanım deposu.
+model TBLINTEGRATIONXMLCONVERT {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  name        String   @db.VarChar(100) // legacy TXTENTEGRASYONISMI
+  xmlTemplate String? // legacy TXTXMLCONVERSION
+  xslTemplate String? // legacy TXTXSLCONVERSION
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([companyId])
+  @@schema("wms")
+}
+
 model TBLINTEGRATIONLOG {
   id           Int                  @id @default(autoincrement())
   companyId    Int
   direction    IntegrationDirection
-  entityType   String               @db.VarChar(40) // MALZEME/CARI/SIPARIS/FATURA/ISEMRI/DEPO...
-  status       IntegrationStatus    @default(SUCCESS)
-  referenceKey String?              @db.VarChar(100) // ilgili kayıt anahtarı (ör. belge no)
-  message      String?              @db.VarChar(500)
+  entityType   String               @db.VarChar(40) // legacy TXTTRANSACTIONKONUSU — MALZEME/CARI/SIPARIS/FATURA/TALEP...
+  status       IntegrationStatus    @default(SUCCESS) // legacy BYTMESAJTIPI/BYTDURUM
+  referenceKey String?              @db.VarChar(100) // legacy TXTENTEGRASYONKODU (kayıt anahtarı / uç yolu)
+  message      String?              @db.VarChar(500) // legacy TXTMESAJTANIMI
+  packageId    Int? // hangi paketle (legacy'de adres üzerinden; manuel tetiklemede adres olmayabilir)
+  addressId    Int? // legacy LNGENTEGRASYONADRESKOD
+  documentId   Int? // legacy LNGBELGEKOD (ilişkisiz — log tarihçesi belgeden bağımsız yaşar)
+  createdById  Int? // legacy LNGKULLANICIKOD
+  payload      String? // legacy TXTXMLTEXT — istek/yanıt gövdesi (kısaltılmış)
   createdAt    DateTime             @default(now())
   processedAt  DateTime?            @default(now())
 
+  package TBLINTEGRATIONPACKAGE? @relation(fields: [packageId], references: [id], onDelete: SetNull)
+  address TBLINTEGRATIONADDRESS? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+
   @@index([companyId])
   @@index([direction])
+  @@index([packageId])
+  @@index([status])
   @@schema("wms")
 }
 
@@ -2006,8 +2243,6 @@ model TBLFACILITY {
   companyId Int
   code      String   @db.VarChar(20)
   name      String   @db.VarChar(100)
-  city      String?  @db.VarChar(60)
-  address   String?  @db.VarChar(255)
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2016,6 +2251,9 @@ model TBLFACILITY {
   warehouses TBLWAREHOUSE[]
   regions    TBLREGION[]
   statuses   TBLSTATUS[]
+  printers   TBLPRINTER[]
+  areas      TBLAREA[]
+  locations  TBLLOCATION[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2079,8 +2317,8 @@ model TBLOPERATIONTYPESTATUS {
   cariLinkId      Int? // cari/cari-grup
   materialLinkType LinkScope? // Malzeme Bağlantı Tipi
   materialLinkId  Int? // ürün/ürün-grup
-  sourceStatusId  Int? // boş = dış/kaynaksız (mal kabul gibi)
-  targetStatusId  Int
+  sourceStatusId  Int? // boş = dış/kaynaksız (Giriş/mal kabul gibi)
+  targetStatusId  Int? // boş = dış (Çıkış/sevkiyat gibi — stok dışarı çıkar, hedef statü yok)
   sortOrder       Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -2159,53 +2397,76 @@ model TBLOPERATIONTYPEPALLETTYPE {
 }
 
 // Barkod tipi / parse (legacy TBLSBBARKODTIPI) — müşteri/üretim barkodu parse mantığı
+// Barkod Tipi (legacy TBLSBBARKODTIPI) — bildirimsel kural: eşleşme (önek/uzunluk) + mod (EAN/Palet/Segment) + segmentler.
+// Çoklu format = birden çok tip satırı; okutmada sortOrder sırasıyla denenir, İLK EŞLEŞEN kazanır (legacy if/elseif).
 model TBLBARCODETYPE {
   id                  Int      @id @default(autoincrement())
   companyId           Int
+  facilityId          Int? // Tesis (legacy) — null = tüm tesisler (plain int, refGuard doğrular)
   code                String   @db.VarChar(20)
   name                String?  @db.VarChar(100)
-  parseScript         String?  @db.Text // barkod parse mantığı (regex/ifade — legacy TXTSCRIPT)
+  sortOrder           Int      @default(0) // ilk eşleşen kazanır (if/elseif sırası)
+  mode                BarcodeMode @default(EAN) // çözümleme modu
+  matchPrefix         String?  @db.VarChar(20) // eşleşme: barkod bu önekle başlar
+  matchContains       String?  @db.VarChar(20) // eşleşme: barkod bunu içerir
+  minLen              Int? // eşleşme: min uzunluk (dahil)
+  maxLen              Int? // eşleşme: max uzunluk (dahil)
+  separator           String?  @db.VarChar(4) // SEGMENT: varsayılan ayraç (segmentin kendi ayracı boşsa)
+  palletKeyLen        Int? // PALLET: palet no = ilk N karakter (boş = tüm barkod)
+  parseScript         String?  @db.Text // legacy TXTSCRIPT — ileri seviye (şimdilik motora bağlı değil)
   isProductionBarcode Boolean  @default(false) // legacy BYTURETIMBARKOD
   isActive            Boolean  @default(true)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+  company  TBLCOMPANY          @relation(fields: [companyId], references: [id])
+  segments TBLBARCODESEGMENT[]
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([companyId, facilityId, sortOrder])
+  @@schema("wms")
+}
+
+// Barkod segmenti (SEGMENT modunda) — sıralı alan: alan + ayrıştırma (sabit uzunluk VEYA ayraca kadar).
+model TBLBARCODESEGMENT {
+  id            Int              @id @default(autoincrement())
+  companyId     Int
+  barcodeTypeId Int
+  sortOrder     Int              @default(0) // soldan sağa sıra
+  field         BarcodeField // alanın hangi veriye gittiği
+  parseType     BarcodeParseType @default(UNTIL)
+  length        Int? // FIXED: karakter sayısı
+  separator     String?          @db.VarChar(4) // UNTIL: ayraç (boşsa tipin separator'ı)
+  dateFormat    String?          @db.VarChar(12) // PRODUCTION/EXPIRY: YYAAGG / YYYYAAGG / GGAAYY
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  barcodeType TBLBARCODETYPE @relation(fields: [barcodeTypeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([barcodeTypeId])
   @@schema("wms")
 }
 
 // Yazıcı tanımı (bizim eklediğimiz — legacy Excel'de yok) — etiket basımı + mDNS/IPP ağ keşfi
 model TBLPRINTER {
-  id         Int         @id @default(autoincrement())
+  id         Int      @id @default(autoincrement())
   companyId  Int
-  code       String      @db.VarChar(40)
-  name       String?     @db.VarChar(120)
-  type       PrinterType @default(IPP)
-  host       String?     @db.VarChar(120) // IP veya hostname
-  port       Int? // IPP genelde 631, ZPL ham 9100
-  path       String?     @db.VarChar(200) // IPP yolu, ör. /ipp/print
-  location   String?     @db.VarChar(120) // fiziksel konum etiketi
-  isDefault  Boolean     @default(false)
-  discovered Boolean     @default(false) // mDNS ile mi bulundu
-  isActive   Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  facilityId Int // Tesis (legacy LNGDISTKOD) — yazıcı bir tesise aittir
+  name       String   @db.VarChar(120) // Yazıcı adı (legacy "Yazıcı")
+  address    String   @db.VarChar(200) // Yazıcı adresi — UNC (\\sunucu\yazici) veya IP (legacy "Yazıcı Adresi")
+  isDefault  Boolean  @default(false)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+  company  TBLCOMPANY  @relation(fields: [companyId], references: [id])
+  facility TBLFACILITY @relation(fields: [facilityId], references: [id])
 
-  @@unique([companyId, code])
+  @@unique([companyId, facilityId, name])
   @@index([companyId])
-  @@schema("wms")
-}
-
-enum PrinterType {
-  IPP // ağ yazıcısı (IPP/CUPS)
-  ZPL // termal Zebra (ham ZPL, TCP 9100)
-  SYSTEM // tarayıcı/OS diyaloğu
-
+  @@index([facilityId])
   @@schema("wms")
 }
 
@@ -2216,13 +2477,13 @@ model TBLDOCUMENTSTATUS {
   code      String   @db.VarChar(20) // ör. BKL/TPL/OBK/ONY
   name      String?  @db.VarChar(100) // tanım (Bekliyor, Toplanıyor…)
   color     String?  @db.VarChar(20) // hex renk (#16a34a) — legacy BYTRENK karşılığı
-  sortOrder Int? // yaşam döngüsü sırası
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
-  documents TBLDOCUMENT[]
+  company       TBLCOMPANY                   @relation(fields: [companyId], references: [id])
+  documents     TBLDOCUMENT[]
+  statusCriteria TBLDOCUMENTSTATUSCRITERIA[] // Faz 2: bu durumu hedefleyen kriter satırları
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2250,15 +2511,37 @@ model TBLDOCUMENTSTATUSCRITERIA {
   id                Int      @id @default(autoincrement())
   companyId         Int
   operationTypeId   Int // LNGOPERASYONTIPKOD
-  businessPartnerId Int? // LNGDISTKOD (cari)
-  criteria          String   @db.Text // TXTKRITER
+  businessPartnerId Int? // LNGDISTKOD (cari) — null = tüm cariler
+  condition         String?  @db.VarChar(30) // Faz 2: koşul (CANCELLED/COMPLETED/CONFIRMED/NONE_COLLECTED/PARTIAL/FULLY_COLLECTED/ANY_COLLECTED)
+  targetStatusId    Int? // koşul sağlanınca atanacak belge durumu (TBLDOCUMENTSTATUS)
+  priority          Int      @default(0) // küçük önce değerlendirilir
+  criteria          String?  @db.Text // legacy TXTKRITER — opsiyonel serbest not
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+  company      TBLCOMPANY         @relation(fields: [companyId], references: [id])
+  targetStatus TBLDOCUMENTSTATUS? @relation(fields: [targetStatusId], references: [id])
 
   @@index([companyId])
+  @@index([operationTypeId])
+  @@schema("wms")
+}
+
+// Belge durum geçiş geçmişi (Faz 3 — audit). refreshDocStatus her GERÇEK değişimde bir satır yazar.
+// Self-contained: kodlar denormalize (geçiş anındaki değer), core modellere ters-relation yok.
+model TBLDOCUMENTSTATUSHISTORY {
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  documentId Int
+  fromCode   String?  @db.VarChar(20) // önceki belge durum kodu (ilk geçişte null)
+  toCode     String   @db.VarChar(20) // yeni belge durum kodu
+  source     String   @db.VarChar(40) // tetikleyen: derive|criteria|confirm|complete|cancel|reverse|bulk|procurement|sales|workorder
+  userId     Int? // değişikliği yapan kullanıcı (varsa)
+  createdAt  DateTime @default(now())
+
+  @@index([companyId])
+  @@index([documentId])
   @@schema("wms")
 }
 
@@ -2266,8 +2549,12 @@ model TBLDOCUMENTSTATUSCRITERIA {
 model TBLDOCUMENTAPPROVALTYPE {
   id                Int      @id @default(autoincrement())
   companyId         Int
+  facilityId        Int? // Tesis (legacy LNGDISTKOD) — StokBar Belge Onay Tipi ekranında zorunlu
   operationTypeId   Int // LNGOPERASYONTIPKOD
-  approvalType      Int // BYTONAYTIPI
+  // BYTONAYTIPI: 1=Toplama Ekranından Onay (okutma bitince İleri→onay sorusu; genelde kontrolsüz)
+  //              2=Tek Aşamalı Onay (kontrollüde kısmi toplama; İleri→Onayla/Böl seçenekleri)
+  //              3=İki Aşamalı Onay (önce mobilden onay, en sonda Gözlem ekranından son onay)
+  approvalType      Int
   controlCollection Boolean  @default(false) // BYTKONTROLTOPLAMA
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
@@ -2325,13 +2612,32 @@ model TBLOPERATIONTYPETOLERANCE {
   materialLinkType  LinkScope? // BYTMALZEMEBAGLANTITIPI
   materialLinkId    Int?
   ignoreSplit       Boolean    @default(false) // BYTBOLMEDIKKATEALINSIN
-  tolerancePercent  Decimal?   @db.Decimal(9, 4) // ± yüzde tolerans
-  toleranceQty      Decimal?   @db.Decimal(28, 8) // ± mutlak miktar tolerans
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
+  details TBLOPERATIONTYPETOLERANCEDETAIL[] // kademe bazında detaylar (StokBar Tolerans Detay)
+
   @@index([companyId])
+  @@schema("wms")
+}
+
+// Operasyon Tipi Tolerans DETAY — kademe bazında (StokBar Tolerans Detay). Bir tolerans master'ında N detay.
+// Örn. kg için %10, adet için %15 ayrı detaylar. Birim alanları düz Int (TBLUNIT).
+model TBLOPERATIONTYPETOLERANCEDETAIL {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  toleranceId  Int
+  unitId       Int? // Birim (kg/adet) — bu satırın ait olduğu ölçü birimi; birim başına farklı tolerans (kg %10, adet %15)
+  lowerPercent Decimal? @db.Decimal(28, 8) // Alt Yüzde (ör. %5 → referansın %5'i kadar eksik kabul)
+  upperPercent Decimal? @db.Decimal(28, 8) // Üst Yüzde (ör. %10 → referansın %10'u kadar fazla kabul)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tolerance TBLOPERATIONTYPETOLERANCE @relation(fields: [toleranceId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([toleranceId])
   @@schema("wms")
 }
 
@@ -2398,24 +2704,27 @@ model TBLSEQUENTIALOPERATION {
   @@schema("wms")
 }
 
-// Otomatik Referanslı Belge (legacy TBLSBOTOMATIKREFERANSLIBELGE)
+// Otomatik Referanslı Belge (legacy TBLSBOTOMATIKREFERANSLIBELGE) — Referans Kontrollü eşleme:
+// KAYNAK TESİS+ÇIKIŞ operasyonu onaylanınca HEDEF TESİS+GİRİŞ operasyonunda belge otomatik doğar.
+// NOT: legacy LNGKAYNAKDISTKOD/LNGHEDEFDISTKOD = TESİS (DISTKOD=tesis) — ilk port'ta yanlışlıkla cari eşlenmişti, düzeltildi.
 model TBLAUTOREFERENCEDOCUMENT {
   id                    Int      @id @default(autoincrement())
   companyId             Int
-  sourcePartnerId       Int // LNGKAYNAKDISTKOD
-  sourceOperationTypeId Int
+  sourceFacilityId      Int // LNGKAYNAKDISTKOD — kaynak TESİS
+  sourceOperationTypeId Int // kaynak (çıkış) operasyon
   sourceLocLinkType     Int?
   sourceLocLinkId       Int?
-  targetPartnerId       Int // LNGHEDEFDISTKOD
-  targetOperationTypeId Int
+  targetFacilityId      Int? // LNGHEDEFDISTKOD — hedef TESİS (facility=true "tesis içi" iken boş = kaynakla aynı)
+  targetOperationTypeId Int // hedef (giriş) operasyon
   targetLocLinkType     Int?
   targetLocLinkId       Int?
-  facility              Boolean  @default(false) // BYTTESIS
+  facility              Boolean  @default(false) // BYTTESIS — TESİS İÇİ: tikli=aynı tesiste hareket; değilse hedef tesis ZORUNLU
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   @@index([companyId])
+  @@index([sourceOperationTypeId])
   @@schema("wms")
 }
 
@@ -3037,19 +3346,21 @@ model TBLSEQUENCE {
 
 // Neden kodu (legacy TBLSBNEDEN)
 model TBLREASON {
-  id        Int      @id @default(autoincrement())
-  companyId Int
-  code      String   @db.VarChar(10)
-  name      String   @db.VarChar(100)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         Int      @id @default(autoincrement())
+  companyId  Int
+  facilityId Int? // tesis (opsiyonel — boş=tüm tesisler); legacy LNGDISTKOD. Operasyon tipiyle aynı desen.
+  code       String   @db.VarChar(10)
+  name       String   @db.VarChar(100)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   company   TBLCOMPANY    @relation(fields: [companyId], references: [id])
   documents TBLDOCUMENT[]
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@index([facilityId])
   @@schema("wms")
 }
 
@@ -3359,6 +3670,7 @@ enum ExtraFieldDataType {
 model TBLEXTRAFIELD {
   id                 Int                @id @default(autoincrement())
   companyId          Int
+  facilityId         Int? // tesis (opsiyonel — boş=tüm tesisler). Tenant'ın birden çok tesisi olabilir; ek saha tesise göre tanımlanabilir.
   fieldKind          ExtraFieldKind     @default(DYNAMIC) // Dinamik/Statik
   entityType         ExtraFieldEntity // BYTTIP — uygulama yeri
   trackingCode       String?            @db.VarChar(40) // LNGTAKIPKOD
@@ -3379,6 +3691,7 @@ model TBLEXTRAFIELD {
   options TBLEXTRAFIELDOPTION[]
 
   @@index([companyId])
+  @@index([facilityId])
   @@schema("wms")
 }
 
@@ -3405,18 +3718,20 @@ model TBLEXTRAFIELDOPTION {
 // İş Atama — belge ↔ kullanıcı eşleştirme. Terminalde kullanıcıya atanmış belgeler gözükür.
 // Legacy: TBLSBBELGEBASLIK = bizde TBLDOCUMENT; onunla kullanıcı bağlanır.
 model TBLDOCUMENTASSIGNMENT {
-  id         Int      @id @default(autoincrement())
-  companyId  Int
-  documentId Int // TBLDOCUMENT
-  userId     Int // TBLUSER
-  note       String?  @db.VarChar(200)
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  documentId  Int // TBLDOCUMENT
+  userId      Int? // TBLUSER — kullanıcıya atama (userId VEYA userGroupId, biri dolu)
+  userGroupId Int? // TBLUSERGROUP — kullanıcı grubuna atama (grubun tüm üyeleri görür)
+  note        String?  @db.VarChar(200)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([companyId])
   @@index([documentId])
   @@index([userId])
+  @@index([userGroupId])
   @@schema("wms")
 }
 

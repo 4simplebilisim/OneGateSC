@@ -8,21 +8,41 @@ export class CountingError extends Error {
   }
 }
 
-/** Sayım başlat: deponun mevcut stok satırlarını snapshot'layıp sayım satırı oluşturur (systemQty). */
+type Scope = 'ALL' | 'GROUP' | 'SPECIFIC'
+
+/** Sayım başlat: deponun mevcut stok satırlarını snapshot'layıp sayım satırı oluşturur (systemQty).
+ *  Kapsam (StokBar Sayım Belge — Bağlantı Tipi): Malzeme Hepsi/Grup(ürün grubu)/Kod(ürün) → snapshot filtresi.
+ *  Kullanıcı Hepsi/Grup(kullanıcı grubu)/Kod(kullanıcı) → belgede saklanır (yetkilendirme/atama). */
 export async function createCount(
   companyId: number,
   warehouseId: number,
   countNo: string,
   userId: number,
-  opts: { note?: string; countType?: string; locationId?: number; productId?: number } = {},
+  opts: {
+    note?: string; countType?: string; locationId?: number; productId?: number
+    materialLinkType?: Scope | null; materialLinkId?: number | null
+    userLinkType?: Scope | null; userLinkId?: number | null
+    operationTypeId?: number | null
+  } = {},
 ) {
-  // Kapsam: belirli lokasyon ve/veya ürün verilirse snapshot ona göre filtrelenir (yoksa tüm depo)
+  // Malzeme kapsamı → snapshot ürün filtresi (Hepsi→tümü, Kod→ürün, Grup→ürün grubu). productId = geriye dönük tek-ürün.
+  const productFilter =
+    opts.materialLinkType === 'SPECIFIC' && opts.materialLinkId ? { productId: opts.materialLinkId }
+    : opts.materialLinkType === 'GROUP' && opts.materialLinkId ? { product: { productGroupId: opts.materialLinkId } }
+    : opts.productId ? { productId: opts.productId }
+    : {}
+  // Sayım Parametreleri: operasyon verilirse TBLCOUNTPARAMETER.equalize çözülür (yoksa eşitle=true — geriye dönük)
+  let equalize = true
+  if (opts.operationTypeId) {
+    const param = await prisma.tBLCOUNTPARAMETER.findFirst({ where: { companyId, operationTypeId: opts.operationTypeId }, select: { equalize: true } })
+    if (param) equalize = param.equalize
+  }
   const stocks = await prisma.tBLSTOCK.findMany({
     where: {
       companyId,
       location: { warehouseId },
       ...(opts.locationId ? { locationId: opts.locationId } : {}),
-      ...(opts.productId ? { productId: opts.productId } : {}),
+      ...productFilter,
     },
     orderBy: [{ locationId: 'asc' }, { productId: 'asc' }],
   })
@@ -32,10 +52,17 @@ export async function createCount(
         companyId,
         countNo,
         warehouseId,
+        locationId: opts.locationId ?? undefined, // sayım kapsam lokasyonu (null=tüm depo) — aktif-sayım donması kapsamı
         countType: opts.countType,
         createdById: userId,
         note: opts.note,
         status: 'DRAFT',
+        materialLinkType: opts.materialLinkType ?? undefined,
+        materialLinkId: opts.materialLinkId ?? undefined,
+        userLinkType: opts.userLinkType ?? undefined,
+        userLinkId: opts.userLinkId ?? undefined,
+        operationTypeId: opts.operationTypeId ?? undefined,
+        equalize,
         lines: {
           create: stocks.map((s, i) => ({
             lineNo: i + 1,
@@ -86,19 +113,22 @@ export async function completeCount(countId: number, now: Date) {
       if (uncounted > 0) throw new CountingError(`Sayım kriteri gereği ${uncounted} satır sayılmadan sayım tamamlanamaz`)
     }
 
+    // Eşitleme (TBLCOUNTPARAMETER.equalize): kapalıysa stok DÜZELTİLMEZ — sayım yalnız fark kaydı olur (rapor).
     let adjusted = 0
-    for (const line of count.lines) {
-      if (line.countedQty === null) continue
-      if (line.countedQty.equals(line.systemQty)) continue
-      if (line.stockId !== null) {
-        await tx.tBLSTOCK.update({ where: { id: line.stockId }, data: { mainQty: line.countedQty } })
-        // Hareket defteri: sayım düzeltmesi (işaretli fark = sayılan − sistem)
-        await writeLedger(tx, {
-          companyId: count.companyId, productId: line.productId, unitId: line.unitId,
-          locationId: line.locationId, statusId: line.statusId, batchNo: line.batchNo, serialNo: line.serialNo,
-          palletId: line.palletId, qtyDelta: line.countedQty.sub(line.systemQty), direction: 'COUNT', userId: count.createdById,
-        })
-        adjusted++
+    if (count.equalize) {
+      for (const line of count.lines) {
+        if (line.countedQty === null) continue
+        if (line.countedQty.equals(line.systemQty)) continue
+        if (line.stockId !== null) {
+          await tx.tBLSTOCK.update({ where: { id: line.stockId }, data: { mainQty: line.countedQty } })
+          // Hareket defteri: sayım düzeltmesi (işaretli fark = sayılan − sistem)
+          await writeLedger(tx, {
+            companyId: count.companyId, productId: line.productId, unitId: line.unitId,
+            locationId: line.locationId, statusId: line.statusId, batchNo: line.batchNo, serialNo: line.serialNo,
+            palletId: line.palletId, qtyDelta: line.countedQty.sub(line.systemQty), direction: 'COUNT', userId: count.createdById,
+          })
+          adjusted++
+        }
       }
     }
     const updated = await tx.tBLSTOCKCOUNT.update({
@@ -106,7 +136,7 @@ export async function completeCount(countId: number, now: Date) {
       data: { status: 'COMPLETED', completedAt: now },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
-    return { adjustedLines: adjusted, count: updated }
+    return { adjustedLines: adjusted, equalized: count.equalize, count: updated }
   })
 }
 
@@ -122,18 +152,21 @@ export async function reverseEqualize(id: number) {
   return prisma.$transaction(async (tx) => {
     const c = await tx.tBLSTOCKCOUNT.findUniqueOrThrow({ where: { id }, include: { lines: true } })
     if (c.status !== 'COMPLETED') throw new CountingError('Sadece tamamlanmış sayımın eşitlemesi iptal edilebilir')
+    // Eşitleme kapalıysa tamamlamada stok değişmemişti → geri alacak bir şey yok, yalnız iptal.
     let reverted = 0
-    for (const line of c.lines) {
-      if (line.countedQty === null || line.stockId === null) continue
-      if (line.countedQty.equals(line.systemQty)) continue
-      await tx.tBLSTOCK.update({ where: { id: line.stockId }, data: { mainQty: line.systemQty } })
-      // Hareket defteri: eşitleme geri alma (işaretli fark = sistem − sayılan)
-      await writeLedger(tx, {
-        companyId: c.companyId, productId: line.productId, unitId: line.unitId,
-        locationId: line.locationId, statusId: line.statusId, batchNo: line.batchNo, serialNo: line.serialNo,
-        palletId: line.palletId, qtyDelta: line.systemQty.sub(line.countedQty), direction: 'COUNT', userId: c.createdById,
-      })
-      reverted++
+    if (c.equalize) {
+      for (const line of c.lines) {
+        if (line.countedQty === null || line.stockId === null) continue
+        if (line.countedQty.equals(line.systemQty)) continue
+        await tx.tBLSTOCK.update({ where: { id: line.stockId }, data: { mainQty: line.systemQty } })
+        // Hareket defteri: eşitleme geri alma (işaretli fark = sistem − sayılan)
+        await writeLedger(tx, {
+          companyId: c.companyId, productId: line.productId, unitId: line.unitId,
+          locationId: line.locationId, statusId: line.statusId, batchNo: line.batchNo, serialNo: line.serialNo,
+          palletId: line.palletId, qtyDelta: line.systemQty.sub(line.countedQty), direction: 'COUNT', userId: c.createdById,
+        })
+        reverted++
+      }
     }
     const updated = await tx.tBLSTOCKCOUNT.update({ where: { id }, data: { status: 'CANCELLED' } })
     return { revertedLines: reverted, count: updated }

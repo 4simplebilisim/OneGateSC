@@ -4,23 +4,28 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { assertBarcodeUnique, BarcodeError } from '../lib/barcode.js'
 
+// Sayısal alanlar: '' / null / undefined → atla (undefined); sayı-string → number.
+// (Decimal alanlar API'den string döner; boş alanlar null gelir — drawer GET'i geri PATCH ettiğinde kırılmasın.)
+const optNum = (inner: z.ZodNumber) =>
+  z.preprocess((v) => (v === '' || v === null || v === undefined ? undefined : Number(v)), inner.optional())
+
 const createSchema = z.object({
   productId: z.number().int().positive(),
   unitId: z.number().int().positive(),
   isBaseUnit: z.boolean().optional(),
-  multiplier: z.number().positive().optional(),
-  divisor: z.number().positive().optional(),
+  multiplier: optNum(z.number().positive()),
+  divisor: optNum(z.number().positive()),
   // barcode: ölçü birimi artık tekil barkod tutmaz — barkodlar çoklu (TBLPRODUCTUNITBARCODE)
-  length: z.number().nonnegative().optional(),
-  width: z.number().nonnegative().optional(),
-  height: z.number().nonnegative().optional(),
-  area: z.number().nonnegative().optional(),
-  volume: z.number().nonnegative().optional(),
-  netWeight: z.number().nonnegative().optional(),
-  grossWeight: z.number().nonnegative().optional(),
-  weightUnitId: z.number().int().positive().optional(),
-  minPalletQty: z.number().nonnegative().optional(),
-  maxPalletQty: z.number().nonnegative().optional(),
+  length: optNum(z.number().nonnegative()),
+  width: optNum(z.number().nonnegative()),
+  height: optNum(z.number().nonnegative()),
+  area: optNum(z.number().nonnegative()),
+  volume: optNum(z.number().nonnegative()),
+  netWeight: optNum(z.number().nonnegative()),
+  grossWeight: optNum(z.number().nonnegative()),
+  weightUnitId: optNum(z.number().int().positive()),
+  minPalletQty: optNum(z.number().nonnegative()),
+  maxPalletQty: optNum(z.number().nonnegative()),
   batchTracking: z.boolean().optional(),
   serialTracking: z.boolean().optional(),
   isSalesUnit: z.boolean().optional(),
@@ -30,6 +35,17 @@ const barcodeSchema = z.object({ barcode: z.string().min(1).max(100), labelAddre
 
 const idOf = (request: FastifyRequest) => Number((request.params as { id: string }).id)
 const unitInclude = { unit: { select: { code: true, name: true } }, product: { select: { code: true, name: true } }, barcodes: true } as const
+
+// Üründe stok ya da belge hareketi var mı? Varsa ana birim DEĞİŞTİRİLEMEZ — stok/ledger ana birim üzerinden tutulur,
+// değiştirmek geçmiş miktarları bozar.
+async function productHasHistory(productId: number): Promise<boolean> {
+  const [stock, line] = await Promise.all([
+    prisma.tBLSTOCK.count({ where: { productId } }),
+    prisma.tBLDOCUMENTLINE.count({ where: { productId } }),
+  ])
+  return stock > 0 || line > 0
+}
+const BASE_LOCKED_MSG = 'Bu üründe stok/belge hareketi var — ana birim değiştirilemez (stok ana birim üzerinden tutulur).'
 
 export async function productUnitRoutes(app: FastifyInstance) {
   // Ürün ölçü birimleri (productId ile filtrelenir)
@@ -56,6 +72,11 @@ export async function productUnitRoutes(app: FastifyInstance) {
     const companyId = getCompanyId(request)
     const product = await prisma.tBLPRODUCT.findFirst({ where: { id: parsed.data.productId, companyId } })
     if (!product) return reply.code(400).send({ error: 'Geçersiz ürün' })
+    // Yeni birim ana yapılacaksa ve üründe zaten ana birim + stok/belge geçmişi varsa → ana birim değiştirilemez
+    if (parsed.data.isBaseUnit) {
+      const currentBase = await prisma.tBLPRODUCTUNIT.findFirst({ where: { productId: parsed.data.productId, isBaseUnit: true }, select: { id: true } })
+      if (currentBase && (await productHasHistory(parsed.data.productId))) return reply.code(409).send({ error: BASE_LOCKED_MSG })
+    }
     try {
       const pu = await prisma.$transaction(async (tx) => {
         // Her ürün KESİN tek bir ana birim taşımalı: ilk eklenen birim otomatik ana birim olur.
@@ -91,6 +112,10 @@ export async function productUnitRoutes(app: FastifyInstance) {
     // Ana birim doğrudan kaldırılamaz — başka bir birimi ana yaparak değiştirilir (kesin bir ana birim korunur).
     if (parsed.data.isBaseUnit === false && existing.isBaseUnit) {
       return reply.code(400).send({ error: 'Ana birim doğrudan kaldırılamaz — başka bir birimi ana yaparak değiştirin.' })
+    }
+    // Ana birim DEĞİŞİMİ (ana-olmayan birimi ana yapmak) — üründe stok/belge geçmişi varsa yasak
+    if (parsed.data.isBaseUnit === true && !existing.isBaseUnit && (await productHasHistory(existing.productId))) {
+      return reply.code(409).send({ error: BASE_LOCKED_MSG })
     }
     const updated = await prisma.$transaction(async (tx) => {
       if (parsed.data.isBaseUnit) {

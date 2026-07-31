@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { firstBadRef, partnerParentIssue } from '../lib/refGuard.js'
+import { importRows, codeMap, resolveCode, str, norm } from '../lib/importer.js'
 
 const partnerTypes = ['CUSTOMER', 'SUPPLIER', 'BOTH'] as const
 
@@ -81,7 +83,7 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     const q = request.query as { type?: string; parentId?: string }
     return prisma.tBLBUSINESSPARTNER.findMany({
       where: {
-        companyId: getCompanyId(request),
+        ...companyListFilter(request),
         type: partnerTypes.includes(q.type as (typeof partnerTypes)[number])
           ? (q.type as (typeof partnerTypes)[number])
           : undefined,
@@ -94,9 +96,47 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const partner = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, companyId: getCompanyId(request) }, include: { facilities: { select: { facilityId: true } } } })
+    const partner = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, ...companyListFilter(request) }, include: { facilities: { select: { facilityId: true } } } })
     if (!partner) return reply.code(404).send({ error: 'Partner not found' })
     return partner
+  })
+
+  // Excel içe aktarma: kanonik anahtarlı satırlar → toplu cari oluştur. Cari Grubu KOD ile; Tip Türkçe (Müşteri/Tedarikçi/Her İkisi).
+  const typeOf = (v: unknown): 'CUSTOMER' | 'SUPPLIER' | 'BOTH' => {
+    const s = norm(v)
+    if (['tedarikçi', 'tedarikci', 'supplier', 's'].includes(s)) return 'SUPPLIER'
+    if (['her ikisi', 'ikisi', 'both', 'her iki'].includes(s)) return 'BOTH'
+    return 'CUSTOMER' // varsayılan (boş dahil)
+  }
+  const importRowSchema = z.object({
+    code: z.any().optional(), name: z.any().optional(), type: z.any().optional(),
+    taxNumber: z.any().optional(), phone: z.any().optional(), email: z.any().optional(),
+    city: z.any().optional(), address: z.any().optional(), groupCode: z.any().optional(),
+  }).passthrough()
+  app.post('/import', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const body = z.object({ rows: z.array(importRowSchema).min(1).max(5000) }).safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'Geçersiz veri (rows dizisi gerekli, en fazla 5000)' })
+    const companyId = getCompanyId(request)
+    const groups = await codeMap(prisma.tBLPARTNERGROUP, companyId)
+    const result = await importRows(body.data.rows, async (r) => {
+      const code = str(r.code), name = str(r.name)
+      if (!code) throw new Error('Kod zorunlu')
+      if (!name) throw new Error('Ad zorunlu')
+      const partnerGroupId = resolveCode(groups, r.groupCode, 'Cari Grubu')
+      const email = str(r.email)
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`Geçersiz e-posta: ${email}`)
+      try {
+        await prisma.tBLBUSINESSPARTNER.create({ data: {
+          companyId, code, name, type: typeOf(r.type), partnerGroupId,
+          taxNumber: str(r.taxNumber) || undefined, phone: str(r.phone) || undefined,
+          email: email || undefined, city: str(r.city) || undefined, address: str(r.address) || undefined,
+        } })
+      } catch (e) {
+        if ((e as { code?: string }).code === 'P2002') throw new Error(`Kod zaten var: ${code}`)
+        throw e
+      }
+    })
+    return result
   })
 
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
@@ -106,6 +146,9 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     }
     const companyId = getCompanyId(request)
     const { facilities, ...rest } = parsed.data
+    // FK'ler bu firmaya ait mi (çapraz-firma izolasyon)
+    const bad = await firstBadRef(companyId, [['cari grubu', 'partnerGroup', rest.partnerGroupId], ['bölge', 'region', rest.regionId], ['üst cari', 'partner', rest.parentId]])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const facIds = await validFacilityIds(companyId, facilities)
     try {
       const partner = await prisma.tBLBUSINESSPARTNER.create({
@@ -113,9 +156,9 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
       })
       return reply.code(201).send(partner)
     } catch (err) {
-      if ((err as { code?: string }).code === 'P2002') {
-        return reply.code(409).send({ error: 'Partner code already exists' })
-      }
+      const code = (err as { code?: string }).code
+      if (code === 'P2002') return reply.code(409).send({ error: 'Partner code already exists' })
+      if (code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (cari grubu/bölge/üst cari)' })
       throw err
     }
   })
@@ -125,15 +168,29 @@ export async function businessPartnerRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const companyId = getCompanyId(request)
-    const existing = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, companyId } })
+    const existing = await prisma.tBLBUSINESSPARTNER.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Partner not found' })
     const { facilities, ...rest } = parsed.data
+    // FK'ler cari'nin firmasına ait mi (çapraz-firma izolasyon; og_company değil)
+    const bad = await firstBadRef(existing.companyId, [['cari grubu', 'partnerGroup', rest.partnerGroupId], ['bölge', 'region', rest.regionId], ['üst cari', 'partner', rest.parentId]])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
+    // Zincir (parentId): self-referans / döngü engeli
+    if (rest.parentId !== undefined) {
+      const issue = await partnerParentIssue(existing.companyId, id, rest.parentId)
+      if (issue === 'self') return reply.code(400).send({ error: 'Cari kendisini üst cari (zincir) yapamaz' })
+      if (issue === 'cycle') return reply.code(400).send({ error: 'Zincir döngüsü — bu üst cari zaten bu carinin altında' })
+    }
     const data: Record<string, unknown> = { ...rest }
     if (facilities) {
-      const facIds = await validFacilityIds(companyId, facilities)
-      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId, facilityId: fid })) }
+      // Cross-company düzenlemede tesisler düzenlenen cari'nin firmasına göre doğrulanır (og_company değil)
+      const facIds = await validFacilityIds(existing.companyId, facilities)
+      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId: existing.companyId, facilityId: fid })) }
     }
-    return prisma.tBLBUSINESSPARTNER.update({ where: { id }, data, include: { facilities: { select: { facilityId: true } } } })
+    try {
+      return await prisma.tBLBUSINESSPARTNER.update({ where: { id }, data, include: { facilities: { select: { facilityId: true } } } })
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (cari grubu/bölge/üst cari)' })
+      throw err
+    }
   })
 }

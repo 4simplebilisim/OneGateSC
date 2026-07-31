@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { firstBadRef } from '../lib/refGuard.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
+import { importRows, codeMap, resolveCode, str, parseBool } from '../lib/importer.js'
 
 const createSchema = z.object({
   code: z.string().min(1).max(40),
@@ -51,10 +53,9 @@ async function validFacilityIds(companyId: number, facilities: number[] | undefi
 
 export async function productRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
-    const companyId = getCompanyId(request)
     const q = request.query as { search?: string }
     const where = {
-      companyId,
+      ...companyListFilter(request),
       ...(q.search ? { OR: [{ code: { contains: q.search, mode: 'insensitive' as const } }, { name: { contains: q.search, mode: 'insensitive' as const } }] } : {}),
     }
     const p = parsePagination(request)
@@ -70,7 +71,7 @@ export async function productRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
 
     const product = await prisma.tBLPRODUCT.findFirst({
-      where: { id, companyId: getCompanyId(request) },
+      where: { id, ...companyListFilter(request) },
       include: { unit: true, facilities: { select: { facilityId: true } } },
     })
     if (!product) return reply.code(404).send({ error: 'Product not found' })
@@ -84,6 +85,12 @@ export async function productRoutes(app: FastifyInstance) {
     }
     const companyId = getCompanyId(request)
     const { facilities, ...rest } = parsed.data
+    // FK'ler bu firmaya ait mi (çapraz-firma izolasyon)
+    const bad = await firstBadRef(companyId, [
+      ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
+      ['ürün tipi', 'productType', rest.productTypeId], ['detay tipi', 'productDetailType', rest.detailTypeId],
+    ])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const facIds = await validFacilityIds(companyId, facilities)
     // Raf ömrü takibi artık ayrı bir kutu değil: gün sayısı girildiyse (>0) takip açık sayılır.
     const shelfLifeControl = (rest.shelfLifeDays ?? 0) > 0
@@ -98,10 +105,48 @@ export async function productRoutes(app: FastifyInstance) {
         return reply.code(409).send({ error: 'Product code already exists' })
       }
       if (code === 'P2003') {
-        return reply.code(400).send({ error: 'Unit does not exist' })
+        return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
       }
       throw err
     }
+  })
+
+  // Excel içe aktarma: kanonik anahtarlı satırlar (frontend Türkçe başlıkları çözer) → toplu ürün oluştur.
+  // Birim/Grup/Tip KOD ile verilir (id değil), firma-scope çözülür. Satır-bazlı hata döner (kısmi import).
+  const importRowSchema = z.object({
+    code: z.any().optional(), name: z.any().optional(), shortName: z.any().optional(),
+    unitCode: z.any().optional(), groupCode: z.any().optional(), typeCode: z.any().optional(),
+    manufacturerCode: z.any().optional(), shelfLifeDays: z.any().optional(), isActive: z.any().optional(),
+  }).passthrough()
+  app.post('/import', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const body = z.object({ rows: z.array(importRowSchema).min(1).max(5000) }).safeParse(request.body)
+    if (!body.success) return reply.code(400).send({ error: 'Geçersiz veri (rows dizisi gerekli, en fazla 5000)' })
+    const companyId = getCompanyId(request)
+    const [units, groups, types] = await Promise.all([
+      codeMap(prisma.tBLUNIT, companyId), codeMap(prisma.tBLPRODUCTGROUP, companyId), codeMap(prisma.tBLPRODUCTTYPE, companyId),
+    ])
+    const result = await importRows(body.data.rows, async (r) => {
+      const code = str(r.code), name = str(r.name)
+      if (!code) throw new Error('Kod zorunlu')
+      if (!name) throw new Error('Ad zorunlu')
+      const unitId = resolveCode(units, r.unitCode, 'Birim')
+      const productGroupId = resolveCode(groups, r.groupCode, 'Ürün Grubu')
+      const productTypeId = resolveCode(types, r.typeCode, 'Ürün Tipi')
+      const daysRaw = str(r.shelfLifeDays)
+      const shelfLifeDays = daysRaw ? Number(daysRaw) : undefined
+      if (shelfLifeDays != null && !Number.isFinite(shelfLifeDays)) throw new Error(`Raf ömrü sayı olmalı: ${daysRaw}`)
+      try {
+        await prisma.tBLPRODUCT.create({ data: {
+          companyId, code, name, shortName: str(r.shortName) || undefined,
+          unitId, productGroupId, productTypeId, manufacturerCode: str(r.manufacturerCode) || undefined,
+          shelfLifeDays, shelfLifeControl: (shelfLifeDays ?? 0) > 0, isActive: parseBool(r.isActive, true),
+        } })
+      } catch (e) {
+        if ((e as { code?: string }).code === 'P2002') throw new Error(`Kod zaten var: ${code}`)
+        throw e
+      }
+    })
+    return result
   })
 
   app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
@@ -109,22 +154,28 @@ export async function productRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
-    const companyId = getCompanyId(request)
-    const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, companyId } })
+    const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Product not found' })
     const { facilities, ...rest } = parsed.data
+    // FK'ler ürünün firmasına ait mi (çapraz-firma izolasyon; og_company değil)
+    const bad = await firstBadRef(existing.companyId, [
+      ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
+      ['ürün tipi', 'productType', rest.productTypeId], ['detay tipi', 'productDetailType', rest.detailTypeId],
+    ])
+    if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     const data: Record<string, unknown> = { ...rest }
     // Gün sayısı bu patch'te geldiyse, raf ömrü takibini gün>0'a göre türet.
     if (rest.shelfLifeDays !== undefined) data.shelfLifeControl = (rest.shelfLifeDays ?? 0) > 0
     if (facilities) {
-      const facIds = await validFacilityIds(companyId, facilities)
-      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId, facilityId: fid })) }
+      // Cross-company düzenlemede tesisler düzenlenen ürünün firmasına göre doğrulanır (og_company değil)
+      const facIds = await validFacilityIds(existing.companyId, facilities)
+      data.facilities = { deleteMany: {}, create: facIds.map((fid) => ({ companyId: existing.companyId, facilityId: fid })) }
     }
     try {
       const product = await prisma.tBLPRODUCT.update({ where: { id }, data, include: { unit: true, facilities: { select: { facilityId: true } } } })
       return product
     } catch (err) {
-      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Unit does not exist' })
+      if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
       throw err
     }
   })

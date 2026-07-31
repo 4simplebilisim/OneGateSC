@@ -1,21 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented } from 'antd'
-import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined } from '@ant-design/icons'
+import { App, Table, Tag, Alert, Space, Button, Card, Empty, Badge, Segmented, Select, Input } from 'antd'
+import { ReloadOutlined, PlusOutlined, EyeOutlined, EditOutlined, DeleteOutlined, BarcodeOutlined, AppstoreAddOutlined, LayoutOutlined, CopyOutlined, UnorderedListOutlined, PrinterOutlined, SafetyOutlined, SearchOutlined } from '@ant-design/icons'
 import { hiddenColumns } from '../columnAuth'
 import { screenRight } from '../screenRight'
+import { paramInt } from '../params'
 import { useNavigate } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
-import { PrinterDiscover } from '../components/PrinterDiscover'
+import { ImportModal, IMPORT_CONFIGS } from '../components/ImportModal'
 import { hasForm, canWrite, FORM_CONFIG } from '../formConfig'
 import { hasDetail } from '../detailActions'
 import { hasTxnCreate } from '../txnConfig'
+import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
+import { STATUS_COLOR, STATUS_TR, DIRECTION_TR } from '../statusMeta'
 
 // DELETE endpoint'i olan kaynaklar (master factory + routing)
 const DELETE_OK = new Set([
   'reasons', 'location-groups', 'operation-groups', 'label-types', 'product-subgroups',
   'entry-condition-types', 'exit-condition-types', 'routing-types', 'routing-rules',
-  'facilities', 'areas', 'regions', 'partner-groups', 'product-units',
+  'facilities', 'areas', 'regions', 'partner-groups', 'product-units', 'units',
   'statuses', 'pallet-types', 'operation-type-statuses', 'operation-type-locations', 'operation-type-reasons', 'operation-type-pallet-types',
   'location-capacities', 'operation-types', 'barcode-types', 'parameters', 'printers', 'document-statuses',
   'document-status-actions', 'document-status-criteria', 'document-approval-types',
@@ -37,7 +40,7 @@ const DELETE_OK = new Set([
 ])
 
 const PRETTY: Record<string, string> = {
-  id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Aktif',
+  id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Durum',
   username: 'Kullanıcı Adı', fullName: 'Ad Soyad', isSuperAdmin: 'Süper Admin', lastLoginAt: 'Son Giriş',
   prefix: 'Önek', currentValue: 'Değer', padLength: 'Hane', direction: 'Yön', type: 'Tip', status: 'Durum',
   plateNo: 'Plaka', palletNo: 'Palet No', orderNo: 'No', documentNo: 'Belge No', taxNumber: 'Vergi No',
@@ -50,63 +53,26 @@ const PRETTY: Record<string, string> = {
   driverName: 'Sürücü', plannedAt: 'Planlanan', dispatchedAt: 'Sevk', deliveredAt: 'Teslim',
   totalAmount: 'Tutar', paidAmount: 'Ödenen', invoiceNo: 'Fatura No', countNo: 'Sayım No',
   systemQty: 'Sistem', countedQty: 'Sayılan', collectedQty: 'Toplanan', qtyDelta: 'Miktar (±)',
+  entityType: 'İşlem Tipi', referenceKey: 'Referans', message: 'Mesaj', userName: 'Kullanıcı', createdAt: 'İşlem Tarihi',
 }
 
-const STATUS_COLOR: Record<string, string> = {
-  COMPLETED: 'green', CONFIRMED: 'blue', PLANNED: 'gold', IN_PROGRESS: 'cyan', CANCELLED: 'red',
-  DRAFT: 'default', SUBMITTED: 'gold', APPROVED: 'green', REJECTED: 'red', SHIPPED: 'green', PAID: 'green',
-  // Stok statüsü (kalite) — stok takibindeki statü kolonu
-  AVAILABLE: 'green', QUARANTINE: 'gold', BLOCKED: 'red', DAMAGED: 'volcano',
-}
+// STATUS_COLOR + STATUS_TR + DIRECTION_TR → paylaşılan ../statusMeta (GenericDetail/StockReport ile ortak)
 
+// MiktarOndalikHane parametresi: ondalıklı miktarlar bu basamakla gösterilir (yalnız görünüm; tam sayı/id dokunulmaz)
+let QTY_DECIMALS: number | null = null
+export const setQtyDecimals = (n: number | null) => { QTY_DECIMALS = n }
 const fmt = (v: unknown) => {
   if (v === null || v === undefined || v === '') return <span style={{ color: '#c0cad9' }}>—</span>
   if (typeof v === 'boolean')
     return v ? <Badge status="success" text="Evet" /> : <Badge color="#cbd5e1" text="Hayır" />
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(v)) return v.slice(0, 10)
+  if (QTY_DECIMALS != null && ((typeof v === 'number' && !Number.isInteger(v)) || (typeof v === 'string' && /^-?\d+\.\d+$/.test(v)))) {
+    return Number(v).toFixed(QTY_DECIMALS)
+  }
   return String(v)
 }
 
-// FK alan adı → API kaynağı: listelerde ham id yerine ilgili tablodaki açıklamayı göster (formConfig olmasa da)
-const FK_RESOURCE: Record<string, string> = {
-  operationTypeId: 'operation-types', reverseOperationTypeId: 'operation-types',
-  sourceOperationTypeId: 'operation-types', targetOperationTypeId: 'operation-types',
-  entryOperationTypeId: 'operation-types', exitOperationTypeId: 'operation-types', transferOperationTypeId: 'operation-types',
-  firstOperationId: 'operation-types', secondOperationId: 'operation-types',
-  warehouseId: 'warehouses', areaId: 'areas',
-  locationId: 'locations', sourceLocationId: 'locations', targetLocationId: 'locations',
-  cancelLocationId: 'locations', sourceLocLinkId: 'locations', targetLocLinkId: 'locations', locationLinkId: 'locations',
-  reasonId: 'reasons', reasonCategoryId: 'reason-categories',
-  partnerId: 'partners', businessPartnerId: 'partners', cariLinkId: 'partners', sourcePartnerId: 'partners', targetPartnerId: 'partners',
-  productId: 'products', materialLinkId: 'products',
-  unitId: 'units', toleranceUnitId: 'units', dimensionUnitId: 'units', weightUnitId: 'units',
-  statusId: 'statuses', sourceStatusId: 'statuses', targetStatusId: 'statuses',
-  palletTypeId: 'pallet-types', innerPalletTypeId: 'pallet-types',
-  palletId: 'pallets', parentPalletId: 'pallets',
-  customerId: 'partners', supplierId: 'partners',
-  assignedToUserId: 'users', assignedUserId: 'users',
-  vehicleId: 'vehicles', salesOrderId: 'sales-orders', purchaseOrderId: 'purchase-orders',
-  operationGroupId: 'operation-groups',
-  sequenceId: 'sequences', operationSequenceId: 'sequences', groupSequenceId: 'sequences',
-  facilityId: 'facilities', regionId: 'regions',
-  userId: 'users', createdById: 'users',
-  documentId: 'documents', extraFieldId: 'extra-fields',
-  productGroupId: 'product-groups', productSubGroupId: 'product-subgroups',
-  labelTypeId: 'label-types', barcodeTypeId: 'barcode-types',
-  stockCountId: 'stock-counts',
-}
-const FK_LABEL: Record<string, string> = {
-  operationTypeId: 'Operasyon Tipi', warehouseId: 'Depo', areaId: 'Alan',
-  locationId: 'Lokasyon', sourceLocationId: 'Kaynak Lokasyon', targetLocationId: 'Hedef Lokasyon',
-  reasonId: 'Neden', reasonCategoryId: 'Neden Kategori', partnerId: 'Cari', businessPartnerId: 'Cari',
-  productId: 'Ürün', unitId: 'Birim', statusId: 'Statü', sourceStatusId: 'Kaynak Statü', targetStatusId: 'Hedef Statü',
-  palletTypeId: 'Palet Tipi', innerPalletTypeId: 'İç Palet Tipi', operationGroupId: 'Operasyon Grubu',
-  sequenceId: 'Sayaç', facilityId: 'Tesis', regionId: 'Bölge', userId: 'Kullanıcı', createdById: 'Oluşturan',
-  documentId: 'Belge', parentId: 'Üst', extraFieldId: 'Ek Saha', productGroupId: 'Ürün Grubu',
-  palletId: 'Palet', parentPalletId: 'Üst Palet', customerId: 'Müşteri', supplierId: 'Tedarikçi',
-  assignedToUserId: 'Atanan', assignedUserId: 'Atanan', vehicleId: 'Araç',
-  salesOrderId: 'Satış Sip.', purchaseOrderId: 'Satınalma Sip.', stockCountId: 'Sayım',
-}
+// FK_RESOURCE + FK_LABEL → paylaşılan ../fieldMeta (GenericDetail ile ortak, drift yok)
 
 export const GenericList = ({ resource, label, filter, observe }: { resource: string; label: string; filter?: Record<string, string>; observe?: boolean }) => {
   const navigate = useNavigate()
@@ -115,11 +81,35 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
+  // MiktarOndalikHane parametresi → ondalıklı miktar gösterimi (bir kez yüklenir, cache'li)
+  const [, forceQtyFmt] = useState(0)
+  useEffect(() => { paramInt('MiktarOndalikHane').then((n) => { setQtyDecimals(n); if (n != null) forceQtyFmt((x) => x + 1) }) }, [])
   // Belgeler ekranı tek menü — durum filtresi liste içinde (Tümü/Açık/Tamamlanmış); ayrı "Açık Belgeler"/"Gözlem" yok
   const [docStatus, setDocStatus] = useState<'all' | 'open' | 'done'>('all')
   const isDocuments = resource === 'documents'
   // FK alanlarını id → "kod — ad" çöz (formConfig'teki ref tanımlarından) — listeler okunur olsun
   const [refMaps, setRefMaps] = useState<Record<string, Record<number, string>>>({})
+  // Super-admin → firma(tenant) bazlı kilit YOK: tüm firmaları görür, Firma kolonu + filtresi açılır.
+  const isSuper = (() => { try { return !!(JSON.parse(localStorage.getItem('og_user') ?? '{}') as { isSuperAdmin?: boolean }).isSuperAdmin } catch { return false } })()
+  const [companyMap, setCompanyMap] = useState<Record<number, string>>({})
+  const [companyOpts, setCompanyOpts] = useState<{ value: number; label: string }[]>([])
+  // Super-admin liste firma filtresi (?companyId): boş = AKTİF firma (üstteki seçici, x-company-id) · sayı = o firma · 'all' = tüm firmalar
+  const [companyFilter, setCompanyFilter] = useState<number | 'all' | undefined>(undefined)
+  // Aktif firma (tenant) — normal kullanıcıda ekranda hangi firmanın verisine bakıldığı görünsün
+  const [firmName, setFirmName] = useState('')
+  // Fiori list-report hızlı arama: yüklü satırlar üzerinde anlık süzme (tüm görünür alanlarda)
+  const [quickFind, setQuickFind] = useState('')
+  useEffect(() => {
+    const cid = Number(localStorage.getItem('og_company'))
+    axiosInstance.get('/api/companies').then((r) => {
+      const list = (Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as { id: number; code: string; name: string }[]
+      const map: Record<number, string> = {}
+      list.forEach((c) => { map[c.id] = `${c.code} — ${c.name}` })
+      setCompanyMap(map)
+      setCompanyOpts(list.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` })))
+      if (cid && map[cid]) setFirmName(map[cid])
+    }).catch(() => { /* tek firma / yetki yok */ })
+  }, [])
 
   const fields = FORM_CONFIG[resource] ?? []
   const refLabelMap: Record<string, string> = {}
@@ -143,7 +133,8 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   useEffect(() => {
     const uniqueRefs = [...new Set(Object.values(fkFieldMap))]
     uniqueRefs.forEach((rr) => {
-      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500 } }).then((r) => {
+      // 'Tüm firmalar' / firma-N modunda FK'lar da aynı kapsamdan çözülsün (yoksa yabancı satırlar #id gösterir)
+      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500, ...(companyFilter ? { companyId: companyFilter } : {}) } }).then((r) => {
         const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
         const map: Record<number, string> = {}
         list.forEach((x: Record<string, unknown>) => {
@@ -153,7 +144,7 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
       }).catch(() => { /* ref yüklenemedi → id gösterilir */ })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fkResourcesKey])
+  }, [fkResourcesKey, companyFilter])
 
   const load = useCallback(() => {
     setLoading(true)
@@ -163,12 +154,12 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
       ? (docStatus === 'open' ? { openOnly: 'true' } : docStatus === 'done' ? { status: 'COMPLETED' } : {})
       : {}
     axiosInstance
-      .get(`/api/${resource}`, { params: { pageSize: 100, ...filter, ...statusParams } })
+      .get(`/api/${resource}`, { params: { pageSize: 100, ...filter, ...statusParams, ...(companyFilter ? { companyId: companyFilter } : {}) } })
       .then((r) => setRows(Array.isArray(r.data) ? r.data : (r.data.data ?? [])))
       .catch((e) => setError(e?.response?.data?.error ?? e.message))
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resource, JSON.stringify(filter), docStatus])
+  }, [resource, JSON.stringify(filter), docStatus, companyFilter])
 
   useEffect(() => {
     setSelected(null)
@@ -233,15 +224,30 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
   // Belge Durumu (Bekliyor→Onaylandı) — documentStatus:{name,color} varsa renkli rozetle; ham enum status'u gizle
   const docStatusObj = sample.documentStatus as { name?: string; color?: string } | null | undefined
   const hasDocStatus = !!docStatusObj && typeof docStatusObj === 'object' && !!docStatusObj.name
-  const hidden = ['createdAt', 'updatedAt', 'companyId', 'createdById', 'passwordHash',
+  const hidden = ['createdAt', 'updatedAt', 'companyId', 'referenceCode', 'createdById', 'passwordHash',
     ...(hasStatusObj ? ['statusId'] : []), ...(hasDocStatus ? ['documentStatusId', 'status'] : []),
     // Sayım Parametreleri: Transfer Operasyon StokBar ekranında yok → legacy kolonu dursa da listede gizli
     ...(resource === 'count-parameters' ? ['transferOperationTypeId'] : []),
+    // Belge: Depo gösterilmez (tesise bağlı); partner objesi gizli (Cari zaten partnerId'den çözülür → ham "partner" kolonu olmasın)
+    ...(resource === 'documents' ? ['warehouseId', 'partner'] : []),
+    // Parametreler: Tanım rehberden çözülür (kod kolonunda "Kod — Tanım") → boş name kolonu gizli
+    ...(resource === 'parameters' ? ['name'] : []),
+    // Entegrasyon Paketi: sır/kimlik alanları listede asla görünmesin (dbType ham İngilizce — o da gizli)
+    ...(resource === 'integration-packages' ? ['password', 'clientSecret', 'dbPassword', 'dbUser', 'username', 'clientId', 'dbType', 'logoVersion', 'multiCompanyTransfer'] : []),
+    // Entegrasyon İzleme: gövde + iç bağlar gizli (Kullanıcı userName'den, paket packageId'den çözülür)
+    ...(resource === 'integration-logs' ? ['payload', 'package', 'address', 'addressId', 'documentId', 'processedAt'] : []),
+    // Entegrasyon Adres: 4 tetik kolonu sığsın diye ikincil alanlar gizli (formda görünürler)
+    ...(resource === 'integration-addresses' ? ['facilityId', 'sortOrder', 'logging'] : []),
+    // Entegrasyon tanımları: uzun metin gövdeleri listede gizli
+    ...(resource === 'integration-queries' ? ['query'] : []),
+    ...(resource === 'integration-xml-converts' ? ['xmlTemplate', 'xslTemplate'] : []),
     ...hiddenColumns(resource)] // kullanıcı kolon yetkisi — HIDDEN alanlar listede gizli
+  // Durum (isActive) 9'luk dilime yer kavgası yaptırmaz — varsa her zaman ayrı kolon olarak sonda gösterilir
+  const hasActiveCol = typeof sample.isActive === 'boolean' && !hidden.includes('isActive')
   const columns = [
     ...Object.keys(sample)
       .filter((k) => sample[k] === null || typeof sample[k] !== 'object')
-      .filter((k) => !hidden.includes(k))
+      .filter((k) => !hidden.includes(k) && k !== 'isActive')
       .slice(0, 9)
       .map((k) => ({
         title: refLabelMap[k] ?? FK_LABEL[k] ?? PRETTY[k] ?? k,
@@ -255,16 +261,27 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             : k === 'color' && typeof v === 'string' && v
               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}><span style={{ width: 14, height: 14, borderRadius: 4, background: v, border: '1px solid rgba(0,0,0,.15)', display: 'inline-block' }} />{v}</span>
               : (k === 'status' || k === 'type') && typeof v === 'string'
-                ? <Tag color={STATUS_COLOR[v] ?? 'default'}>{v}</Tag>
-                : fmt(v),
+                ? <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_TR[v] ?? v}</Tag>
+                : k === 'direction' && typeof v === 'string'
+                  ? (DIRECTION_TR[v] ?? v)
+                  : fmt(v),
       })),
+    ...(hasActiveCol
+      ? [{
+          title: 'Durum',
+          dataIndex: 'isActive',
+          key: '__active',
+          width: 90,
+          render: (v: unknown) => (v ? <Badge status="success" text="Aktif" /> : <Badge color="#cbd5e1" text="Pasif" />),
+        }]
+      : []),
     ...(hasStatusObj
       ? [{
           title: 'Statü',
           key: '__status',
           render: (_: unknown, row: Record<string, unknown>) => {
-            const c = (row.status as { code?: string } | null)?.code
-            return c ? <Tag color={STATUS_COLOR[c] ?? 'default'}>{c}</Tag> : fmt(null)
+            const s = row.status as { code?: string; name?: string } | null
+            return s?.code ? <Tag color={STATUS_COLOR[s.code] ?? 'default'}>{s.name || STATUS_TR[s.code] || s.code}</Tag> : fmt(null)
           },
         }]
       : []),
@@ -279,17 +296,39 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
         }]
       : []),
   ]
+  // Super-admin: kaydın hangi firmaya ait olduğu görünsün (companyId → "kod — ad"), id kolonundan hemen sonra
+  if (isSuper && sample.companyId != null) {
+    const idIdx = columns.findIndex((c) => (c as { dataIndex?: string }).dataIndex === 'id')
+    columns.splice(idIdx >= 0 ? idIdx + 1 : 0, 0, {
+      title: 'Firma', dataIndex: 'companyId', ellipsis: true,
+      render: (v: unknown) => companyMap[v as number] ?? <span style={{ color: '#8696ae' }}>#{v as number}</span>,
+    })
+  }
 
   return (
     <div className="og-page">
       <PageHeader
         title={label}
-        subtitle={loading ? 'Yükleniyor…' : `${rows.length} kayıt`}
+        subtitle={
+          <>
+            {isSuper
+              ? <Tag color={companyFilter === 'all' ? 'default' : 'blue'} style={{ marginInlineEnd: 6 }}>
+                  {companyFilter === 'all' ? 'Tüm firmalar' : typeof companyFilter === 'number' ? (companyMap[companyFilter] ?? `#${companyFilter}`) : (firmName || 'Tüm firmalar')}
+                </Tag>
+              : (firmName ? <Tag color="blue" style={{ marginInlineEnd: 6 }}>{firmName}</Tag> : null)}
+            {loading ? 'Yükleniyor…' : `${rows.length} kayıt`}
+          </>
+        }
         extra={
           <Space size={8} wrap>
             <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Yenile</Button>
+            {canCreate && IMPORT_CONFIGS[resource] && (
+              <ImportModal resource={resource} title={IMPORT_CONFIGS[resource].title}
+                columns={IMPORT_CONFIGS[resource].columns} templateName={IMPORT_CONFIGS[resource].templateName}
+                note={IMPORT_CONFIGS[resource].note} onDone={load} />
+            )}
             {canCreate && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new`)}>
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new${filter ? '?' + new URLSearchParams(filter as Record<string, string>).toString() : ''}`)}>
                 Yeni
               </Button>
             )}
@@ -299,12 +338,24 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
 
       <Card className="og-toolbar" size="small" style={{ marginBottom: 14 }} styles={{ body: { padding: '9px 14px' } }}>
         <Space separator={<span style={{ display: 'inline-block', width: 1, height: 16, background: 'var(--og-border-soft)' }} />} wrap>
+          <Input
+            className="og-quickfind" size="small" allowClear
+            prefix={<SearchOutlined style={{ color: 'var(--og-muted)' }} />}
+            placeholder="Listede ara…" value={quickFind} onChange={(e) => setQuickFind(e.target.value)}
+          />
           {isDocuments && (
             <Segmented
               size="small"
               value={docStatus}
               onChange={(v) => setDocStatus(v as 'all' | 'open' | 'done')}
               options={[{ label: 'Tümü', value: 'all' }, { label: 'Açık', value: 'open' }, { label: 'Tamamlanmış', value: 'done' }]}
+            />
+          )}
+          {isSuper && companyOpts.length > 0 && (
+            <Select
+              size="small" style={{ minWidth: 190 }} allowClear showSearch optionFilterProp="label"
+              placeholder="Aktif firma" value={companyFilter} onChange={(v) => setCompanyFilter(v)}
+              options={[{ value: 'all' as const, label: 'Tüm firmalar' }, ...companyOpts]}
             />
           )}
           <Space size={6} wrap>
@@ -324,12 +375,13 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
             {resource === 'handheld-menu-groups' && <Button size="small" type="text" icon={<UnorderedListOutlined />} disabled={!selected} onClick={() => navigate(`/handheld-menu-groups/${selected}/items`)}>Menüler</Button>}
             {resource === 'label-types' && <Button size="small" type="text" icon={<LayoutOutlined />} disabled={!selected} onClick={() => navigate(`/label-types/${selected}/design`)}>Tasarla</Button>}
             {resource === 'locations' && canWrite() && <Button size="small" type="text" icon={<AppstoreAddOutlined />} onClick={() => navigate('/locations/bulk')}>Toplu Üret</Button>}
-            {resource === 'printers' && canWrite() && <PrinterDiscover onAdded={load} />}
             {canDelete && <Button size="small" type="text" danger icon={<DeleteOutlined />} disabled={!selected} onClick={remove}>Sil</Button>}
           </Space>
-          <span style={{ fontSize: 12.5, color: '#8696ae' }}>
-            {selected ? <>Seçili: <b style={{ color: '#42536f' }}>#{selected}</b></> : 'Satır seçilmedi'}
-          </span>
+          {selected != null && (
+            <span style={{ fontSize: 12.5, color: '#8696ae' }}>
+              Seçili: <b style={{ color: '#42536f' }}>#{selected}</b>
+            </span>
+          )}
         </Space>
       </Card>
 
@@ -337,15 +389,35 @@ export const GenericList = ({ resource, label, filter, observe }: { resource: st
         <Alert type="error" title={`Yüklenemedi: ${error}`} showIcon />
       ) : (
         <Table
-          dataSource={rows}
+          dataSource={quickFind.trim()
+            ? rows.filter((r) => {
+                const q = quickFind.trim().toLocaleLowerCase('tr')
+                return Object.values(r).some((v) => v != null && typeof v !== 'object' && String(v).toLocaleLowerCase('tr').includes(q))
+              })
+            : rows}
           rowKey="id"
           loading={loading}
           columns={columns}
           size="small"
-          locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Kayıt yok" style={{ padding: '28px 0' }} /> }}
+          locale={{
+            emptyText: quickFind.trim() ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={`"${quickFind.trim()}" ile eşleşen kayıt yok`} style={{ padding: '28px 0' }} />
+            ) : (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Henüz kayıt yok" style={{ padding: '28px 0' }}>
+                {canCreate && (
+                  <Space size={8}>
+                    <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => navigate(`/${resource}/new${filter ? '?' + new URLSearchParams(filter as Record<string, string>).toString() : ''}`)}>
+                      İlk kaydı ekle
+                    </Button>
+                    {IMPORT_CONFIGS[resource] && <span style={{ fontSize: 12.5, color: '#8696ae' }}>veya İçe Aktar ile toplu yükleyin</span>}
+                  </Space>
+                )}
+              </Empty>
+            ),
+          }}
           pagination={{ pageSize: 15, showSizeChanger: false, size: 'small', showTotal: (t) => `Toplam ${t}` }}
           scroll={{ x: true }}
-          rowClassName={(_, i) => (i % 2 ? 'og-stripe' : '')}
+          rowClassName={(row, i) => [i % 2 ? 'og-stripe' : '', (row as { isActive?: unknown }).isActive === false ? 'og-inactive' : ''].filter(Boolean).join(' ')}
           rowSelection={{ type: 'radio', selectedRowKeys: selected ? [selected] : [], onChange: (keys) => setSelected(keys[0] as number) }}
           onRow={(row) => ({
             onClick: () => setSelected((row as { id: number }).id),

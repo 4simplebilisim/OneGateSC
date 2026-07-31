@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
+import { rotationOrderBy, type Rotation } from '../lib/rotation.js'
 
 // Öneri Listesi — SALT GÖSTERİM (belge oluşturmaz):
 // var olan BİR belge seçilir → o belgenin satır ürünleri için "nereye girilecek"(Giriş) / "nereden alınacak"(Çıkış) önerisi bilgi amaçlı listelenir.
@@ -15,7 +16,7 @@ export async function suggestionListRoutes(app: FastifyInstance) {
     const doc = await prisma.tBLDOCUMENT.findFirst({
       where: { id: documentId, companyId },
       include: {
-        operationType: { select: { code: true, name: true, direction: true } },
+        operationType: { select: { code: true, name: true, direction: true, stockRotation: true } },
         lines: {
           orderBy: { lineNo: 'asc' },
           include: {
@@ -29,19 +30,31 @@ export async function suggestionListRoutes(app: FastifyInstance) {
     })
     if (!doc) return reply.code(404).send({ error: 'Belge bulunamadı' })
     const direction = doc.operationType.direction
+    // Çıkış stok rotasyonu operasyondan gelir (FEFO=SKT / FIFO=üretim / NONE=giriş sırası)
+    const rotation = (doc.operationType.stockRotation ?? 'NONE') as Rotation
 
     const rows = []
     for (const line of doc.lines) {
       if (direction === 'OUTBOUND') {
-        // Çıkış: nereden alınacak — FEFO sıralı uygun stok (öneri = kaynak lokasyon)
+        // Çıkış: nereden alınacak — operasyon rotasyonuna göre sıralı uygun stok (öneri = kaynak lokasyon).
+        // Rezerv kuralı (legacy BYTREZERVASYONFIFOYUEZSIN): BU BELGEYE rezerve satırlar rotasyonu EZER (öne gelir);
+        // başkasına/blokaja rezerveli kısım kullanılamaz — tamamı rezerveli yabancı satır hiç önerilmez.
         const stocks = await prisma.tBLSTOCK.findMany({
           where: { companyId, productId: line.productId, mainQty: { gt: 0 } },
-          include: { location: { select: { code: true } } }, orderBy: [{ expiryDate: 'asc' }, { id: 'asc' }],
+          include: { location: { select: { code: true } } }, orderBy: rotationOrderBy(rotation),
         })
-        const available = stocks.reduce((s, x) => s + (Number(x.mainQty) - Number(x.reservedQty)), 0)
+        const usable = stocks
+          .map((x) => {
+            const own = x.reservedDocumentId === doc.id
+            const avail = own ? Number(x.mainQty) : Number(x.mainQty) - Number(x.reservedQty)
+            return { x, own, avail }
+          })
+          .filter((s) => s.avail > 0)
+          .sort((a, b) => Number(b.own) - Number(a.own)) // stable: kendi rezervi öne, gerisi rotasyon sırasında
+        const available = usable.reduce((s, u) => s + u.avail, 0)
         rows.push({
           malzeme: line.product.code, aciklama: line.product.name ?? '',
-          kaynakLokasyon: stocks[0]?.location.code ?? '— (stok yok)',
+          kaynakLokasyon: usable[0] ? `${usable[0].x.location.code}${usable[0].own ? ' (rezerve)' : ''}` : '— (stok yok)',
           hedefLokasyon: line.targetLocation?.code ?? 'Sevkiyat',
           stokMiktari: String(available), birim: line.unit.code, miktar: line.quantity.toString(),
         })
@@ -60,6 +73,6 @@ export async function suggestionListRoutes(app: FastifyInstance) {
         })
       }
     }
-    return { documentNo: doc.documentNo, operationType: doc.operationType.code, direction, rows }
+    return { documentNo: doc.documentNo, operationType: doc.operationType.code, direction, rotation, rows }
   })
 }

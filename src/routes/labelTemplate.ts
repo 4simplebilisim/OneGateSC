@@ -9,7 +9,7 @@ const labelTemplate = z.object({
   code: z.string().min(1).max(40),
   screenTitle: z.string().max(120).optional(),
   labelName: z.string().max(120).optional(),
-  menuGroupId: pInt.optional(),
+  menuGroupId: pInt.nullish(),
   displayType: z.number().int().optional(),
   reportType: z.number().int().optional(),
   col1Count: z.number().int().optional(),
@@ -36,7 +36,7 @@ const labelTemplateItem = z.object({
   maxLength: z.number().int().optional(),
   defaultValue: z.string().max(200).optional(),
   comboQuery: z.string().optional(),
-  lookupId: pInt.optional(),
+  lookupId: pInt.nullish(),
   isActive: z.boolean().optional(),
 })
 export const labelTemplateItemRoutes = simpleCrud(prisma.tBLLABELTEMPLATEITEM as unknown as Delegate, labelTemplateItem, labelTemplateItem.partial(), 'Etiket item bulunamadı', 'labelTemplateId')

@@ -18,7 +18,7 @@ export const countAssignmentRoutes = simpleCrud(prisma.tBLCOUNTASSIGNMENT as unk
 const controlCount = z.object({
   code: z.string().max(40).optional(),
   referenceCode: z.string().max(40).optional(),
-  warehouseId: pInt.optional(),
+  warehouseId: pInt.nullish(),
   note: z.string().max(200).optional(),
   isActive: z.boolean().optional(),
 })
@@ -30,9 +30,9 @@ const controlCountLine = z.object({
   lineNo: z.number().int().optional(),
   productId: pInt,
   mainQty: z.number().optional(),
-  unitId: pInt.optional(),
+  unitId: pInt.nullish(),
   countedQty: z.number().optional(),
-  countedUnitId: pInt.optional(),
+  countedUnitId: pInt.nullish(),
 })
 export const controlCountLineRoutes = simpleCrud(prisma.tBLCONTROLCOUNTLINE as unknown as Delegate, controlCountLine, controlCountLine.partial(), 'Kontrol sayım satırı bulunamadı', 'controlCountId')
 
@@ -40,10 +40,10 @@ export const controlCountLineRoutes = simpleCrud(prisma.tBLCONTROLCOUNTLINE as u
 const palletNotification = z.object({
   palletNo: z.string().max(40).optional(),
   oldPalletNo: z.string().max(40).optional(),
-  palletTypeId: pInt.optional(),
-  locationId: pInt.optional(),
-  statusId: pInt.optional(),
-  partnerId: pInt.optional(),
+  palletTypeId: pInt.nullish(),
+  locationId: pInt.nullish(),
+  statusId: pInt.nullish(),
+  partnerId: pInt.nullish(),
   tripNo: z.string().max(40).optional(),
   note: z.string().max(200).optional(),
   isActive: z.boolean().optional(),
@@ -56,22 +56,22 @@ const palletNotificationLine = z.object({
   lineNo: z.number().int().optional(),
   productId: pInt,
   mainQty: z.number().optional(),
-  unitId: pInt.optional(),
+  unitId: pInt.nullish(),
   netWeight: z.number().optional(),
   grossWeight: z.number().optional(),
   batchNo: z.string().max(100).optional(),
   serialNo: z.string().max(100).optional(),
-  statusId: pInt.optional(),
-  locationId: pInt.optional(),
+  statusId: pInt.nullish(),
+  locationId: pInt.nullish(),
 })
 export const palletNotificationLineRoutes = simpleCrud(prisma.tBLPALLETNOTIFICATIONLINE as unknown as Delegate, palletNotificationLine, palletNotificationLine.partial(), 'Palet bildirim satırı bulunamadı', 'notificationId')
 
 // Palet Tarihçe — salt-okunur izleme (yine de CRUD; populasyon ileride hareket motorundan)
 const palletHistory = z.object({
   palletId: pInt,
-  parentPalletId: pInt.optional(),
+  parentPalletId: pInt.nullish(),
   originalQty: z.number().optional(),
-  unitId: pInt.optional(),
+  unitId: pInt.nullish(),
   operationDocCode: z.string().max(40).optional(),
   archived: z.boolean().optional(),
   isActive: z.boolean().optional(),

@@ -3,6 +3,7 @@ import { App, Input, Spin, Tag, Empty } from 'antd'
 import { BarcodeOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { MobileShell } from './MobileShell'
+import { STATUS_TR } from '../statusMeta'
 
 type Row = { location?: string; status?: string; batchNo?: string | null; serialNo?: string | null; qty: string; reserved: string }
 type Result = { found: boolean; product?: { code: string; name: string }; unit?: { code: string }; stock?: Row[] }
@@ -52,7 +53,7 @@ export const MobileStockQuery = () => {
           {res.stock?.length ? res.stock.map((s, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#172238', borderRadius: 10, padding: '10px 12px', marginBottom: 8 }}>
               <div>
-                <div style={{ fontWeight: 600 }}>{s.location ?? '—'} <Tag color={SC[s.status ?? ''] ?? 'default'} style={{ marginLeft: 6 }}>{s.status}</Tag></div>
+                <div style={{ fontWeight: 600 }}>{s.location ?? '—'} <Tag color={SC[s.status ?? ''] ?? 'default'} style={{ marginLeft: 6 }}>{STATUS_TR[s.status ?? ''] ?? s.status}</Tag></div>
                 <div style={{ fontSize: 12, color: '#8ea0bd' }}>{s.batchNo ? `Parti: ${s.batchNo}` : ''}{s.serialNo ? ` · Seri: ${s.serialNo}` : ''}</div>
               </div>
               <div style={{ fontSize: 18, fontWeight: 800, color: '#44d4e3' }}>{s.qty}</div>

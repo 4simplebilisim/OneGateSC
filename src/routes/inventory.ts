@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { getMrpSuggestions, createPurchaseOrderFromMrp, InventoryError } from '../lib/inventory.js'
 
 const ruleSchema = z.object({
@@ -26,7 +26,7 @@ export async function inventoryRoutes(app: FastifyInstance) {
   app.get('/rules', async (request) => {
     const q = request.query as Record<string, string | undefined>
     return prisma.tBLINVENTORYRULE.findMany({
-      where: { companyId: getCompanyId(request), productId: num(q.productId), warehouseId: num(q.warehouseId) },
+      where: { ...companyListFilter(request), productId: num(q.productId), warehouseId: num(q.warehouseId) },
       orderBy: { id: 'asc' },
       include: { product: { select: { code: true, name: true } }, warehouse: { select: { code: true } } },
     })

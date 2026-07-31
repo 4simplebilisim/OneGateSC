@@ -10,6 +10,7 @@ export const BRAND = {
   cyan: '#44D4E3',
   blue: '#4E86FF',
   violet: '#9B5CF6',
+  primary: '#6D5DF6', // Nexus-uyumlu menekşe — açık temanın ana vurgusu (gradyan cyan→mavi→menekşe ile harmonik)
   ink: '#1B2138',
   navy: '#0E1B2E',
   navyDeep: '#0A1626',
@@ -22,41 +23,21 @@ const FONT_DISPLAY = "'Plus Jakarta Sans', 'Inter', sans-serif"
 
 export type ThemeMode = 'light' | 'dark'
 
-// Mod-bağımsız ortak komponent tokenları
+// Mod-bağımsız ortak komponent tokenları (Layout + Menu mod-bağımlı → makeTheme'de)
 const baseComponents: ThemeConfig['components'] = {
-  Layout: {
-    headerBg: BRAND.navyDeep,
-    headerHeight: 48,
-    headerPadding: '0 16px',
-    siderBg: BRAND.navy,
-  },
-  Menu: {
-    darkItemBg: 'transparent',
-    darkSubMenuItemBg: 'transparent',
-    darkItemColor: '#A9BBD6',
-    darkItemHoverColor: '#FFFFFF',
-    darkItemHoverBg: 'rgba(255,255,255,.06)',
-    darkItemSelectedBg: 'rgba(78,134,255,.20)',
-    darkItemSelectedColor: '#FFFFFF',
-    itemHeight: 30,
-    itemMarginInline: 8,
-    itemBorderRadius: 8,
-    fontSize: 12,
-    darkGroupTitleColor: '#5E6FA1',
-  },
   Button: {
     fontWeight: 600,
-    primaryShadow: '0 4px 12px rgba(78,134,255,.24)',
+    primaryShadow: '0 4px 12px rgba(109,93,246,.26)',
     defaultShadow: 'none',
     controlHeight: 30,
     paddingInline: 12,
   },
-  Input: { controlHeight: 30, activeShadow: '0 0 0 3px rgba(78,134,255,.18)', paddingInline: 10 },
+  Input: { controlHeight: 30, activeShadow: '0 0 0 3px rgba(109,93,246,.16)', paddingInline: 10 },
   Select: { controlHeight: 30 },
   InputNumber: { controlHeight: 30 },
   DatePicker: { controlHeight: 30 },
   Statistic: { titleFontSize: 11, contentFontSize: 20 },
-  Tabs: { titleFontSize: 12.5, inkBarColor: BRAND.blue, itemSelectedColor: BRAND.blue },
+  Tabs: { titleFontSize: 12.5, inkBarColor: BRAND.primary, itemSelectedColor: BRAND.primary },
   Modal: { borderRadiusLG: 14, titleFontSize: 14.5 },
   Tooltip: { borderRadius: 7 },
 }
@@ -67,12 +48,12 @@ export function makeTheme(mode: ThemeMode = 'light'): ThemeConfig {
     cssVar: { key: 'og' },
     algorithm: dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
     token: {
-      colorPrimary: BRAND.blue,
-      colorInfo: BRAND.blue,
+      colorPrimary: BRAND.primary,
+      colorInfo: BRAND.primary,
       colorSuccess: '#16A34A',
       colorWarning: '#F59E0B',
       colorError: '#EF4444',
-      colorLink: dark ? '#6FA0FF' : BRAND.blue,
+      colorLink: dark ? '#9D8FFF' : BRAND.primary,
 
       fontFamily: FONT_UI,
       fontSize: 12,
@@ -127,6 +108,40 @@ export function makeTheme(mode: ThemeMode = 'light'): ThemeConfig {
     },
     components: {
       ...baseComponents,
+      // Chrome (header+sider) mod-bağımlı: açık modda beyaz (Nexus), koyu modda navy
+      Layout: {
+        headerHeight: 48,
+        headerPadding: '0 16px',
+        headerBg: dark ? BRAND.navyDeep : '#FFFFFF',
+        siderBg: dark ? BRAND.navy : '#FFFFFF',
+      },
+      Menu: {
+        itemHeight: 30,
+        itemMarginInline: 8,
+        itemBorderRadius: 9,
+        fontSize: 12,
+        ...(dark
+          ? {
+              darkItemBg: 'transparent',
+              darkSubMenuItemBg: 'transparent',
+              darkItemColor: '#A9BBD6',
+              darkItemHoverColor: '#FFFFFF',
+              darkItemHoverBg: 'rgba(255,255,255,.06)',
+              darkItemSelectedBg: 'rgba(109,93,246,.24)',
+              darkItemSelectedColor: '#FFFFFF',
+              darkGroupTitleColor: '#5E6FA1',
+            }
+          : {
+              itemBg: 'transparent',
+              subMenuItemBg: 'transparent',
+              itemColor: '#5B6B86',
+              itemHoverColor: BRAND.primary,
+              itemHoverBg: 'rgba(109,93,246,.07)',
+              itemSelectedBg: 'rgba(109,93,246,.11)',
+              itemSelectedColor: BRAND.primary,
+              groupTitleColor: '#9AA7BD',
+            }),
+      },
       Table: {
         headerBg: dark ? '#172238' : '#F4F7FC',
         headerColor: dark ? '#A9BBD6' : '#42536F',
@@ -140,12 +155,12 @@ export function makeTheme(mode: ThemeMode = 'light'): ThemeConfig {
         headerBorderRadius: 0,
       },
       Card: {
-        borderRadiusLG: 12,
-        paddingLG: 12,
+        borderRadiusLG: 16,
+        paddingLG: 14,
         headerFontSize: 13,
-        headerHeight: 38,
-        boxShadowTertiary: dark ? '0 2px 12px rgba(0,0,0,.35)' : '0 1px 2px rgba(16,27,46,.05), 0 2px 10px rgba(16,27,46,.05)',
-        colorBorderSecondary: dark ? '#222E45' : '#EBEFF6',
+        headerHeight: 40,
+        boxShadowTertiary: dark ? '0 2px 12px rgba(0,0,0,.35)' : '0 1px 2px rgba(16,27,46,.04), 0 6px 20px rgba(16,27,46,.05)',
+        colorBorderSecondary: dark ? '#222E45' : '#EEF1F7',
       },
       Tag: { borderRadiusSM: 6, defaultBg: dark ? '#1E2A42' : '#F1F5FB', defaultColor: dark ? '#A9BBD6' : '#42536F' },
       Segmented: { itemSelectedBg: dark ? '#27344E' : '#FFFFFF', trackBg: dark ? '#172238' : '#E7EDF6', borderRadius: 9 },

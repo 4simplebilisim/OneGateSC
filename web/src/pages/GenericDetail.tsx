@@ -1,25 +1,24 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Alert, App, Button, Card, Descriptions, Input, Modal, Select, Space, Table, Tag, Badge, Spin } from 'antd'
-import { ArrowLeftOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, HistoryOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { DETAIL_ACTIONS } from '../detailActions'
 import { canWrite } from '../formConfig'
-
-const STATUS_COLOR: Record<string, string> = {
-  COMPLETED: 'green', CONFIRMED: 'blue', PLANNED: 'gold', IN_PROGRESS: 'cyan', CANCELLED: 'red',
-  DRAFT: 'default', SUBMITTED: 'gold', APPROVED: 'green', REJECTED: 'red',
-  COUNTING: 'gold', PENDING: 'gold', PASSED: 'green', FAILED: 'red', ISSUED: 'blue', PAID: 'green',
-}
+import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
+import { STATUS_COLOR, STATUS_TR } from '../statusMeta'
 
 const PRETTY: Record<string, string> = {
   id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Aktif',
   documentNo: 'Belge No', orderNo: 'No', status: 'Durum', type: 'Tip', direction: 'Yön',
   quantity: 'Miktar', mainQty: 'Miktar', reservedQty: 'Rezerve', batchNo: 'Parti', serialNo: 'Seri',
   createdAt: 'Oluşturma', updatedAt: 'Güncelleme', lineNo: 'Satır', priority: 'Öncelik', note: 'Not',
+  documentDate: 'Belge Tarihi', completedAt: 'Tamamlanma', referenceQty: 'Referans Mik.', collectedQty: 'Toplanan',
+  preparedQty: 'Hazırlanan', expiryDate: 'SKT', productionDate: 'Üretim Tar.', poNo: 'PO', poLine: 'PO Satır', palletNo: 'Palet No',
 }
-const pretty = (k: string) => PRETTY[k] ?? k
+// FK alanları FK_LABEL'den, diğerleri PRETTY'den; yoksa ham anahtar
+const pretty = (k: string) => FK_LABEL[k] ?? PRETTY[k] ?? k
 
 const fmt = (v: unknown) => {
   if (v === null || v === undefined || v === '') return <span style={{ color: '#c0cad9' }}>—</span>
@@ -41,6 +40,8 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   const [bpw, setBpw] = useState('')
   const [brc, setBrc] = useState<string | undefined>()
   const [breaking, setBreaking] = useState(false)
+  // FK alanlarını id → "kod — ad" çöz (başlık + satırlar) — ham id yerine isim göster
+  const [refMaps, setRefMaps] = useState<Record<string, Record<number, string>>>({})
 
   const load = useCallback(() => {
     setLoading(true)
@@ -52,6 +53,29 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   }, [resource, id, message])
 
   useEffect(load, [load])
+
+  // Kayıttaki + satırlardaki FK alanları → kaynak; benzersiz kaynakları çekip id→ad map'i kur
+  const fkFieldMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    const collect = (obj?: Record<string, unknown>) => { if (obj) Object.keys(obj).forEach((k) => { if (FK_RESOURCE[k]) m[k] = FK_RESOURCE[k] }) }
+    collect(record ?? undefined)
+    collect(((record?.lines as Record<string, unknown>[] | undefined) ?? [])[0])
+    return m
+  }, [record])
+  const fkResourcesKey = [...new Set(Object.values(fkFieldMap))].sort().join(',')
+  useEffect(() => {
+    [...new Set(Object.values(fkFieldMap))].forEach((rr) => {
+      axiosInstance.get(`/api/${rr}`, { params: { pageSize: 500 } }).then((r) => {
+        const list = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
+        const map: Record<number, string> = {}
+        list.forEach((x: Record<string, unknown>) => {
+          map[x.id as number] = x.code ? `${x.code}${x.name ? ' — ' + x.name : ''}` : String(x.palletNo ?? x.documentNo ?? x.username ?? x.name ?? x.description ?? `#${x.id}`)
+        })
+        setRefMaps((prev) => ({ ...prev, [rr]: map }))
+      }).catch(() => { /* ref yüklenemedi → id gösterilir */ })
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fkResourcesKey])
 
   const errOf = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error
   const isBreakErr = (msg?: string) => !!msg && /kırma şifresi/i.test(msg)
@@ -103,18 +127,36 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   const status = (record.status ?? record.result) as string | undefined
   const lines = (record.lines as Record<string, unknown>[] | undefined) ?? []
+  // FK alanları için id → "kod — ad"; durum/sonuç enum'ları yerelleştirilmiş rozet; değilse normal format
+  const showVal = (k: string, v: unknown) => {
+    const res = fkFieldMap[k]
+    if (res && typeof v === 'number' && refMaps[res]?.[v]) return refMaps[res][v]
+    if ((k === 'status' || k === 'result') && typeof v === 'string')
+      return <Tag color={STATUS_COLOR[v] ?? 'default'}>{STATUS_TR[v] ?? v}</Tag>
+    return fmt(v)
+  }
+  // Belge tesise bağlı (depoya değil) → Depo (warehouseId + null warehouse objesi) detayda gizli.
+  // Belge Durumu (documentStatus) varsa ham enum "status" alanı mükerrer bilgi → gizli (rozet zaten başlıkta).
+  const hasDocStatusName = !!(record.documentStatus as { name?: string } | null)?.name
+  const HIDDEN = ['createdById', 'companyId', 'documentId',
+    ...(resource === 'documents' ? ['warehouseId', 'warehouse'] : []),
+    ...(hasDocStatusName ? ['status'] : [])]
   const headerFields = Object.keys(record).filter(
-    (k) => record[k] === null || (typeof record[k] !== 'object' && !['createdById', 'companyId'].includes(k)),
+    (k) => !HIDDEN.includes(k) && (record[k] === null || typeof record[k] !== 'object'),
   )
   const actions = (DETAIL_ACTIONS[resource] ?? []).filter((a) => !status || a.when.includes(status))
 
-  const lineCols = lines[0]
+  const baseLineCols = lines[0]
     ? Object.keys(lines[0])
         .filter((k) => lines[0]![k] === null || typeof lines[0]![k] !== 'object')
-        .filter((k) => !['createdAt', 'updatedAt'].includes(k))
+        .filter((k) => !['createdAt', 'updatedAt', ...HIDDEN].includes(k))
         .slice(0, 9)
-        .map((k) => ({ title: pretty(k), dataIndex: k, ellipsis: true, render: (v: unknown) => fmt(v) }))
+        .map((k) => ({ title: pretty(k), dataIndex: k, ellipsis: true, render: (v: unknown) => showVal(k, v) }))
     : []
+  // Belge satırlarında DRAFT iken "Topla" — satır bazında okutma ekranı (miktar/palet/seri/lot/üretim/SKT)
+  const lineCols = resource === 'documents' && status === 'DRAFT' && baseLineCols.length
+    ? [...baseLineCols, { title: 'Toplama', key: 'collect', render: (_: unknown, row: Record<string, unknown>) => <Button size="small" type="link" onClick={() => navigate(`/documents/${id}/lines/${row.id}/collect`)}>Topla →</Button> }]
+    : baseLineCols
 
   return (
     <div className="og-page">
@@ -124,12 +166,17 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
             {label} <span style={{ color: '#8696ae', fontWeight: 600 }}>#{String(record.id)}</span>
             {(() => {
               const ds = record.documentStatus as { name?: string; color?: string } | null
-              return ds?.name ? <Tag color={ds.color || 'default'}>{ds.name}</Tag> : status ? <Tag color={STATUS_COLOR[status] ?? 'default'}>{status}</Tag> : null
+              return ds?.name ? <Tag color={ds.color || 'default'}>{ds.name}</Tag> : status ? <Tag color={STATUS_COLOR[status] ?? 'default'}>{STATUS_TR[status] ?? status}</Tag> : null
             })()}
           </Space>
         }
         subtitle="Kayıt detayı"
-        extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${resource}`)}>Liste</Button>}
+        extra={
+          <Space>
+            {resource === 'documents' && <Button icon={<HistoryOutlined />} onClick={() => navigate(`/documents/${id}/status-history`)}>Durum Geçmişi</Button>}
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(`/${resource}`)}>Liste</Button>
+          </Space>
+        }
       />
 
       {canWrite() && actions.length > 0 && (
@@ -148,7 +195,7 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
       <Card className="og-section-card" size="small" title="Bilgiler">
         <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }}>
           {headerFields.map((k) => (
-            <Descriptions.Item key={k} label={pretty(k)}>{fmt(record[k])}</Descriptions.Item>
+            <Descriptions.Item key={k} label={pretty(k)}>{showVal(k, record[k])}</Descriptions.Item>
           ))}
         </Descriptions>
       </Card>

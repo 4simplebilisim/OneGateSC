@@ -19,33 +19,68 @@ export const reportFieldRoutes = simpleCrud(prisma.tBLREPORTFIELD as unknown as 
 // ── Rapor motoru: sourceKey → sorgu (kriterlerle filtrele, alanlarla kolonla) ──
 type Crit = Record<string, string>
 
-async function runStock(companyId: number, c: Crit) {
+const num = (v?: string) => (v ? Number(v) : undefined)
+
+// Güncel stok (Stok Durum + Palet İzleme = paletin şu anki konumu). tesis/depo/alan/lokasyon/ürün/palet/batch/statü süzme.
+// palletOnly=true → yalnız paletli stok (Palet İzleme; paletsiz satırlar gizlenir).
+async function runStock(companyId: number, c: Crit, palletOnly = false) {
+  const locFilter = {
+    ...(c.warehouseId ? { warehouseId: Number(c.warehouseId) } : {}),
+    ...(c.facilityId ? { warehouse: { facilityId: Number(c.facilityId) } } : {}),
+    ...(c.areaId ? { areaId: Number(c.areaId) } : {}),
+    ...(c.locationId ? { id: Number(c.locationId) } : {}),
+  }
   const stocks = await prisma.tBLSTOCK.findMany({
     where: {
       companyId, mainQty: { gt: 0 },
-      ...(c.warehouseId ? { location: { warehouseId: Number(c.warehouseId) } } : {}),
-      ...(c.productId ? { productId: Number(c.productId) } : {}),
-      ...(c.statusId ? { statusId: Number(c.statusId) } : {}),
+      productId: num(c.productId), statusId: num(c.statusId),
+      palletId: c.palletId ? Number(c.palletId) : palletOnly ? { not: null } : undefined,
+      ...(c.batchNo ? { batchNo: { contains: c.batchNo, mode: 'insensitive' as const } } : {}),
+      ...(Object.keys(locFilter).length ? { location: locFilter } : {}),
     },
-    include: { product: { select: { code: true } }, location: { select: { code: true } }, status: { select: { code: true } } },
+    include: {
+      product: { select: { code: true, name: true } },
+      location: { select: { code: true, warehouse: { select: { code: true, name: true, facility: { select: { code: true, name: true } } } } } },
+      status: { select: { code: true } }, pallet: { select: { palletNo: true } }, unit: { select: { code: true } },
+    },
     orderBy: { id: 'asc' }, take: 2000,
   })
-  return stocks.map((s) => ({ lokasyon: s.location.code, urun: s.product.code, statu: s.status.code, batchNo: s.batchNo ?? '', miktar: s.mainQty.toString() }))
+  const cn = (co?: string, n?: string) => (co ? (n ? `${co} — ${n}` : co) : '')
+  return stocks.map((s) => ({
+    tesis: cn(s.location.warehouse?.facility?.code, s.location.warehouse?.facility?.name),
+    depo: cn(s.location.warehouse?.code, s.location.warehouse?.name), lokasyon: s.location.code,
+    palet: s.pallet?.palletNo ?? '', urun: cn(s.product.code, s.product.name), statu: s.status.code,
+    batchNo: s.batchNo ?? '', miktar: s.mainQty.toString(), birim: s.unit.code,
+  }))
 }
 
-async function runDocuments(companyId: number, c: Crit) {
+async function runDocuments(companyId: number, c: Crit, forceOpen = false) {
   const dirs = ['INBOUND', 'OUTBOUND', 'INTERNAL', 'COUNT']
   const sts = ['DRAFT', 'CONFIRMED', 'COMPLETED', 'CANCELLED']
+  // Satır-seviyesi kriterler (ürün/palet/batch): belgenin herhangi bir satırı eşleşmeli
+  const lineFilter = {
+    ...(c.productId ? { productId: Number(c.productId) } : {}),
+    ...(c.palletId ? { palletId: Number(c.palletId) } : {}),
+    ...(c.batchNo ? { batchNo: { contains: c.batchNo, mode: 'insensitive' as const } } : {}),
+  }
   const docs = await prisma.tBLDOCUMENT.findMany({
     where: {
       companyId,
+      ...(c.operationTypeId ? { operationTypeId: Number(c.operationTypeId) } : {}),
       ...(c.direction && dirs.includes(c.direction) ? { operationType: { direction: c.direction as 'INBOUND' } } : {}),
-      ...(c.status && sts.includes(c.status) ? { status: c.status as 'DRAFT' } : c.openOnly === 'true' ? { status: { in: ['DRAFT', 'CONFIRMED'] } } : {}),
+      ...(forceOpen || c.openOnly === 'true'
+        ? { status: { in: ['DRAFT', 'CONFIRMED'] } } // Açık Belge = toplanmamış/onaylanmamış
+        : (c.status && sts.includes(c.status) ? { status: c.status as 'DRAFT' } : {})),
+      ...(Object.keys(lineFilter).length ? { lines: { some: lineFilter } } : {}),
     },
-    include: { operationType: { select: { code: true, direction: true } }, _count: { select: { lines: true } } },
+    include: { operationType: { select: { code: true, direction: true } }, documentStatus: { select: { name: true } }, partner: { select: { code: true, name: true } }, _count: { select: { lines: true } } },
     orderBy: { id: 'desc' }, take: 2000,
   })
-  return docs.map((d) => ({ belgeNo: d.documentNo, operasyon: d.operationType.code, yon: d.operationType.direction, durum: d.status, tarih: d.documentDate.toISOString().slice(0, 10), satir: String(d._count.lines) }))
+  return docs.map((d) => ({
+    belgeNo: d.documentNo, operasyon: d.operationType.code, yon: d.operationType.direction,
+    cari: d.partner ? `${d.partner.code}${d.partner.name ? ' — ' + d.partner.name : ''}` : '',
+    durum: d.documentStatus?.name ?? d.status, tarih: d.documentDate.toISOString().slice(0, 10), satir: String(d._count.lines),
+  }))
 }
 
 async function runPallets(companyId: number, c: Crit) {
@@ -56,19 +91,181 @@ async function runPallets(companyId: number, c: Crit) {
   return pallets.map((p) => ({ paletNo: p.palletNo, tip: p.palletType?.code ?? '', durum: p.isActive ? 'Aktif' : 'Pasif' }))
 }
 
+// Hareket analizi (Çıkış/Giriş/Transfer) + Palet Tarihçesi — TBLSTOCKLEDGER'dan hareket dökümü.
+// Ledger denormalize (ilişki yok) → belge/operasyon/ürün/lokasyon/statü/palet/birim/kullanıcı toplu lookup.
+// opts.chronological=true → eskiden yeniye (Palet Tarihçesi: giriş→çıkış). direction yoksa tüm yönler.
+async function runMovements(companyId: number, c: Crit, direction?: 'INBOUND' | 'OUTBOUND' | 'INTERNAL', opts: { chronological?: boolean; palletOnly?: boolean } = {}) {
+  // Üst Palet No → o palete bağlı alt paletlerin id'leri (ledger palletId'de yalnız alt palet var)
+  let palletIds: number[] | undefined
+  if (c.parentPalletId) {
+    const kids = await prisma.tBLPALLET.findMany({ where: { companyId, parentPalletId: Number(c.parentPalletId) }, select: { id: true } })
+    palletIds = kids.map((k) => k.id)
+    if (!palletIds.length) return []
+  }
+  // tesis/depo/alan → lokasyon id kümesi
+  let locIds: number[] | undefined
+  if (c.facilityId || c.warehouseId || c.areaId) {
+    const locs = await prisma.tBLLOCATION.findMany({
+      where: {
+        companyId,
+        ...(c.warehouseId ? { warehouseId: Number(c.warehouseId) } : {}),
+        ...(c.facilityId ? { warehouse: { facilityId: Number(c.facilityId) } } : {}),
+        ...(c.areaId ? { areaId: Number(c.areaId) } : {}),
+      },
+      select: { id: true },
+    })
+    locIds = locs.map((l) => l.id)
+    if (!locIds.length) return []
+  }
+  // belge no / cari → belge id kümesi
+  let docIds: number[] | undefined
+  if (c.documentNo || c.partnerId) {
+    const docs = await prisma.tBLDOCUMENT.findMany({
+      where: {
+        companyId,
+        ...(c.documentNo ? { documentNo: { contains: c.documentNo, mode: 'insensitive' as const } } : {}),
+        ...(c.partnerId ? { partnerId: Number(c.partnerId) } : {}),
+      },
+      select: { id: true },
+    })
+    docIds = docs.map((d) => d.id)
+    if (!docIds.length) return []
+  }
+  const dateFilter = {
+    ...(c.dateFrom ? { gte: new Date(c.dateFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}),
+    ...(c.dateTo ? { lte: new Date(c.dateTo.slice(0, 10) + 'T23:59:59.999Z') } : {}),
+  }
+  const led = await prisma.tBLSTOCKLEDGER.findMany({
+    where: {
+      companyId,
+      ...(direction ? { direction } : {}),
+      operationTypeId: num(c.operationTypeId), productId: num(c.productId), statusId: num(c.statusId),
+      userId: num(c.userId),
+      ...(c.palletId ? { palletId: Number(c.palletId) } : palletIds ? { palletId: { in: palletIds } } : opts.palletOnly ? { palletId: { not: null } } : {}),
+      ...(c.locationId ? { locationId: Number(c.locationId) } : locIds ? { locationId: { in: locIds } } : {}),
+      ...(docIds ? { documentId: { in: docIds } } : {}),
+      ...(c.batchNo ? { batchNo: { contains: c.batchNo, mode: 'insensitive' as const } } : {}),
+      ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
+    },
+    orderBy: opts.chronological ? { id: 'asc' } : { id: 'desc' }, // kronolojik = giriş→çıkış (id sırası = kayıt sırası)
+    take: c.limit ? Math.max(1, Math.min(Number(c.limit), 5000)) : 2000, // Kayıt Sayısı
+  })
+  if (!led.length) return []
+  const uniq = (arr: (number | null)[]) => [...new Set(arr.filter((x): x is number => x != null))]
+  const [docs, ops, prods, locs, stats, pals, units, users] = await Promise.all([
+    prisma.tBLDOCUMENT.findMany({ where: { id: { in: uniq(led.map((r) => r.documentId)) } }, select: { id: true, documentNo: true, partner: { select: { code: true, name: true } } } }),
+    prisma.tBLOPERATIONTYPE.findMany({ where: { id: { in: uniq(led.map((r) => r.operationTypeId)) } }, select: { id: true, code: true, name: true } }),
+    prisma.tBLPRODUCT.findMany({ where: { id: { in: uniq(led.map((r) => r.productId)) } }, select: { id: true, code: true, name: true } }),
+    prisma.tBLLOCATION.findMany({ where: { id: { in: uniq(led.map((r) => r.locationId)) } }, select: { id: true, code: true, warehouse: { select: { code: true } } } }),
+    prisma.tBLSTATUS.findMany({ where: { id: { in: uniq(led.map((r) => r.statusId)) } }, select: { id: true, code: true } }),
+    prisma.tBLPALLET.findMany({ where: { id: { in: uniq(led.map((r) => r.palletId)) } }, select: { id: true, palletNo: true, parentPallet: { select: { palletNo: true } } } }),
+    prisma.tBLUNIT.findMany({ where: { id: { in: uniq(led.map((r) => r.unitId)) } }, select: { id: true, code: true } }),
+    prisma.tBLUSER.findMany({ where: { id: { in: uniq(led.map((r) => r.userId)) } }, select: { id: true, username: true } }),
+  ])
+  const idMap = <T extends { id: number }>(arr: T[]) => new Map(arr.map((x) => [x.id, x]))
+  const dM = idMap(docs), oM = idMap(ops), pM = idMap(prods), lM = idMap(locs), sM = idMap(stats), palM = idMap(pals), uM = idMap(units), userM = idMap(users)
+  const cn = (co?: string, n?: string) => (co ? (n ? `${co} — ${n}` : co) : '')
+  return led.map((r) => {
+    const d = r.documentId != null ? dM.get(r.documentId) : undefined
+    const p = r.productId != null ? pM.get(r.productId) : undefined
+    const delta = Number(r.qtyDelta)
+    return {
+      tarih: r.createdAt.toISOString().slice(0, 10),
+      belgeNo: d?.documentNo ?? '',
+      operasyon: r.operationTypeId != null ? cn(oM.get(r.operationTypeId)?.code, oM.get(r.operationTypeId)?.name) : '',
+      cari: d?.partner ? cn(d.partner.code, d.partner.name) : '',
+      urun: cn(p?.code, p?.name),
+      depo: r.locationId != null ? lM.get(r.locationId)?.warehouse?.code ?? '' : '',
+      lokasyon: r.locationId != null ? lM.get(r.locationId)?.code ?? '' : '',
+      giris: delta > 0 ? String(delta) : '', cikis: delta < 0 ? String(-delta) : '',
+      birim: r.unitId != null ? uM.get(r.unitId)?.code ?? '' : '',
+      batch: r.batchNo ?? '',
+      palet: r.palletId != null ? palM.get(r.palletId)?.palletNo ?? '' : '',
+      ustPalet: r.palletId != null ? palM.get(r.palletId)?.parentPallet?.palletNo ?? '' : '',
+      statu: r.statusId != null ? sM.get(r.statusId)?.code ?? '' : '',
+      kullanici: r.userId != null ? userM.get(r.userId)?.username ?? '' : '',
+    }
+  })
+}
+
+// Doluluk — lokasyon bazlı dolu/boş + mevcut miktar/kalem. Kapsamdaki TÜM lokasyonlar (boşlar dahil).
+async function runOccupancy(companyId: number, c: Crit) {
+  const locs = await prisma.tBLLOCATION.findMany({
+    where: {
+      companyId,
+      ...(c.warehouseId ? { warehouseId: Number(c.warehouseId) } : {}),
+      ...(c.facilityId ? { warehouse: { facilityId: Number(c.facilityId) } } : {}),
+      ...(c.areaId ? { areaId: Number(c.areaId) } : {}),
+      ...(c.locationId ? { id: Number(c.locationId) } : {}),
+    },
+    include: { warehouse: { select: { code: true, name: true, facility: { select: { code: true, name: true } } } }, area: { select: { code: true } } },
+    orderBy: { id: 'asc' }, take: 3000,
+  })
+  if (!locs.length) return []
+  const agg = await prisma.tBLSTOCK.groupBy({ by: ['locationId'], where: { companyId, locationId: { in: locs.map((l) => l.id) }, mainQty: { gt: 0 } }, _sum: { mainQty: true }, _count: { _all: true } })
+  const aggMap = new Map(agg.map((a) => [a.locationId, a]))
+  const cn = (co?: string, n?: string) => (co ? (n ? `${co} — ${n}` : co) : '')
+  const rows = locs.map((l) => {
+    const a = aggMap.get(l.id)
+    const qty = Number(a?._sum.mainQty ?? 0)
+    return { tesis: cn(l.warehouse?.facility?.code, l.warehouse?.facility?.name), depo: cn(l.warehouse?.code, l.warehouse?.name), alan: l.area?.code ?? '', lokasyon: l.code, kalem: a ? String(a._count._all) : '0', miktar: qty ? String(qty) : '0', durum: qty > 0 ? 'Dolu' : 'Boş' }
+  })
+  if (c.fill === 'DOLU') return rows.filter((r) => r.durum === 'Dolu')
+  if (c.fill === 'BOS') return rows.filter((r) => r.durum === 'Boş')
+  return rows
+}
+
+// Log / Belge Hareketleri — belge durum geçiş logu (TBLDOCUMENTSTATUSHISTORY audit).
+async function runDocLog(companyId: number, c: Crit) {
+  let docIds: number[] | undefined
+  if (c.documentNo || c.operationTypeId) {
+    const docs = await prisma.tBLDOCUMENT.findMany({ where: { companyId, ...(c.documentNo ? { documentNo: { contains: c.documentNo, mode: 'insensitive' as const } } : {}), ...(c.operationTypeId ? { operationTypeId: Number(c.operationTypeId) } : {}) }, select: { id: true } })
+    docIds = docs.map((d) => d.id)
+    if (!docIds.length) return []
+  }
+  const dateFilter = { ...(c.dateFrom ? { gte: new Date(c.dateFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}), ...(c.dateTo ? { lte: new Date(c.dateTo.slice(0, 10) + 'T23:59:59.999Z') } : {}) }
+  const hist = await prisma.tBLDOCUMENTSTATUSHISTORY.findMany({
+    where: { companyId, ...(docIds ? { documentId: { in: docIds } } : {}), userId: num(c.userId), ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}) },
+    orderBy: { id: 'desc' }, take: c.limit ? Math.max(1, Math.min(Number(c.limit), 5000)) : 2000,
+  })
+  if (!hist.length) return []
+  const uniq = (arr: (number | null)[]) => [...new Set(arr.filter((x): x is number => x != null))]
+  const [docs, users] = await Promise.all([
+    prisma.tBLDOCUMENT.findMany({ where: { id: { in: uniq(hist.map((h) => h.documentId)) } }, select: { id: true, documentNo: true, operationType: { select: { code: true } } } }),
+    prisma.tBLUSER.findMany({ where: { id: { in: uniq(hist.map((h) => h.userId)) } }, select: { id: true, username: true } }),
+  ])
+  const dM = new Map(docs.map((d) => [d.id, d])), uM = new Map(users.map((u) => [u.id, u]))
+  const SRC: Record<string, string> = { derive: 'Türetme', criteria: 'Kriter', confirm: 'Onay', complete: 'Tamamla', cancel: 'İptal', reverse: 'Geri Al', bulk: 'Toplu', procurement: 'Satınalma', sales: 'Satış', workorder: 'İş Emri' }
+  return hist.map((h) => {
+    const d = dM.get(h.documentId)
+    return { tarih: h.createdAt.toISOString().replace('T', ' ').slice(0, 16), belgeNo: d?.documentNo ?? '', operasyon: d?.operationType?.code ?? '', gecis: (h.fromCode ?? '—') + ' → ' + h.toCode, olay: SRC[h.source] ?? h.source, kullanici: h.userId != null ? uM.get(h.userId)?.username ?? '' : '' }
+  })
+}
+
 async function runReport(companyId: number, sourceKey: string, c: Crit) {
   if (sourceKey === 'STOCK') return runStock(companyId, c)
+  if (sourceKey === 'PALLET_TRACK') return runStock(companyId, c, true) // Palet İzleme — yalnız paletli stok
   if (sourceKey === 'DOCUMENTS') return runDocuments(companyId, c)
+  if (sourceKey === 'OPEN_DOCUMENTS') return runDocuments(companyId, c, true) // Açık Belge Listesi (openOnly zorlanır)
   if (sourceKey === 'PALLETS') return runPallets(companyId, c)
+  if (sourceKey === 'MOVEMENTS_OUT') return runMovements(companyId, c, 'OUTBOUND') // Çıkış Hareketleri Analizi
+  if (sourceKey === 'MOVEMENTS_IN') return runMovements(companyId, c, 'INBOUND') // Giriş Hareketleri Analizi
+  if (sourceKey === 'MOVEMENTS_TR') return runMovements(companyId, c, 'INTERNAL') // Transfer Hareketleri Analizi
+  if (sourceKey === 'PALLET_HISTORY') return runMovements(companyId, c, undefined, { chronological: true, palletOnly: true }) // Palet Tarihçesi — yalnız paletli hareketler, giriş→çıkış
+  if (sourceKey === 'OCCUPANCY') return runOccupancy(companyId, c) // Doluluk (lokasyon dolu/boş)
+  if (sourceKey === 'SHIPMENTS') return runDocuments(companyId, { ...c, direction: 'OUTBOUND' }) // Sevkiyat = ÇIKIŞ belgeleri
+  if (sourceKey === 'RETURNS') return runDocuments(companyId, c) // İade = seçilen (iade) operasyonun belgeleri
+  if (sourceKey === 'DOC_LOG') return runDocLog(companyId, c) // Log / Belge Hareketleri (durum geçiş audit)
+  if (sourceKey === 'OPERATION_MOVEMENTS') return runMovements(companyId, c) // Operasyon Hareketi — tüm yönler
   return []
 }
 
 // ── Çalıştırma uçları: tanım (full) + run ──
 export async function reportRunRoutes(app: FastifyInstance) {
-  // rapor listesi (sadece başlık)
+  // rapor listesi (sadece başlık) — AKTİF firmaya göre (run ile tutarlı; süper-admin firma değiştirince o firmanın raporları)
   app.get('/', async (request) => prisma.tBLREPORTDEF.findMany({ where: { companyId: getCompanyId(request), isActive: true }, orderBy: [{ category: 'asc' }, { name: 'asc' }] }))
 
-  // tek raporun tam tanımı (kriter + saha)
+  // tek raporun tam tanımı (kriter + saha) — aktif firma
   app.get('/:id', async (request, reply) => {
     const id = Number((request.params as { id: string }).id)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })

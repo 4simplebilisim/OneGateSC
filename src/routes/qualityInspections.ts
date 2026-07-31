@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
-import { getCompanyId } from '../lib/company.js'
+import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { decideInspection, QualityError } from '../lib/quality.js'
 
 const createSchema = z.object({
@@ -35,7 +35,7 @@ export async function qualityInspectionRoutes(app: FastifyInstance) {
   app.get('/:id', async (request, reply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
-    const insp = await prisma.tBLQUALITYINSPECTION.findUnique({ where: { id } })
+    const insp = await prisma.tBLQUALITYINSPECTION.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!insp) return reply.code(404).send({ error: 'Inspection not found' })
     return insp
   })

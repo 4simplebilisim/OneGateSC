@@ -1,37 +1,92 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { App, Button, Card, Form, Input, InputNumber, Select, Space, Tag, Typography, Alert } from 'antd'
 import { ArrowLeftOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 
 type Opt = { value: number; label: string }
+type Company = { id: number; code: string; name: string }
+const arr = (d: unknown) => (Array.isArray(d) ? d : ((d as { data?: unknown[] })?.data ?? []))
 
+// Belge oluşturma — kanonik sıra: Firma › Tesis › Operasyon (depo YOK; belge tesise/operasyona bağlı, stok satır lokasyonlarından)
 export const DocumentCreate = () => {
   const navigate = useNavigate()
   const { message } = App.useApp()
   const [form] = Form.useForm()
-  const [ops, setOps] = useState<Opt[]>([])
-  const [warehouses, setWarehouses] = useState<Opt[]>([])
+  const [searchParams] = useSearchParams()
+  const lineVals = Form.useWatch('lines', form) as ({ productId?: number } | undefined)[] | undefined
+
+  // Firma (tenant): super-admin seçer, normal kullanıcıda kilitli (kendi firması)
+  const isSuper = (() => { try { return !!JSON.parse(localStorage.getItem('og_user') ?? 'null')?.isSuperAdmin } catch { return false } })()
+  const [companyId, setCompanyId] = useState<number | null>(Number(localStorage.getItem('og_company')) || null)
+  const [companies, setCompanies] = useState<Company[]>([])
+  const firmLabel = (() => { const c = companies.find((x) => x.id === companyId); return c ? `${c.code} — ${c.name}` : (companyId ? `#${companyId}` : '—') })()
+
+  const [facilityId, setFacilityId] = useState<number>() // Tesis — operasyonları + lokasyonları süzer
+  const [facilities, setFacilities] = useState<Opt[]>([])
+  const [ops, setOps] = useState<(Opt & { direction: string; facilityId: number | null; controlMode?: string })[]>([])
+  const [partners, setPartners] = useState<Opt[]>([])
   const [products, setProducts] = useState<Opt[]>([])
-  const [units, setUnits] = useState<Opt[]>([])
-  const [locations, setLocations] = useState<Opt[]>([])
-  // ürün → önerilen lokasyonlar (directed putaway)
-  const [suggest, setSuggest] = useState<Record<number, { id: number; code: string }[]>>({})
+  const [productUnits, setProductUnits] = useState<Record<number, (Opt & { isBase?: boolean })[]>>({})
+  const [locations, setLocations] = useState<Opt[]>([]) // seçili tesisin lokasyonları
+  const [suggest, setSuggest] = useState<Record<number, { id: number; code: string }[]>>({}) // directed putaway
   const [submitting, setSubmitting] = useState(false)
 
+  // Yön bağlamı: giriş/çıkış/transfer listesinden ?direction ile gelir → operasyonları yöne göre süz + iptal'de doğru listeye dön
+  const direction = searchParams.get('direction') || undefined
+  const backTo = direction === 'INBOUND' ? '/documents-in' : direction === 'OUTBOUND' ? '/documents-out' : direction === 'INTERNAL' ? '/documents-tr' : '/documents'
+
+  // Firma listesi (bir kez) — firma adı/seçimi için
+  useEffect(() => { axiosInstance.get('/api/companies').then((r) => setCompanies(arr(r.data) as Company[])).catch(() => { /* tek firma */ }) }, [])
+
+  // Firma bağlamına göre kaynaklar (super-admin firma değiştirince yeniden çekilir; header x-company-id og_company'den)
   useEffect(() => {
-    const load = (url: string, label: (x: Record<string, unknown>) => string) =>
-      axiosInstance.get(url, { params: { pageSize: 300 } }).then((r) => {
-        const rows = Array.isArray(r.data) ? r.data : (r.data.data ?? [])
-        return rows.map((x: Record<string, unknown>) => ({ value: x.id as number, label: label(x) }))
-      })
-    load('/api/operation-types', (x) => `${x.code} · ${x.direction}`).then(setOps)
-    load('/api/warehouses', (x) => `${x.code} — ${x.name}`).then(setWarehouses)
-    load('/api/products', (x) => `${x.code} — ${x.name}`).then(setProducts)
-    load('/api/units', (x) => `${x.code}`).then(setUnits)
-    load('/api/locations', (x) => `${x.code}`).then(setLocations)
-  }, [])
+    axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) =>
+      setOps((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}`, direction: x.direction as string, facilityId: (x.facilityId as number) ?? null, controlMode: x.controlMode as string | undefined }))))
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) =>
+      setFacilities((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+    axiosInstance.get('/api/products', { params: { pageSize: 300 } }).then((r) =>
+      setProducts((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code} — ${x.name}` }))))
+    axiosInstance.get('/api/partners', { params: { pageSize: 300 } }).then((r) =>
+      setPartners((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+  }, [companyId])
+
+  // Tesis değişince lokasyonlar o tesise göre yüklenir (depoya değil — tesisin tüm depolarındaki lokasyonlar)
+  useEffect(() => {
+    if (!facilityId) { setLocations([]); return }
+    axiosInstance.get('/api/locations', { params: { facilityId, pageSize: 500 } }).then((r) =>
+      setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
+  }, [facilityId])
+
+  // Operasyonlar: seçili tesise ait (veya tesis-bağımsız) + yöne göre.
+  // REFERANS KONTROLLÜ operasyon listelenmez — belgesi elle açılamaz (bağlı çıkış onayıyla otomatik doğar).
+  const visibleOps = ops.filter((o) => (o.facilityId == null || o.facilityId === facilityId) && (!direction || o.direction === direction) && o.controlMode !== 'REFERENCE_CONTROLLED')
+
+  // Kontrolsüz operasyon: belge BOŞ oluşturulur — içerik el terminali okutmalarıyla dolar (satır girişi yok)
+  const selectedOpId = Form.useWatch('operationTypeId', form) as number | undefined
+  const uncontrolled = ops.find((o) => o.value === selectedOpId)?.controlMode === 'UNCONTROLLED'
+
+  const onFirmaChange = (v: number) => {
+    setCompanyId(v)
+    localStorage.setItem('og_company', String(v)) // global tenant bağlamı (dataProvider header'ı) hizalanır
+    setFacilityId(undefined)
+    form.resetFields(['operationTypeId', 'partnerId'])
+  }
+  const onFacilityChange = (v?: number) => {
+    setFacilityId(v)
+    form.setFieldValue('operationTypeId', undefined) // operasyonlar tesise bağlı → sıfırla
+  }
+
+  // Seçilen ürünün ölçü birimleri (TBLPRODUCTUNIT) — yalnız o ürüne tanımlı olanlar
+  const loadProductUnits = async (productId: number) => {
+    if (productUnits[productId]) return productUnits[productId]
+    const r = await axiosInstance.get('/api/product-units', { params: { productId } })
+    const rows = arr(r.data) as { unitId: number; isBaseUnit: boolean; unit?: { code?: string } }[]
+    const opts = rows.map((pu) => ({ value: pu.unitId, label: pu.unit?.code ?? `#${pu.unitId}`, isBase: pu.isBaseUnit }))
+    setProductUnits((prev) => ({ ...prev, [productId]: opts }))
+    return opts
+  }
 
   const fetchSuggest = (productId?: number) => {
     if (!productId || suggest[productId]) return
@@ -43,10 +98,12 @@ export const DocumentCreate = () => {
   const onFinish = async (values: Record<string, unknown>) => {
     setSubmitting(true)
     try {
-      const res = await axiosInstance.post('/api/documents', values)
+      // warehouseId GÖNDERİLMEZ — belge tesise/operasyona bağlı (backend operationType.facilityId'den türetir)
+      // Kontrolsüzde satırlar GÖNDERİLMEZ — belge boş açılır, okutmayla dolar
+      const res = await axiosInstance.post('/api/documents', uncontrolled ? { ...values, lines: undefined } : values)
       const auto = res.data?.autoRoutedLines ?? 0
       message.success(auto > 0 ? `Belge oluşturuldu — ${auto} satır otomatik yönlendirildi` : 'Belge oluşturuldu')
-      navigate('/documents')
+      navigate(backTo)
     } catch (e) {
       message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'İşlem başarısız')
     } finally {
@@ -58,24 +115,46 @@ export const DocumentCreate = () => {
     <div className="og-page" style={{ maxWidth: 1100 }}>
       <PageHeader
         title="Belge — Yeni"
-        subtitle="Operasyon + depo seçin, satırları girin — giriş belgelerinde hedef lokasyon otomatik yönlendirilebilir"
-        extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/documents')}>Liste</Button>}
+        subtitle="Firma › Tesis › Operasyon seçin, satırları girin — giriş belgelerinde hedef lokasyon otomatik yönlendirilebilir"
+        extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>Liste</Button>}
       />
       <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ lines: [{}] }}>
         <Card className="og-section-card" size="small" title="Başlık">
           <Space wrap align="start" size={[16, 0]}>
-            <Form.Item name="operationTypeId" label="Operasyon Tipi" rules={[{ required: true, message: 'Zorunlu' }]}>
-              <Select style={{ minWidth: 200 }} options={ops} showSearch optionFilterProp="label" placeholder="Operasyon tipi" />
+            {isSuper ? (
+              <Form.Item label="Firma" required>
+                <Select style={{ minWidth: 200 }} showSearch optionFilterProp="label" placeholder="Firma" value={companyId ?? undefined}
+                  options={companies.map((c) => ({ value: c.id, label: `${c.code} — ${c.name}` }))} onChange={onFirmaChange} />
+              </Form.Item>
+            ) : (
+              <Form.Item label="Firma"><Input value={firmLabel} disabled style={{ width: 200 }} /></Form.Item>
+            )}
+            <Form.Item label="Tesis" required tooltip="Operasyon ve lokasyonlar seçili tesise göre süzülür">
+              <Select style={{ minWidth: 180 }} options={facilities} showSearch optionFilterProp="label" placeholder="Tesis seçin"
+                value={facilityId} onChange={onFacilityChange} />
             </Form.Item>
-            <Form.Item name="warehouseId" label="Depo" rules={[{ required: true, message: 'Zorunlu' }]}>
-              <Select style={{ minWidth: 180 }} options={warehouses} showSearch optionFilterProp="label" placeholder="Depo" />
+            <Form.Item name="operationTypeId" label="Operasyon" rules={[{ required: true, message: 'Zorunlu' }]}>
+              <Select style={{ minWidth: 200 }} options={visibleOps} showSearch optionFilterProp="label"
+                placeholder={facilityId ? 'Operasyon' : 'Önce tesis'} disabled={!facilityId} />
             </Form.Item>
             <Form.Item name="documentNo" label="Belge No (boş = otomatik)">
-              <Input placeholder="otomatik" style={{ width: 160 }} />
+              <Input placeholder="otomatik" style={{ width: 150 }} />
+            </Form.Item>
+            <Form.Item name="partnerId" label="Cari">
+              <Select style={{ minWidth: 200 }} options={partners} showSearch optionFilterProp="label" placeholder="Cari (opsiyonel)" allowClear />
             </Form.Item>
           </Space>
         </Card>
 
+        {uncontrolled ? (
+          <Card className="og-section-card" size="small" title="Satırlar">
+            <Alert
+              type="warning"
+              showIcon
+              title="Kontrolsüz operasyon — belge BOŞ oluşturulur. İçerik (ürün + miktar) el terminali okutmalarıyla dolar; okutma yapılmadan onaylanamaz."
+            />
+          </Card>
+        ) : (
         <Card className="og-section-card" size="small" title="Satırlar">
           <Alert
             type="info"
@@ -91,16 +170,23 @@ export const DocumentCreate = () => {
                     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
                       <span className="og-linecard__no" style={{ alignSelf: 'center' }}>#{idx + 1}</span>
                       <Form.Item name={[name, 'productId']} label="Ürün" rules={[{ required: true, message: '!' }]} style={{ marginBottom: 0 }}>
-                        <Select style={{ minWidth: 220 }} options={products} showSearch optionFilterProp="label" placeholder="Ürün" onChange={(v) => fetchSuggest(v as number)} />
+                        <Select style={{ minWidth: 220 }} options={products} showSearch optionFilterProp="label" placeholder="Ürün"
+                          onChange={async (v) => {
+                            fetchSuggest(v as number)
+                            const opts = await loadProductUnits(v as number)
+                            const base = opts.find((u) => u.isBase) ?? opts[0]
+                            form.setFieldValue(['lines', name, 'unitId'], base?.value) // ürünün ana birimi otomatik gelir
+                          }} />
                       </Form.Item>
                       <Form.Item name={[name, 'unitId']} label="Birim" rules={[{ required: true, message: '!' }]} style={{ marginBottom: 0 }}>
-                        <Select style={{ width: 100 }} options={units} showSearch optionFilterProp="label" placeholder="Birim" />
+                        <Select style={{ width: 120 }} options={productUnits[lineVals?.[name]?.productId as number] ?? []} showSearch optionFilterProp="label"
+                          placeholder={lineVals?.[name]?.productId ? 'Birim' : 'Önce ürün'} disabled={!lineVals?.[name]?.productId} />
                       </Form.Item>
                       <Form.Item name={[name, 'quantity']} label="Miktar" rules={[{ required: true, message: '!' }]} style={{ marginBottom: 0 }}>
                         <InputNumber style={{ width: 100 }} placeholder="Miktar" min={0} />
                       </Form.Item>
                       <Form.Item name={[name, 'targetLocationId']} label="Hedef lok." style={{ marginBottom: 0 }}>
-                        <Select style={{ width: 130 }} options={locations} showSearch optionFilterProp="label" placeholder="Otomatik" allowClear />
+                        <Select style={{ width: 130 }} options={locations} showSearch optionFilterProp="label" placeholder={facilityId ? 'Otomatik' : 'Önce tesis'} allowClear disabled={!facilityId} />
                       </Form.Item>
                       <Form.Item name={[name, 'batchNo']} label="Parti" style={{ marginBottom: 0 }}>
                         <Input style={{ width: 120 }} placeholder="Parti (lot)" />
@@ -133,10 +219,11 @@ export const DocumentCreate = () => {
             )}
           </Form.List>
         </Card>
+        )}
 
         <div className="og-formbar">
           <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={submitting}>Kaydet</Button>
-          <Button onClick={() => navigate('/documents')}>İptal</Button>
+          <Button onClick={() => navigate(backTo)}>İptal</Button>
         </div>
       </Form>
     </div>
