@@ -56,7 +56,7 @@ export const MobileStockQuery = () => {
                 <div style={{ fontWeight: 600 }}>{s.location ?? '—'} <Tag color={SC[s.status ?? ''] ?? 'default'} style={{ marginLeft: 6 }}>{STATUS_TR[s.status ?? ''] ?? s.status}</Tag></div>
                 <div style={{ fontSize: 12, color: '#8ea0bd' }}>{s.batchNo ? `Parti: ${s.batchNo}` : ''}{s.serialNo ? ` · Seri: ${s.serialNo}` : ''}</div>
               </div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: '#44d4e3' }}>{s.qty}</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: '#5B8DEF' }}>{s.qty}</div>
             </div>
           )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<span style={{ color: '#8ea0bd' }}>Stok yok</span>} />}
         </div>

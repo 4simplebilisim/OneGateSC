@@ -85,12 +85,12 @@ export const Dashboard = () => {
       <PageHeader title="Dashboard" subtitle="Depo operasyonları — tek bakışta (bugünkü hareketler)" />
 
       <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        {card('Açık belge', sum?.openDocs ?? 0, '/documents', '#4e86ff', 'rgba(78,134,255,.12)', <ContainerOutlined />)}
-        {card('Aktif kullanıcı', sum?.activeUsers ?? 0, '/users', '#16a3b3', 'rgba(68,212,227,.14)', <TeamOutlined />)}
+        {card('Açık belge', sum?.openDocs ?? 0, '/documents', '#2563C9', 'rgba(37,99,201,.12)', <ContainerOutlined />)}
+        {card('Aktif kullanıcı', sum?.activeUsers ?? 0, '/users', '#16a3b3', 'rgba(91,141,239,.14)', <TeamOutlined />)}
         {card('Bugün onaylanan', sum?.approvedToday ?? 0, '/documents', '#22a06b', 'rgba(34,160,107,.14)', <CheckCircleOutlined />)}
         {card('Mal kabul (bugün)', sum?.receiptsToday ?? 0, '/documents-in-obs', '#22a06b', 'rgba(34,160,107,.12)', <LoginOutlined />)}
         {card('Sevkiyat (bugün)', sum?.shipmentsToday ?? 0, '/documents-out-obs', '#f59e0b', 'rgba(245,158,11,.14)', <SendOutlined />)}
-        {card('Transfer (bugün)', sum?.transfersToday ?? 0, '/documents-tr-obs', '#9b5cf6', 'rgba(155,92,246,.12)', <SwapOutlined />)}
+        {card('Transfer (bugün)', sum?.transfersToday ?? 0, '/documents-tr-obs', '#1B2B4B', 'rgba(27,43,75,.12)', <SwapOutlined />)}
       </Row>
 
       {TILE_GROUPS.map((g) => (

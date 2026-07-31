@@ -9,8 +9,9 @@ import { screenRight } from './screenRight'
 import { CompanySwitcher } from './components/CompanySwitcher'
 import { NotificationBell } from './components/NotificationBell'
 
-const NAVY = '#0f2238'
-const NAVY_DARK = '#0a1626'
+// 4Simple kurumsal kimliği: navy #1B2B4B + mavi #2563C9 (4simple.com.tr paleti)
+const NAVY = '#1B2B4B'
+const NAVY_DARK = '#152341'
 
 export const Shell = ({ children }: { children: ReactNode }) => {
   const { mutate: logout } = useLogout()
@@ -70,8 +71,8 @@ export const Shell = ({ children }: { children: ReactNode }) => {
     headerBg: dark ? NAVY_DARK : '#FFFFFF',
     headerBorder: dark ? 'none' : '1px solid #ECEFF4',
     headerShadow: dark ? '0 2px 12px rgba(10,22,38,.28)' : '0 1px 0 rgba(16,27,46,.04)',
-    siderBg: dark ? NAVY : '#FFFFFF',
-    siderBorder: dark ? 'none' : '1px solid #EEF1F7',
+    siderBg: NAVY, // sol menü HER modda navy — 4Simple kimliği (ön izleme onayı)
+    siderBorder: 'none',
     icon: dark ? '#9fb6d4' : '#64748B',
     brandText: dark ? '#fff' : '#1B2233',
     brandSub: dark ? '#7d96b3' : '#94A3B8',
@@ -86,7 +87,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         <Button type="text" onClick={toggleCollapsed} style={{ color: chrome.icon, fontSize: 17, marginRight: 6 }} icon={<MenuOutlined />} aria-label="menü" />
         <img src="/OneGate-assets/onegate-icon.svg" width={30} height={30} alt="OneGate WMS" style={{ borderRadius: 7, marginRight: 10 }} />
         <Typography.Text strong style={{ color: chrome.brandText, fontSize: 19, letterSpacing: 0.3 }}>
-          One<span style={{ color: '#44D4E3' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
+          One<span style={{ color: '#2563C9' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
         </Typography.Text>
         <div style={{ flex: 1 }} />
         <CompanySwitcher color={chrome.icon} />
@@ -99,7 +100,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           <Tooltip title="Yardım"><Button type="text" icon={<QuestionCircleOutlined />} style={{ color: chrome.icon }} /></Tooltip>
         </Space>
         <Space size={10}>
-          <Avatar size={28} style={{ background: 'linear-gradient(135deg,#44d4e3,#9b5cf6)', fontSize: 13, fontWeight: 600 }}>
+          <Avatar size={28} style={{ background: 'linear-gradient(135deg,#5B8DEF,#1B2B4B)', fontSize: 13, fontWeight: 600 }}>
             {(user?.fullName ?? '?').slice(0, 1).toUpperCase()}
           </Avatar>
           <Typography.Text style={{ color: chrome.userText, fontSize: 13 }}>
@@ -122,7 +123,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
               <Menu
                 inlineIndent={12}
-                theme={dark ? 'dark' : 'light'}
+                theme="dark"
                 mode="inline"
                 selectedKeys={[selected]}
                 openKeys={collapsed ? undefined : (openState as string[])}

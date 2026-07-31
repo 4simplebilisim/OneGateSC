@@ -96,7 +96,7 @@ export const MobilePick = () => {
   if (done) {
     const meta: Record<ApprovalOutcome, { c: string; t: string }> = {
       completed: { c: '#16a34a', t: 'Onaylandı — stok işlendi.' },
-      confirmed: { c: '#4e86ff', t: 'Onaya gönderildi — son onay Gözlem ekranından.' },
+      confirmed: { c: '#2563C9', t: 'Onaya gönderildi — son onay Gözlem ekranından.' },
       split: { c: '#f59e0b', t: 'Toplanan kısım yeni belgeye ayrıldı — kalan Bekliyor.' },
       draft: { c: '#9db0ce', t: 'Belge taslak kaldı.' },
     }
@@ -158,7 +158,7 @@ export const MobilePick = () => {
               <span style={{ fontWeight: 700 }}>{l.product?.code ?? `#${l.lineNo}`}</span>
               <span style={{ color: coll >= plan ? '#16a34a' : '#9db0ce', fontWeight: 700 }}>{coll} / {plan} {l.unit?.code ?? ''}</span>
             </div>
-            <Progress percent={pct} size="small" showInfo={false} strokeColor={coll >= plan ? '#16a34a' : '#4e86ff'} style={{ margin: '6px 0' }} />
+            <Progress percent={pct} size="small" showInfo={false} strokeColor={coll >= plan ? '#16a34a' : '#2563C9'} style={{ margin: '6px 0' }} />
             {remaining > 0 && (
               <Button size="small" block loading={busy} onClick={() => scanLine(l, remaining)}>Kalanı Topla (+{remaining})</Button>
             )}

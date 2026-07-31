@@ -2,20 +2,20 @@ import { theme as antdTheme, type ThemeConfig } from 'antd'
 
 /**
  * OneGate tasarım sistemi — tek kaynak (açık + koyu mod).
- * Marka kartelası: cyan #44D4E3 · blue #4E86FF (primary) · violet #9B5CF6 · ink #1B2138
+ * Marka kartelası: cyan #5B8DEF · blue #2563C9 (primary) · violet #1B2B4B · ink #1B2138
  * AntD 6 token mimarisi: tüm ekranlar component tokenlarından beslenir; ekran içi inline hex YASAK.
  */
 
 export const BRAND = {
-  cyan: '#44D4E3',
-  blue: '#4E86FF',
-  violet: '#9B5CF6',
+  cyan: '#5B8DEF',
+  blue: '#2563C9',
+  violet: '#1B2B4B',
   primary: '#6D5DF6', // Nexus-uyumlu menekşe — açık temanın ana vurgusu (gradyan cyan→mavi→menekşe ile harmonik)
   ink: '#1B2138',
   navy: '#0E1B2E',
   navyDeep: '#0A1626',
-  gradient: 'linear-gradient(135deg, #44D4E3 0%, #4E86FF 52%, #9B5CF6 100%)',
-  gradientSoft: 'linear-gradient(135deg, rgba(68,212,227,.14), rgba(155,92,246,.14))',
+  gradient: 'linear-gradient(135deg, #5B8DEF 0%, #2563C9 52%, #1B2B4B 100%)',
+  gradientSoft: 'linear-gradient(135deg, rgba(91,141,239,.14), rgba(27,43,75,.14))',
 } as const
 
 const FONT_UI = "'Inter', -apple-system, 'Segoe UI', system-ui, sans-serif"

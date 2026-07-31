@@ -8,14 +8,14 @@ export const BRAND = {
   name: 'OneGate',
   shortName: 'OneGate',
   colors: {
-    cyan: '#44D4E3',
-    blue: '#4E86FF',
-    violet: '#9B5CF6',
+    cyan: '#5B8DEF',
+    blue: '#2563C9',
+    violet: '#1B2B4B',
     ink: '#1B2138',
-    themeColor: '#4E86FF',
+    themeColor: '#2563C9',
     background: '#FFFFFF',
   },
-  gradient: 'linear-gradient(158deg, #44d4e3 0%, #4e86ff 47%, #9b5cf6 100%)',
+  gradient: 'linear-gradient(158deg, #5B8DEF 0%, #2563C9 47%, #1B2B4B 100%)',
   assetsBasePath: '/OneGate-assets',
   assets: {
     iconSvg: '/OneGate-assets/onegate-icon.svg',
@@ -37,7 +37,7 @@ export const BRAND = {
 export const WEB_MANIFEST = {
   name: 'OneGate',
   short_name: 'OneGate',
-  theme_color: '#4e86ff',
+  theme_color: '#2563C9',
   background_color: '#ffffff',
   display: 'standalone',
   icons: [

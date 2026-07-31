@@ -5,7 +5,7 @@ import { MobileShell } from './MobileShell'
 export const MobileStub = ({ title }: { title: string }) => (
   <MobileShell title={title} back>
     <div style={{ textAlign: 'center', padding: '60px 16px', color: '#9db0ce' }}>
-      <ToolOutlined style={{ fontSize: 56, color: '#4e86ff' }} />
+      <ToolOutlined style={{ fontSize: 56, color: '#2563C9' }} />
       <div style={{ fontSize: 18, fontWeight: 700, color: '#e6edf7', marginTop: 18 }}>{title}</div>
       <div style={{ marginTop: 8 }}>Bu akış yakında eklenecek.</div>
     </div>

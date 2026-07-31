@@ -8,8 +8,8 @@ import { axiosInstance } from '../providers/dataProvider'
 // screenType → mobil rota + görsel
 const SCREEN: Record<string, { route: string; icon: ReactNode; c: string }> = {
   RECEIPT: { route: '/m/receipt', icon: <InboxOutlined />, c: '#16a3b3' },
-  PICK: { route: '/m/pick', icon: <ShoppingOutlined />, c: '#4e86ff' },
-  COUNT: { route: '/m/count', icon: <NumberOutlined />, c: '#9b5cf6' },
+  PICK: { route: '/m/pick', icon: <ShoppingOutlined />, c: '#2563C9' },
+  COUNT: { route: '/m/count', icon: <NumberOutlined />, c: '#1B2B4B' },
   STOCK: { route: '/m/stock', icon: <SearchOutlined />, c: '#16a34a' },
 }
 // statik fallback (config yoksa) — key 'm/receipt' vb.

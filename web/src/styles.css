@@ -6,10 +6,10 @@
    ============================================================ */
 
 :root {
-  --og-cyan: #44d4e3;
-  --og-blue: #4e86ff;
-  --og-violet: #9b5cf6;
-  --og-gradient: linear-gradient(135deg, #44d4e3 0%, #4e86ff 52%, #9b5cf6 100%);
+  --og-cyan: #5B8DEF;
+  --og-blue: #2563C9;
+  --og-violet: #1B2B4B;
+  --og-gradient: linear-gradient(135deg, #5B8DEF 0%, #2563C9 52%, #1B2B4B 100%);
   --og-page-pad: 22px;
 
   /* semantik yüzeyler (açık) */
@@ -131,7 +131,7 @@ h1, h2, h3, h4, h5,
 
 /* ---- Menü: marka vurgusu ---- */
 .ant-menu-dark.ant-menu-inline .ant-menu-item-selected {
-  background: linear-gradient(90deg, rgba(68, 212, 227, 0.22), rgba(78, 134, 255, 0.16)) !important;
+  background: linear-gradient(90deg, rgba(91, 141, 239, 0.22), rgba(37, 99, 201, 0.16)) !important;
   box-shadow: inset 3px 0 0 var(--og-cyan);
 }
 .ant-menu-dark .ant-menu-submenu-title { font-weight: 600; }
@@ -152,7 +152,7 @@ h1, h2, h3, h4, h5,
   place-items: center;
   border-radius: 10px;
   font-size: 18px;
-  background: var(--accent-soft, rgba(78, 134, 255, 0.12));
+  background: var(--accent-soft, rgba(37, 99, 201, 0.12));
   color: var(--accent, var(--og-blue));
 }
 
@@ -175,7 +175,7 @@ h1, h2, h3, h4, h5,
 }
 .og-section-card.ant-card { margin-bottom: 12px; }
 .og-section-card .ant-card-head {
-  background: linear-gradient(90deg, rgba(78, 134, 255, 0.06), transparent);
+  background: linear-gradient(90deg, rgba(37, 99, 201, 0.06), transparent);
 }
 .og-section-card .ant-card-head-title {
   font-weight: 700;
@@ -192,7 +192,7 @@ h1, h2, h3, h4, h5,
   background: var(--og-sunken);
   transition: border-color 0.18s, background 0.18s;
 }
-.og-switchrow:hover { border-color: rgba(78, 134, 255, 0.5); background: var(--og-row-hover); }
+.og-switchrow:hover { border-color: rgba(37, 99, 201, 0.5); background: var(--og-row-hover); }
 .og-switchrow__label { font-size: 13px; color: var(--og-muted); line-height: 1.3; }
 
 /* ---- Çok-satırlı işlem ekranı: satır mini-kartı ---- */
@@ -225,7 +225,7 @@ h1, h2, h3, h4, h5,
 .og-tile__icon {
   width: 34px; height: 34px; display: grid; place-items: center;
   border-radius: 9px; font-size: 17px; margin-bottom: 10px;
-  background: rgba(78, 134, 255, 0.1); color: var(--og-blue);
+  background: rgba(37, 99, 201, 0.1); color: var(--og-blue);
 }
 .og-tile__title { font-weight: 700; font-size: 13.5px; color: var(--og-ink); line-height: 1.25; }
 .og-tile__sub { font-size: 11.5px; color: var(--og-muted); margin-top: 2px; line-height: 1.35; }
@@ -259,7 +259,7 @@ h1, h2, h3, h4, h5,
 }
 /* Light modda seçili menü öğesi — koyu moddaki marka vurgusunun açık eşleniği */
 .ant-menu-light.ant-menu-inline .ant-menu-item-selected {
-  background: linear-gradient(90deg, rgba(78, 134, 255, 0.12), rgba(78, 134, 255, 0.05)) !important;
+  background: linear-gradient(90deg, rgba(37, 99, 201, 0.12), rgba(37, 99, 201, 0.05)) !important;
   box-shadow: inset 3px 0 0 var(--og-blue);
   font-weight: 600;
 }

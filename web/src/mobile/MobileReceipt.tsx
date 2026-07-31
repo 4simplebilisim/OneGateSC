@@ -124,7 +124,7 @@ export const MobileReceipt = () => {
   if (done) {
     const meta: Record<ApprovalOutcome, { c: string; t: string }> = {
       completed: { c: '#16a34a', t: 'Onaylandı — stok işlendi.' },
-      confirmed: { c: '#4e86ff', t: 'Onaya gönderildi — son onay Gözlem ekranından.' },
+      confirmed: { c: '#2563C9', t: 'Onaya gönderildi — son onay Gözlem ekranından.' },
       split: { c: '#f59e0b', t: 'Toplanan kısım yeni belgeye ayrıldı.' },
       draft: { c: '#9db0ce', t: 'Belge taslak kaldı — onay Gözlem/masaüstünden.' },
     }

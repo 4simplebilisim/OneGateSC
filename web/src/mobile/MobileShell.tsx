@@ -4,7 +4,7 @@ import { useLogout } from '@refinedev/core'
 import { ArrowLeftOutlined, LogoutOutlined } from '@ant-design/icons'
 
 const NAVY = '#0a1626'
-const GRADIENT = 'linear-gradient(135deg,#44d4e3,#4e86ff 55%,#9b5cf6)'
+const GRADIENT = 'linear-gradient(135deg,#5B8DEF,#2563C9 55%,#1B2B4B)'
 
 /** El terminali kabuğu — koyu, büyük dokunmatik, marka başlık. */
 export const MobileShell = ({ title, children, back }: { title: string; children: ReactNode; back?: boolean }) => {

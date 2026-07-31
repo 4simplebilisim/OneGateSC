@@ -212,8 +212,8 @@ export const LabelDesigner = () => {
                   onClick={(e) => e.stopPropagation()}
                   style={{
                     position: 'absolute', left: el.x * PX, top: el.y * PX, width: el.w * PX, height: el.h * PX,
-                    cursor: 'move', outline: selId === el.id ? '2px solid #4e86ff' : '1px dashed rgba(78,134,255,.4)',
-                    outlineOffset: 0, boxSizing: 'border-box', background: selId === el.id ? 'rgba(78,134,255,.06)' : 'transparent',
+                    cursor: 'move', outline: selId === el.id ? '2px solid #2563C9' : '1px dashed rgba(37,99,201,.4)',
+                    outlineOffset: 0, boxSizing: 'border-box', background: selId === el.id ? 'rgba(37,99,201,.06)' : 'transparent',
                   }}
                 >
                   <ElView el={el} sample />

@@ -3,7 +3,7 @@ import { useLogin } from '@refinedev/core'
 import { Alert, Button, Checkbox, Form, Input, Typography, ConfigProvider } from 'antd'
 import { makeTheme } from '../theme'
 
-const GRADIENT = 'linear-gradient(140deg, #44d4e3 0%, #4e86ff 50%, #9b5cf6 100%)'
+const GRADIENT = 'linear-gradient(140deg, #5B8DEF 0%, #2563C9 50%, #1B2B4B 100%)'
 
 const Stat = ({ value, label }: { value: string; label: string }) => (
   <div
@@ -100,13 +100,13 @@ export const Login = () => {
               <Form.Item name="remember" valuePropName="checked" noStyle>
                 <Checkbox>Beni hatırla</Checkbox>
               </Form.Item>
-              <Typography.Link style={{ color: '#4e86ff', fontSize: 14 }}>Şifremi unuttum?</Typography.Link>
+              <Typography.Link style={{ color: '#2563C9', fontSize: 14 }}>Şifremi unuttum?</Typography.Link>
             </div>
             <Button
               type="primary"
               htmlType="submit"
               block
-              style={{ background: GRADIENT, border: 'none', fontWeight: 600, height: 48, fontSize: 15, boxShadow: '0 8px 20px rgba(78,134,255,.32)' }}
+              style={{ background: GRADIENT, border: 'none', fontWeight: 600, height: 48, fontSize: 15, boxShadow: '0 8px 20px rgba(37,99,201,.32)' }}
             >
               Giriş yap
             </Button>
