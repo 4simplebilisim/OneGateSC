@@ -127,7 +127,7 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
     // ── EAN: ürün-birim tam eşleşme ──
     if (type.mode === 'EAN') {
       const p = await resolveProduct(companyId, code)
-      if (!p) { res.error = `Ürün bulunamadı: ${code}`; return res }
+      if (!p) { res.error = `Ürün bulunamadı: ${code} (kural: ${type.code})`; return res }
       res.fields.productId = p.id; res.product = { id: p.id, code: p.code, name: p.name }
       if (p.unitId) { res.fields.unitId = p.unitId; res.unit = await unitById(p.unitId) }
       return res
@@ -138,7 +138,7 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
       const key = type.palletKeyLen ? code.slice(0, type.palletKeyLen) : code
       res.fields.palletNo = key
       const pc = await palletContents(companyId, key)
-      if (!pc) { res.error = `Palet bulunamadı: ${key}`; return res }
+      if (!pc) { res.error = `Palet bulunamadı: ${key} (kural: ${type.code})`; return res }
       res.fields.palletId = pc.palletId
       res.pallet = pc.view
       return res
