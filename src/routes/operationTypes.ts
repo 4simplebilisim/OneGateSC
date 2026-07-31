@@ -21,21 +21,27 @@ const BOOL_FIELDS = [
 ] as const
 const boolShape = Object.fromEntries(BOOL_FIELDS.map((b) => [b, z.boolean().optional()]))
 
+// EDIT'te boş bırakılan opsiyonel FK/enum'lar NULL gelir — .optional() null'ı reddedip 400 verir → .nullish()
+// (FK kolonları nullable: null = bağı temizle; enum kolonları NOT NULL: null'lar handler'da atılır)
 const baseShape = {
   direction: z.enum(directions),
-  documentType: z.enum(docTypes).optional(),
-  controlMode: z.enum(controlModes).optional(),
-  stockRotation: z.enum(rotations).optional(),
-  facilityId: z.number().int().positive().optional(),
-  sequenceId: z.number().int().positive().optional(),
-  operationSequenceId: z.number().int().positive().optional(),
-  groupSequenceId: z.number().int().positive().optional(),
-  operationGroupId: z.number().int().positive().optional(),
-  reverseOperationTypeId: z.number().int().positive().optional(),
-  linkedEntryOperationTypeId: z.number().int().positive().nullable().optional(), // Referans Kontrollü: onayda otomatik doğacak GİRİŞ operasyonu
-  cancelLocationId: z.number().int().positive().optional(),
-  logControlDays: z.number().int().optional(),
+  documentType: z.enum(docTypes).nullish(),
+  controlMode: z.enum(controlModes).nullish(),
+  stockRotation: z.enum(rotations).nullish(),
+  facilityId: z.number().int().positive().nullish(),
+  sequenceId: z.number().int().positive().nullish(),
+  operationSequenceId: z.number().int().positive().nullish(),
+  groupSequenceId: z.number().int().positive().nullish(),
+  operationGroupId: z.number().int().positive().nullish(),
+  reverseOperationTypeId: z.number().int().positive().nullish(),
+  linkedEntryOperationTypeId: z.number().int().positive().nullish(), // Referans Kontrollü: onayda otomatik doğacak GİRİŞ operasyonu
+  cancelLocationId: z.number().int().positive().nullish(),
+  logControlDays: z.number().int().nullish(),
   ...boolShape,
+}
+// Enum kolonları NOT NULL (default'lu) — null geleni gönderme (mevcut/default değer korunur)
+const dropNullEnums = (data: Record<string, unknown>) => {
+  for (const k of ['documentType', 'controlMode', 'stockRotation']) if (data[k] === null) delete data[k]
 }
 
 const createSchema = z.object({
@@ -95,6 +101,7 @@ export async function operationTypeRoutes(app: FastifyInstance) {
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    dropNullEnums(parsed.data as Record<string, unknown>)
     const companyId = getCompanyId(request)
     const revErr = await reverseDirectionError(companyId, parsed.data.direction, parsed.data.reverseOperationTypeId)
     if (revErr) return reply.code(400).send({ error: revErr })
@@ -118,6 +125,7 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     const parsed = updateSchema.safeParse(request.body)
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    dropNullEnums(parsed.data as Record<string, unknown>)
     const companyId = getCompanyId(request)
     const existing = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id, companyId } })
     if (!existing) return reply.code(404).send({ error: 'Operation type not found' })
