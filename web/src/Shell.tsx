@@ -71,8 +71,9 @@ export const Shell = ({ children }: { children: ReactNode }) => {
     headerBg: dark ? NAVY_DARK : '#FFFFFF',
     headerBorder: dark ? 'none' : '1px solid #ECEFF4',
     headerShadow: dark ? '0 2px 12px rgba(10,22,38,.28)' : '0 1px 0 rgba(16,27,46,.04)',
-    siderBg: NAVY, // sol menü HER modda navy — 4Simple kimliği (ön izleme onayı)
-    siderBorder: 'none',
+    // Açık modda beyaz menü (mavi vurgu), koyu modda navy — kullanıcı geri bildirimi
+    siderBg: dark ? NAVY : '#FFFFFF',
+    siderBorder: dark ? 'none' : '1px solid #E8EDF3',
     icon: dark ? '#9fb6d4' : '#64748B',
     brandText: dark ? '#fff' : '#1B2233',
     brandSub: dark ? '#7d96b3' : '#94A3B8',
@@ -123,7 +124,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
               <Menu
                 inlineIndent={12}
-                theme="dark"
+                theme={dark ? 'dark' : 'light'}
                 mode="inline"
                 selectedKeys={[selected]}
                 openKeys={collapsed ? undefined : (openState as string[])}
