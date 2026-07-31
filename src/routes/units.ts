@@ -22,6 +22,27 @@ export async function unitRoutes(app: FastifyInstance) {
     })
   })
 
+  app.get('/:id', async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const row = await prisma.tBLUNIT.findFirst({ where: { id, ...companyListFilter(request) } })
+    if (!row) return reply.code(404).send({ error: 'Birim bulunamadı' })
+    return row
+  })
+
+  app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    try {
+      const res = await prisma.tBLUNIT.deleteMany({ where: { id, ...companyListFilter(request) } })
+      if (res.count === 0) return reply.code(404).send({ error: 'Birim bulunamadı' })
+      return reply.code(204).send()
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2003') return reply.code(409).send({ error: 'Bu birime bağlı kayıt var (ürün birimi vb.) — silmek yerine pasife alın' })
+      throw err
+    }
+  })
+
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const parsed = createSchema.safeParse(request.body)
     if (!parsed.success) {

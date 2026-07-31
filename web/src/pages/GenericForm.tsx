@@ -74,7 +74,7 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
         if (r.data?.companyId) setCompanyId(r.data.companyId)
         // bağımlı ref'leri (ör. Alan) parent değerine (Depo) göre yükle — seçili değer korunsun
         fields.filter((f) => f.type === 'ref' && f.dependsOn).forEach((f) => loadRefOptions(f, r.data?.[f.dependsOn!]))
-      })
+      }).catch(() => message.error('Kayıt yüklenemedi — form boş açıldı (uç eksik ya da kayıt erişilemez)'))
     } else if (mode === 'create' && copyFrom) {
       // Kopyala: kimlik/zaman/kod alanlarını at → kod yeni girilsin. Kaynak satır state ile geldiyse refetch yok
       // (çoğu liste-kaynağında GET /:id yok); gelmemişse (deep-link) GET /:id'e düş.

@@ -18,7 +18,7 @@ import { STATUS_COLOR, STATUS_TR, DIRECTION_TR } from '../statusMeta'
 const DELETE_OK = new Set([
   'reasons', 'location-groups', 'operation-groups', 'label-types', 'product-subgroups',
   'entry-condition-types', 'exit-condition-types', 'routing-types', 'routing-rules',
-  'facilities', 'areas', 'regions', 'partner-groups', 'product-units',
+  'facilities', 'areas', 'regions', 'partner-groups', 'product-units', 'units',
   'statuses', 'pallet-types', 'operation-type-statuses', 'operation-type-locations', 'operation-type-reasons', 'operation-type-pallet-types',
   'location-capacities', 'operation-types', 'barcode-types', 'parameters', 'printers', 'document-statuses',
   'document-status-actions', 'document-status-criteria', 'document-approval-types',
