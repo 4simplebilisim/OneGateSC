@@ -111,21 +111,26 @@ export const Shell = ({ children }: { children: ReactNode }) => {
       </Layout.Header>
 
       <Layout>
-        <Layout.Sider width={240} collapsed={collapsed} collapsedWidth={56} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, overflowY: 'auto', height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
-          {!collapsed && (
-            <div style={{ padding: '10px 10px 4px' }}>
-              <Input size="small" allowClear prefix={<SearchOutlined style={{ color: chrome.searchPrefix }} />} placeholder="Menüde ara…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Layout.Sider width={240} collapsed={collapsed} collapsedWidth={56} trigger={null} style={{ background: chrome.siderBg, borderInlineEnd: chrome.siderBorder, height: 'calc(100vh - 56px)', position: 'sticky', top: 56 }}>
+          {/* Menü kendi İÇ konteynerinde kayar — sticky Sider'da dış overflow güvenilmez (scroll yutuluyordu) */}
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {!collapsed && (
+              <div style={{ padding: '10px 10px 4px', flexShrink: 0 }}>
+                <Input size="small" allowClear prefix={<SearchOutlined style={{ color: chrome.searchPrefix }} />} placeholder="Menüde ara…" value={query} onChange={(e) => setQuery(e.target.value)} />
+              </div>
+            )}
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+              <Menu
+                theme={dark ? 'dark' : 'light'}
+                mode="inline"
+                selectedKeys={[selected]}
+                openKeys={collapsed ? undefined : (openState as string[])}
+                onOpenChange={(k) => setOpenKeys(k as string[])}
+                items={menuItems as never}
+                style={{ background: chrome.siderBg, borderInlineEnd: 'none' }}
+              />
             </div>
-          )}
-          <Menu
-            theme={dark ? 'dark' : 'light'}
-            mode="inline"
-            selectedKeys={[selected]}
-            openKeys={collapsed ? undefined : (openState as string[])}
-            onOpenChange={(k) => setOpenKeys(k as string[])}
-            items={menuItems as never}
-            style={{ background: chrome.siderBg, borderInlineEnd: 'none' }}
-          />
+          </div>
         </Layout.Sider>
         <Layout.Content style={{ background: 'var(--og-page-bg)' }}>{children}</Layout.Content>
       </Layout>
