@@ -70,7 +70,7 @@ async function main() {
 
   const branding = await app.inject({ method: 'GET', url: '/api/branding' })
   check('GET /api/branding -> 200', branding.statusCode === 200, branding.statusCode)
-  check('branding has theme color', branding.json().colors?.themeColor === '#4E86FF', branding.body)
+  check('branding has theme color', branding.json().colors?.themeColor === '#2563C9', branding.body) // 4Simple kurumsal mavi
 
   const staticIcon = await app.inject({ method: 'GET', url: '/OneGate-assets/png/icon-192.png' })
   check('GET /OneGate-assets/png/icon-192.png -> 200', staticIcon.statusCode === 200, staticIcon.statusCode)
