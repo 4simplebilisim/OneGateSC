@@ -86,7 +86,11 @@ export const Shell = ({ children }: { children: ReactNode }) => {
     <Layout style={{ minHeight: '100vh' }}>
       <Layout.Header style={{ background: chrome.headerBg, borderBottom: chrome.headerBorder, display: 'flex', alignItems: 'center', padding: '0 16px', height: 56, lineHeight: '56px', boxShadow: chrome.headerShadow, position: 'sticky', top: 0, zIndex: 20 }}>
         <Button type="text" onClick={toggleCollapsed} style={{ color: chrome.icon, fontSize: 17, marginRight: 6 }} icon={<MenuOutlined />} aria-label="menü" />
-        <img src="/OneGate-assets/onegate-icon.svg" width={30} height={30} alt="OneGate WMS" style={{ borderRadius: 7, marginRight: 10 }} />
+        {/* Amblem tema-duyarlı inline SVG — koyu zeminde navy kareler kaybolmasın diye açık tonlara döner */}
+        <svg width={30} height={30} viewBox="0 0 94 94" role="img" aria-label="OneGate WMS" style={{ marginRight: 10, flexShrink: 0 }}>
+          <g fill={dark ? '#C7D5E9' : '#1B2B4B'}><rect width="42" height="42" rx="6" /><rect x="52" y="52" width="42" height="42" rx="6" /></g>
+          <g fill={dark ? '#5B8DEF' : '#2563C9'}><circle cx="73" cy="21" r="21" /><circle cx="21" cy="73" r="21" /></g>
+        </svg>
         <Typography.Text strong style={{ color: chrome.brandText, fontSize: 19, letterSpacing: 0.3 }}>
           One<span style={{ color: '#2563C9' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
         </Typography.Text>
