@@ -45,13 +45,33 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
 
+  // Firma (tenant): süper-adminde seçilebilir; TEK firma olsa da görünür ama kilitli (kullanıcı kuralı)
+  const [companies, setCompanies] = useState<{ id: number; code: string; name?: string }[]>([])
+  const [companyId, setCompanyIdState] = useState<number | undefined>(Number(localStorage.getItem('og_company')) || undefined)
+  const setCompanyId = (v: number | undefined) => {
+    setCompanyIdState(v)
+    if (v) localStorage.setItem('og_company', String(v))
+    // firma değişti → firma-bağımlı seçimleri ve listeyi sıfırla
+    setOpId(undefined); setFacilityId(undefined); setProductId(undefined); setLocationId(undefined); setStatusId(undefined)
+    setRows([]); setListed(false); setSelected([])
+  }
   useEffect(() => {
-    axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) => setOps(arr(r.data) as Op[]))
-    axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) => setFacilities(arr(r.data) as { id: number; code: string; name?: string }[]))
-    axiosInstance.get('/api/products', { params: { pageSize: 500 } }).then((r) => setProducts((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
-    axiosInstance.get('/api/locations', { params: { pageSize: 500 } }).then((r) => setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
-    axiosInstance.get('/api/statuses', { params: { pageSize: 200 } }).then((r) => setStatuses((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+    axiosInstance.get('/api/companies').then((r) => {
+      const list = arr(r.data) as { id: number; code: string; name?: string }[]
+      setCompanies(list)
+      if (!companyId && list.length) setCompanyIdState(list[0].id)
+    }).catch(() => setCompanies([]))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const p = { companyId }
+    axiosInstance.get('/api/operation-types', { params: { pageSize: 300, ...p } }).then((r) => setOps(arr(r.data) as Op[]))
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300, ...p } }).then((r) => setFacilities(arr(r.data) as { id: number; code: string; name?: string }[]))
+    axiosInstance.get('/api/products', { params: { pageSize: 500, ...p } }).then((r) => setProducts((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+    axiosInstance.get('/api/locations', { params: { pageSize: 500, ...p } }).then((r) => setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
+    axiosInstance.get('/api/statuses', { params: { pageSize: 200, ...p } }).then((r) => setStatuses((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+  }, [companyId])
 
   // Bu yönde 'Toplu İşlem' işaretli operasyonlar (kaynak = op.bulkAction parametresi)
   const bulkOps = useMemo(() => ops.filter((o) => o.bulkAction === true && o.direction === direction), [ops, direction])
@@ -62,12 +82,12 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
     setLoading(true); setSelected([]); setListed(true)
     axiosInstance.get('/api/stock', {
       params: {
-        pageSize: 500, facilityId, productId, locationId, statusId,
+        pageSize: 500, companyId, facilityId, productId, locationId, statusId,
         batchNo: batchNo || undefined, palletNo: palletNo || undefined,
         expiryFrom: expiry?.[0]?.format('YYYY-MM-DD'), expiryTo: expiry?.[1]?.format('YYYY-MM-DD'),
       },
     }).then((r) => setRows(arr(r.data) as StockRow[])).finally(() => setLoading(false))
-  }, [facilityId, productId, locationId, statusId, batchNo, palletNo, expiry])
+  }, [companyId, facilityId, productId, locationId, statusId, batchNo, palletNo, expiry])
 
   const [islemOpen, setIslemOpen] = useState(false)
   const [targetLocId, setTargetLocId] = useState<number>() // Transfer: toplu taşıma hedefi (boş = yerinde statü değişimi)
@@ -101,8 +121,10 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
 
       <Card className="og-toolbar" size="small" style={{ marginBottom: 14 }} styles={{ body: { padding: '12px 14px' } }}>
         <Row gutter={[10, 10]}>
-          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={opId} onChange={setOpId} placeholder="Operasyon Tipi *" allowClear showSearch optionFilterProp="label" options={bulkOpOpts} status={!opId ? 'warning' : undefined} /></Col>
+          {/* StokBar sırası: Firma → Tesis → Operasyon → Ürün → Lokasyon → Statü */}
+          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={companyId} onChange={setCompanyId} placeholder="Firma" showSearch optionFilterProp="label" disabled={companies.length <= 1} options={companies.map((c) => ({ value: c.id, label: `${c.code}${c.name ? ' — ' + c.name : ''}` }))} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={facilityId} onChange={setFacilityId} placeholder="Tesis" allowClear showSearch optionFilterProp="label" options={facilities.map((f) => ({ value: f.id, label: `${f.code}${f.name ? ' — ' + f.name : ''}` }))} /></Col>
+          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={opId} onChange={setOpId} placeholder="Operasyon Tipi *" allowClear showSearch optionFilterProp="label" options={bulkOpOpts} status={!opId ? 'warning' : undefined} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={productId} onChange={setProductId} placeholder="Ürün" allowClear showSearch optionFilterProp="label" options={products} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={locationId} onChange={setLocationId} placeholder="Lokasyon" allowClear showSearch optionFilterProp="label" options={locations} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={statusId} onChange={setStatusId} placeholder="Statü" allowClear showSearch optionFilterProp="label" options={statuses} /></Col>
