@@ -78,7 +78,9 @@ Kaynaklar: `E:\onegate\prisma\schema.prisma` (121 model, camelCase, çok-kiracı
 4. 4Proc reposunda ortak modellerin OneGate tanımlarına geçişi (schema bloğu kopya/introspection; migration YALNIZ OneGate reposundan).
 5. Süreç köprüleri (ayrı faz): PO onayı → referans kontrollü mal kabul; Receipt tamamlanınca receivedQty.
 
-## Açık kararlar (kullanıcı onayı bekliyor)
-- **K1 — Fiziksel DB:** Ortak tablo = tek DB demek. Öneri: Hetzner `onegate_wms` (ikisi de aynı sunucuda; Supabase yalnız veri kaynağı olarak boşaltılır). Alternatif: Supabase'e taşınmak (OneGate'in tüm verisi oraya) — önerilmez, canlı WMS oynatmak gerekir.
-- **K2 — Uzantı deseni:** Öneri: 1:1 profil tabloları (yukarıdaki gibi, şema sahipliği temiz). Alternatif: tüm kolonları tek tabloya eklemek (basit ama cari/ürün kartı 90+ kolona şişer, iki ürün birbirinin migration'ına muhtaç olur).
-- **K3 — Kimlik derinliği:** Kullanıcı+rol+ekran hakkı tamamen ortak mı (tek login, tek yetki matrisi — öneri), yoksa yalnız kullanıcı tablosu ortak, yetkiler ayrı mı?
+## Kararlar (2026-08-01, kullanıcı ONAYLADI)
+- **K1 — Fiziksel DB: Hetzner `onegate_wms`.** 4Proc verisi Supabase'den taşınır; OneGate canlısı oynamaz, `procurement` şeması hazır.
+- **K2 — Uzantı deseni: 1:1 profil tabloları** (`procurement.TBLUSERPROCPROFILE` / `TBLPARTNERPROCPROFILE` / `TBLPRODUCTPROCPROFILE`); çekirdek kartlar temiz, şema sahipliği ayrık.
+- **K3 — Kimlik: TAM ortak.** Tek kullanıcı+rol+ekran hakkı sistemi; 4Proc ekran adları TBLUSERSCREENRIGHT'a kendi isim uzayıyla girer. Tek login, tek yetki matrisi.
+
+**Uygulama durumu:** Adım 1 ✅ (migration `shared_core_finance_masters`: TBLCURRENCY/TBLPAYMENTTERM/TBLINCOTERM + TBLPRODUCT.description + TBLUSER.profilePictureUrl). Adım 2 (profil tabloları) bilinçli olarak veri taşıma fazına ertelendi — içlerindeki Commodity/Department/GLAccount FK hedefleri 4Proc tablolarıyla birlikte gelecek.

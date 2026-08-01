@@ -51,6 +51,9 @@ model TBLCOMPANY {
   regions             TBLREGION[]
   partnerGroups       TBLPARTNERGROUP[]
   locationCapacities  TBLLOCATIONCAPACITY[]
+  currencies          TBLCURRENCY[]
+  paymentTerms        TBLPAYMENTTERM[]
+  incoterms           TBLINCOTERM[]
   barcodeTypes        TBLBARCODETYPE[]
   integrationPackages TBLINTEGRATIONPACKAGE[]
   parameters          TBLPARAMETER[]
@@ -92,6 +95,7 @@ model TBLUSER {
   passwordNeverExpires Boolean   @default(true) // Şifre her zaman geçerli olsun
   mustChangePassword   Boolean   @default(false) // Sonraki oturumda şifre değiştir
   cannotChangePassword Boolean   @default(false) // Şifreyi değiştiremez
+  profilePictureUrl    String?   @db.VarChar(255)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -435,12 +439,65 @@ model TBLUNIT {
   @@schema("wms")
 }
 
+// Ortak çekirdek (OneGate + 4Proc paylaşımlı) finans masterları — migration sahibi yalnız bu repo
+model TBLCURRENCY {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(10)
+  name      String   @db.VarChar(50)
+  symbol    String?  @db.VarChar(10)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLPAYMENTTERM {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String   @db.VarChar(20)
+  name      String   @db.VarChar(100)
+  days      Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+model TBLINCOTERM {
+  id          Int      @id @default(autoincrement())
+  companyId   Int
+  code        String   @db.VarChar(20)
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(255)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company TBLCOMPANY @relation(fields: [companyId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@schema("wms")
+}
+
 model TBLPRODUCT {
   id                Int           @id @default(autoincrement())
   companyId         Int
   code              String        @db.VarChar(40)
   name              String        @db.VarChar(240)
   shortName         String?       @db.VarChar(50)
+  description       String?       @db.VarChar(255)
   productGroupCode  String?       @db.VarChar(20)
   productGroupId    Int?
   productSubGroupId Int?

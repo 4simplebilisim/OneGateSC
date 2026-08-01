@@ -1,0 +1,50 @@
+-- Ortak çekirdek (OneGate + 4Proc) finans masterları: para birimi / ödeme koşulu / teslim şekli
+-- + TBLPRODUCT.description, TBLUSER.profilePictureUrl (4Proc eşleme hizalaması)
+
+CREATE TABLE wms."TBLCURRENCY" (
+  "id" SERIAL PRIMARY KEY,
+  "companyId" INTEGER NOT NULL,
+  "code" VARCHAR(10) NOT NULL,
+  "name" VARCHAR(50) NOT NULL,
+  "symbol" VARCHAR(10),
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "TBLCURRENCY_companyId_fkey" FOREIGN KEY ("companyId")
+    REFERENCES wms."TBLCOMPANY"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "TBLCURRENCY_companyId_code_key" ON wms."TBLCURRENCY"("companyId", "code");
+CREATE INDEX "TBLCURRENCY_companyId_idx" ON wms."TBLCURRENCY"("companyId");
+
+CREATE TABLE wms."TBLPAYMENTTERM" (
+  "id" SERIAL PRIMARY KEY,
+  "companyId" INTEGER NOT NULL,
+  "code" VARCHAR(20) NOT NULL,
+  "name" VARCHAR(100) NOT NULL,
+  "days" INTEGER NOT NULL DEFAULT 0,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "TBLPAYMENTTERM_companyId_fkey" FOREIGN KEY ("companyId")
+    REFERENCES wms."TBLCOMPANY"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "TBLPAYMENTTERM_companyId_code_key" ON wms."TBLPAYMENTTERM"("companyId", "code");
+CREATE INDEX "TBLPAYMENTTERM_companyId_idx" ON wms."TBLPAYMENTTERM"("companyId");
+
+CREATE TABLE wms."TBLINCOTERM" (
+  "id" SERIAL PRIMARY KEY,
+  "companyId" INTEGER NOT NULL,
+  "code" VARCHAR(20) NOT NULL,
+  "name" VARCHAR(100) NOT NULL,
+  "description" VARCHAR(255),
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  CONSTRAINT "TBLINCOTERM_companyId_fkey" FOREIGN KEY ("companyId")
+    REFERENCES wms."TBLCOMPANY"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "TBLINCOTERM_companyId_code_key" ON wms."TBLINCOTERM"("companyId", "code");
+CREATE INDEX "TBLINCOTERM_companyId_idx" ON wms."TBLINCOTERM"("companyId");
+
+ALTER TABLE wms."TBLPRODUCT" ADD COLUMN "description" VARCHAR(255);
+ALTER TABLE wms."TBLUSER" ADD COLUMN "profilePictureUrl" VARCHAR(255);
