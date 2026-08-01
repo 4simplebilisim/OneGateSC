@@ -5,7 +5,7 @@ import { ArrowLeftOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { RESOURCES } from '../resources'
-import { FORM_CONFIG } from '../formConfig'
+
 import { MOBILE_MENU } from '../mobile/mobileMenu'
 
 type Item = { id: number; code?: string; name?: string }
@@ -317,56 +317,6 @@ function CodeSection({ owner, options, mine, noun, placeholder }: {
   )
 }
 
-// ── Kolon yetkisi (ekran × alan × mod) ──
-const COLUMN_RESOURCES = RESOURCES.filter((r) => !r.hidden && FORM_CONFIG[r.name]?.length).map((r) => ({ value: r.name, label: `${r.section} › ${r.label}` }))
-type ColRow = { id: number; column: string; mode: 'READONLY' | 'HIDDEN' }
-
-function ColumnSection({ owner }: { owner: Owner }) {
-  const { message } = App.useApp()
-  const ownerKey = JSON.stringify(owner)
-  const [resource, setResource] = useState<string>()
-  const [rows, setRows] = useState<ColRow[]>([])
-  const [busy, setBusy] = useState(false)
-
-  const load = useCallback((res: string) => {
-    axiosInstance.get('/api/column-authorizations', { params: { ...owner, resource: res } })
-      .then((r) => setRows((Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as ColRow[]))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerKey])
-
-  const pick = (res: string) => { setResource(res); load(res) }
-  const modeOf = (col: string): 'VISIBLE' | 'READONLY' | 'HIDDEN' => rows.find((r) => r.column === col)?.mode ?? 'VISIBLE'
-
-  const setMode = async (col: string, mode: 'VISIBLE' | 'READONLY' | 'HIDDEN') => {
-    if (!resource) return
-    setBusy(true)
-    try {
-      const existing = rows.find((r) => r.column === col)
-      if (mode === 'VISIBLE') { if (existing) await axiosInstance.delete(`/api/column-authorizations/${existing.id}`) }
-      else await axiosInstance.post('/api/column-authorizations', { ...owner, resource, column: col, mode })
-      load(resource)
-    } catch (e) {
-      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Güncellenemedi')
-    } finally { setBusy(false) }
-  }
-
-  const fields = resource ? (FORM_CONFIG[resource] ?? []) : []
-  return (
-    <>
-      <Select placeholder="Ekran seçin — alanlarını ayarlayın" style={{ width: '100%', marginBottom: 12 }}
-        value={resource} onChange={pick} showSearch optionFilterProp="label" options={COLUMN_RESOURCES} />
-      {resource && fields.map((f) => (
-        <div key={f.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '5px 0', borderBottom: '1px dotted var(--og-border-soft)' }}>
-          <span style={{ fontSize: 13 }}>{f.label}</span>
-          <Radio.Group size="small" optionType="button" buttonStyle="solid" disabled={busy}
-            value={modeOf(f.name)} onChange={(e) => setMode(f.name, e.target.value)}
-            options={[{ label: 'Görünür', value: 'VISIBLE' }, { label: 'Salt-okunur', value: 'READONLY' }, { label: 'Gizli', value: 'HIDDEN' }]} />
-        </div>
-      ))}
-      {resource && fields.length === 0 && <div style={{ color: 'var(--og-muted)' }}>Bu ekranın tanımlı alanı yok.</div>}
-    </>
-  )
-}
 
 export const UserAuthorizations = ({ subject = 'user', ownerId, embedded, defaultTab }: { subject?: 'user' | 'group'; ownerId?: number; embedded?: boolean; defaultTab?: string }) => {
   const params = useParams()
@@ -413,7 +363,7 @@ export const UserAuthorizations = ({ subject = 'user', ownerId, embedded, defaul
   const tabs = [
     { key: 'yetki', label: 'Yetki', children: <Tabs items={yetkiTabs} /> },
     { key: 'hak', label: 'Hak', children: <Tabs items={hakTabs} /> },
-    { key: 'columns', label: 'Kolonlar', children: <ColumnSection owner={ownerRef} /> },
+
   ]
 
   const body = (
@@ -421,7 +371,7 @@ export const UserAuthorizations = ({ subject = 'user', ownerId, embedded, defaul
       {!embedded && (
         <PageHeader
           title={`${isGroup ? 'Grup Yetkileri' : 'Yetkiler'} — ${title}`}
-          subtitle="Yetki (ne yapabilir: firma/tesis/depo/operasyon) · Hak (hangi ekranları görür: backoffice + el terminali) · Kolonlar"
+          subtitle="Yetki (ne yapabilir: firma/tesis/depo/operasyon) · Hak (hangi ekranları görür: backoffice + el terminali)"
           extra={<Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backTo)}>Liste</Button>}
         />
       )}
