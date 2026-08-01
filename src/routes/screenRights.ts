@@ -48,6 +48,44 @@ export async function screenRightRoutes(app: FastifyInstance) {
     const row = await prisma.tBLUSERSCREENRIGHT.create({ data: { companyId, userId, groupId, resource, canView, canAdd, canEdit, canDelete } })
     return reply.code(201).send(row)
   })
+
+  // Toplu kaydet (StokBar tarzı matris): tüm satırlar tek istekte — allTrue satırın kaydı silinir (kısıt yok)
+  const bulkSchema = z.object({
+    userId: z.number().int().positive().optional(),
+    groupId: z.number().int().positive().optional(),
+    rows: z.array(z.object({
+      resource: z.string().min(1).max(60),
+      canView: z.boolean(), canAdd: z.boolean(), canEdit: z.boolean(), canDelete: z.boolean(),
+    })).min(1).max(500),
+  }).refine((d) => (d.userId ? 1 : 0) + (d.groupId ? 1 : 0) === 1, { message: 'userId VEYA groupId (tam biri) gerekli' })
+  app.put('/bulk', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {
+    const parsed = bulkSchema.safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    const companyId = getCompanyId(request)
+    const { userId, groupId, rows } = parsed.data
+    if (userId) {
+      if (!(await prisma.tBLUSER.findFirst({ where: { id: userId, companyId } }))) return reply.code(400).send({ error: 'Geçersiz kullanıcı' })
+    } else if (!(await prisma.tBLUSERGROUP.findFirst({ where: { id: groupId, companyId } }))) return reply.code(400).send({ error: 'Geçersiz grup' })
+    const existing = await prisma.tBLUSERSCREENRIGHT.findMany({ where: { companyId, userId: userId ?? null, groupId: groupId ?? null } })
+    const byRes = new Map(existing.map((e) => [e.resource, e]))
+    let updated = 0, cleared = 0
+    await prisma.$transaction(async (tx) => {
+      for (const r of rows) {
+        const cur = byRes.get(r.resource)
+        const allTrue = r.canView && r.canAdd && r.canEdit && r.canDelete
+        if (allTrue) {
+          if (cur) { await tx.tBLUSERSCREENRIGHT.delete({ where: { id: cur.id } }); cleared++ }
+        } else if (cur) {
+          await tx.tBLUSERSCREENRIGHT.update({ where: { id: cur.id }, data: { canView: r.canView, canAdd: r.canAdd, canEdit: r.canEdit, canDelete: r.canDelete } })
+          updated++
+        } else {
+          await tx.tBLUSERSCREENRIGHT.create({ data: { companyId, userId, groupId, resource: r.resource, canView: r.canView, canAdd: r.canAdd, canEdit: r.canEdit, canDelete: r.canDelete } })
+          updated++
+        }
+      }
+    })
+    return { updated, cleared }
+  })
 }
 
 type Rights = { view: boolean; add: boolean; edit: boolean; delete: boolean }

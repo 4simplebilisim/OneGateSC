@@ -133,10 +133,13 @@ const ACTIONS: { key: keyof SR; label: string }[] = [
   { key: 'canView', label: 'İzle' }, { key: 'canAdd', label: 'Yeni' }, { key: 'canEdit', label: 'Düzenle' }, { key: 'canDelete', label: 'Sil' },
 ]
 
+// StokBar "Kullanıcı Hakları" deseni: TÜM ekranlar bölüm başlıklarıyla tek matriste — satır/bölüm/kolon
+// toplu işaretleme + tek Kaydet (PUT /bulk). Değişiklikler taslakta birikir; Kaydet'e kadar yazılmaz.
 function RightsSection({ owner }: { owner: Owner }) {
   const { message } = App.useApp()
   const ownerKey = JSON.stringify(owner)
   const [map, setMap] = useState<Record<string, SR>>({})
+  const [draft, setDraft] = useState<Record<string, SR>>({})
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -144,42 +147,90 @@ function RightsSection({ owner }: { owner: Owner }) {
     axiosInstance.get('/api/screen-rights', { params: owner }).then((r) => {
       const rows = (Array.isArray(r.data) ? r.data : (r.data.data ?? [])) as ({ resource: string } & SR)[]
       setMap(Object.fromEntries(rows.map((x) => [x.resource, { canView: x.canView, canAdd: x.canAdd, canEdit: x.canEdit, canDelete: x.canDelete }])))
+      setDraft({})
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerKey])
   useEffect(load, [load])
 
-  const rightsOf = (res: string): SR => map[res] ?? FULL
-  const toggle = async (res: string, key: keyof SR, val: boolean) => {
-    const next = { ...rightsOf(res), [key]: val }
-    setMap((m) => ({ ...m, [res]: next }))
+  const eff = (res: string): SR => draft[res] ?? map[res] ?? FULL
+  const allOf = (sr: SR) => sr.canView && sr.canAdd && sr.canEdit && sr.canDelete
+  const setCells = (resList: string[], key: keyof SR | 'ALL', val: boolean) =>
+    setDraft((d) => {
+      const c = { ...d }
+      for (const res of resList) {
+        const cur = c[res] ?? map[res] ?? FULL
+        c[res] = key === 'ALL' ? { canView: val, canAdd: val, canEdit: val, canDelete: val } : { ...cur, [key]: val }
+      }
+      return c
+    })
+
+  const ql = q.trim().toLocaleLowerCase('tr')
+  const list = RIGHT_RESOURCES.filter((r) => !ql || `${r.section} ${r.group ?? ''} ${r.label}`.toLocaleLowerCase('tr').includes(ql))
+  const sections = [...new Set(list.map((r) => r.section))]
+  const dirty = Object.keys(draft).filter((res) => JSON.stringify(draft[res]) !== JSON.stringify(map[res] ?? FULL)).length
+
+  const save = async () => {
+    const rows = Object.entries(draft).map(([resource, sr]) => ({ resource, ...sr }))
+    if (!rows.length) return
     setBusy(true)
     try {
-      await axiosInstance.post('/api/screen-rights', { ...owner, resource: res, ...next })
-      if (next.canView && next.canAdd && next.canEdit && next.canDelete) setMap((m) => { const c = { ...m }; delete c[res]; return c })
+      const r = await axiosInstance.put('/api/screen-rights/bulk', { ...owner, rows })
+      message.success(`Kaydedildi — ${r.data.updated} kısıt, ${r.data.cleared} serbest bırakma`)
+      load()
     } catch (e) {
-      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Güncellenemedi'); load()
+      message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Kaydedilemedi')
     } finally { setBusy(false) }
   }
 
-  const ql = q.trim().toLocaleLowerCase('tr')
-  const list = RIGHT_RESOURCES.filter((r) => !ql || `${r.section} ${r.label}`.toLocaleLowerCase('tr').includes(ql))
+  const colState = (key: keyof SR) => {
+    const vals = list.map((r) => eff(r.name)[key])
+    return { all: vals.every(Boolean), none: vals.every((v) => !v) }
+  }
+  const secState = (sec: string) => {
+    const vals = list.filter((r) => r.section === sec).map((r) => allOf(eff(r.name)))
+    return { all: vals.every(Boolean), none: vals.every((v) => !v) }
+  }
+
   return (
     <>
-      <Input allowClear placeholder="Ekran ara…" onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 10 }} />
-      <div style={{ display: 'flex', padding: '2px 0', borderBottom: '1px solid var(--og-border-soft)', fontSize: 11, color: 'var(--og-muted)' }}>
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+        <Input allowClear placeholder="Ekran ara…" onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 260 }} />
         <span style={{ flex: 1 }} />
-        {ACTIONS.map((a) => <span key={a.key} style={{ width: 58, textAlign: 'center' }}>{a.label}</span>)}
+        {dirty > 0 && <Tag color="orange">{dirty} kaydedilmemiş değişiklik</Tag>}
+        <Button size="small" disabled={!dirty || busy} onClick={() => setDraft({})}>Vazgeç</Button>
+        <Button size="small" type="primary" loading={busy} disabled={!dirty} onClick={save}>Kaydet</Button>
       </div>
-      <div style={{ maxHeight: 360, overflowY: 'auto' }}>
-        {list.map((r) => { const sr = rightsOf(r.name); return (
-          <div key={r.name} style={{ display: 'flex', alignItems: 'center', padding: '3px 0', borderBottom: '1px dotted var(--og-border-soft)' }}>
-            <span style={{ flex: 1, fontSize: 12.5 }}>{r.section} › {r.label}</span>
-            {ACTIONS.map((a) => (
-              <span key={a.key} style={{ width: 58, textAlign: 'center' }}>
-                <Checkbox checked={sr[a.key]} disabled={busy} onChange={(e) => toggle(r.name, a.key, e.target.checked)} />
-              </span>
-            ))}
+      <div style={{ maxHeight: 'max(420px, calc(100vh - 430px))', overflowY: 'auto', border: '1px solid var(--og-border-soft)', borderRadius: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', position: 'sticky', top: 0, zIndex: 2, background: 'var(--og-table-head)', borderBottom: '1px solid var(--og-border-soft)', fontSize: 11.5, fontWeight: 600 }}>
+          <span style={{ width: 40, textAlign: 'center' }}>Tümü</span>
+          <span style={{ flex: 1 }}>Ekran</span>
+          {ACTIONS.map((a) => { const st = colState(a.key); return (
+            <span key={a.key} style={{ width: 62, textAlign: 'center' }}>
+              <Checkbox checked={st.all} indeterminate={!st.all && !st.none} onChange={(e) => setCells(list.map((r) => r.name), a.key, e.target.checked)} /> {a.label}
+            </span>
+          )})}
+        </div>
+        {sections.map((sec) => { const st = secState(sec); return (
+          <div key={sec}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--og-sunken)', borderBottom: '1px solid var(--og-border-soft)', fontWeight: 700, fontSize: 12 }}>
+              <Checkbox checked={st.all} indeterminate={!st.all && !st.none}
+                onChange={(e) => setCells(list.filter((r) => r.section === sec).map((r) => r.name), 'ALL', e.target.checked)} />
+              {sec}
+            </div>
+            {list.filter((r) => r.section === sec).map((r) => { const sr = eff(r.name); const changed = draft[r.name] && JSON.stringify(draft[r.name]) !== JSON.stringify(map[r.name] ?? FULL); return (
+              <div key={r.name} style={{ display: 'flex', alignItems: 'center', padding: '3px 10px', borderBottom: '1px dotted var(--og-border-soft)', background: changed ? 'rgba(37,99,201,.05)' : undefined }}>
+                <span style={{ width: 40, textAlign: 'center' }}>
+                  <Checkbox checked={allOf(sr)} indeterminate={!allOf(sr) && (sr.canView || sr.canAdd || sr.canEdit || sr.canDelete)} onChange={(e) => setCells([r.name], 'ALL', e.target.checked)} />
+                </span>
+                <span style={{ flex: 1, fontSize: 12.5 }}>{r.group ? <span style={{ color: 'var(--og-muted)' }}>{r.group} › </span> : null}{r.label}</span>
+                {ACTIONS.map((a) => (
+                  <span key={a.key} style={{ width: 62, textAlign: 'center' }}>
+                    <Checkbox checked={sr[a.key]} onChange={(e) => setCells([r.name], a.key, e.target.checked)} />
+                  </span>
+                ))}
+              </div>
+            )})}
           </div>
         )})}
       </div>
@@ -226,11 +277,31 @@ function CodeSection({ owner, options, mine, noun, placeholder }: {
     } finally { setBusy(false) }
   }
 
+  // StokBar "El Terminali Uyarlama" deseni: tüm menüler checkbox listesi — kayıt yoksa TÜMÜ serbest
+  const unrestricted = selected.length === 0
+  const toggleOne = (code: string, on: boolean) => {
+    // Kısıtsız durumda ilk KALDIRMA = diğer hepsini kayıtla, bunu dışarıda bırak
+    if (unrestricted && !on) return onChange(options.map((o) => o.value).filter((c) => c !== code))
+    onChange(on ? [...selected, code] : selected.filter((c) => c !== code))
+  }
   return (
     <>
-      <div style={{ marginBottom: 8, textAlign: 'right' }}><StatusTag n={selected.length} noun={noun} /></div>
-      <Select mode="multiple" style={{ width: '100%' }} loading={busy} value={selected} onChange={onChange}
-        placeholder={placeholder} optionFilterProp="label" showSearch options={options} />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        {unrestricted
+          ? <Tag color="green">Kısıt yok — tüm {noun}ler erişilebilir</Tag>
+          : <Tag color="blue">{selected.length} {noun} seçili (yalnız bunlar erişilebilir)</Tag>}
+        <span style={{ flex: 1 }} />
+        <Button size="small" disabled={busy || unrestricted} onClick={() => onChange([])}>Tüm kısıtları kaldır</Button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '4px 16px', border: '1px solid var(--og-border-soft)', borderRadius: 10, padding: 12 }}>
+        {options.map((o) => (
+          <Checkbox key={o.value} disabled={busy} checked={unrestricted || selected.includes(o.value)}
+            onChange={(e) => toggleOne(o.value, e.target.checked)}>
+            <span style={{ fontSize: 12.5 }}>{o.label}</span>
+          </Checkbox>
+        ))}
+        {!options.length && <span style={{ color: 'var(--og-muted)', fontSize: 12.5 }}>{placeholder}</span>}
+      </div>
     </>
   )
 }
