@@ -1,6 +1,38 @@
 // 4Proc uyumluluk katmanı: procurement şemasında TBL4S_* VIEW'ları + INSTEAD OF trigger'ları üretir.
 // 4proc kodu eski tablo/kolon adlarını kullanmaya devam eder; veri fiziksel olarak wms'te yaşar.
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, readFileSync } from 'node:fs'
+
+// ── 4proc şemasından zorunluluk haritası: view kolonu NULL dönerse Prisma patlar.
+// Nullable OLMAYAN her alan için tip-uygun bir güvence (COALESCE) uygulanır.
+const P4_SCHEMA = readFileSync('E:/4proc/4proc-next/prisma/schema.prisma', 'utf8')
+const P4_MODELS = [...P4_SCHEMA.matchAll(/^model\s+(\w+)\s+\{([\s\S]*?)^\}/gm)]
+const P4_NAMES = new Set(P4_MODELS.map((m) => m[1]))
+const REQUIRED = {} // tablo -> { kolon: 'Int'|'Boolean'|... }
+for (const [, mname, body] of P4_MODELS) {
+  const table = (body.match(/@@map\("([^"]+)"\)/) ?? [, mname])[1]
+  const req = {}
+  for (const raw of body.split('\n')) {
+    const t = raw.trim()
+    if (!t || t.startsWith('//') || t.startsWith('@@')) continue
+    const m = t.match(/^(\w+)\s+(\w+)(\[\])?(\?)?/)
+    if (!m || P4_NAMES.has(m[2]) || m[3] || m[4]) continue // ilişki / liste / nullable → atla
+    const col = (t.match(/@map\("([^"]+)"\)/) ?? [, m[1]])[1]
+    const def = t.match(/@default\(([^)]*)\)/)
+    req[col] = { type: m[2], def: def ? def[1] : null }
+  }
+  REQUIRED[table] = req
+}
+const ZERO = { Int: '0', BigInt: '0', Float: '0', Decimal: '0', Boolean: 'false', String: `''`, DateTime: 'now()' }
+// Zorunlu alan için güvence ifadesi: modelin kendi varsayılanı varsa onu, yoksa tip-sıfırını kullan
+const guard = (table, col, expr) => {
+  const r = REQUIRED[table]?.[col]
+  if (!r || r.col === 'Id') return expr
+  let fb = ZERO[r.type]
+  if (r.def && !/autoincrement|uuid|cuid|now/.test(r.def)) fb = r.type === 'String' ? `'${r.def.replace(/^"|"$/g, '')}'` : r.def
+  if (r.def && /now/.test(r.def)) fb = 'now()'
+  if (fb === undefined) return expr
+  return `COALESCE(${expr}, ${fb})`
+}
 
 const OUT = 'C:/Users/a_tek/AppData/Local/Temp/claude/E--onegate/5f429b0b-6f07-46b9-9365-cc5411b247a7/scratchpad/compat-views.sql'
 const C = 'procurement.p4_company()'
@@ -9,8 +41,8 @@ const C = 'procurement.p4_company()'
 // p(viewCol, profileCol)         — profil tablosu kolonu (okuma+yazma)
 // ro(viewCol, expr)              — salt okunur ifade (b/p takma adlarıyla)
 // w(viewCol, expr, baseCol, wexpr) — okuma ifadesi + özel yazma hedefi
-const c = (v, b) => ({ v, b })
-const p = (v, pc) => ({ v, p: pc })
+const c = (v, b, fb) => ({ v, b, fb })
+const p = (v, pc, fb) => ({ v, p: pc, fb })
 const ro = (v, expr) => ({ v, expr, ro: true })
 const w = (v, expr, base, wexpr) => ({ v, expr, base, wexpr })
 
@@ -84,9 +116,10 @@ const SPECS = [
     profile: { table: 'procurement."TBLPARTNERPROCPROFILE"', fk: 'partnerId' },
     cols: [
       c('Id', 'id'), c('Code', 'code'), c('Name', 'name'), p('Heading', 'heading'),
-      c('SupplierTypeId', 'partnerGroupId'), p('SupplierGroupId', 'supplierGroupId'),
+      c('SupplierTypeId', 'partnerGroupId', 'procurement.p4_def_partnergroup()'), p('SupplierGroupId', 'supplierGroupId'),
       p('EntCode', 'entCode'), p('CompanyCode', 'companyCode'),
-      p('CurrencyId', 'currencyId'), p('PaymentTermId', 'paymentTermId'), p('LeadTimeDays', 'leadTimeDays'),
+      p('CurrencyId', 'currencyId', 'procurement.p4_def_currency()'),
+      p('PaymentTermId', 'paymentTermId', 'procurement.p4_def_paymentterm()'), p('LeadTimeDays', 'leadTimeDays'),
       p('AdvancePaymentPercent', 'advancePaymentPercent'), p('AdvancePaymentNote', 'advancePaymentNote'),
       c('TaxNo', 'taxNumber'), c('TaxOffice', 'taxOffice'),
       p('AccountHolder', 'accountHolder'), p('AccountNumber', 'accountNumber'), p('BankName', 'bankName'),
@@ -116,10 +149,11 @@ const SPECS = [
       c('Id', 'id'), c('Code', 'code'), p('Heading', 'heading'),
       w('Name', 'b.name', 'name', `COALESCE(NULLIF(NEW."Name", ''), NULLIF(NEW."Heading", ''), NEW."Code")`),
       c('Description', 'description'),
-      p('ProcurementTypeId', 'procurementTypeId'), c('MaterialTypeId', 'productTypeId'),
-      c('MaterialGroupId', 'productGroupId'), p('CategoryId', 'categoryId'),
+      p('ProcurementTypeId', 'procurementTypeId', 'procurement.p4_def_proctype()'),
+      c('MaterialTypeId', 'productTypeId', 'procurement.p4_def_producttype()'),
+      c('MaterialGroupId', 'productGroupId', 'procurement.p4_def_productgroup()'), p('CategoryId', 'categoryId'),
       p('CommodityFamilyId', 'commodityFamilyId'), p('CommodityClassId', 'commodityClassId'),
-      p('CommodityId', 'commodityId'), c('UnitId', 'unitId'),
+      p('CommodityId', 'commodityId'), c('UnitId', 'unitId', 'procurement.p4_def_unit()'),
       p('MinOrderQuantity', 'minOrderQuantity'), p('OrderIncrement', 'orderIncrement'), p('LeadTime', 'leadTime'),
       p('EntCode', 'entCode'), p('SupplierPartNo', 'supplierPartNo'), p('UNSPSCCode', 'unspscCode'),
       p('ManufacturerName', 'manufacturerName'), p('ManufacturerPartNo', 'manufacturerPartNo'),
@@ -137,14 +171,41 @@ SET search_path = procurement, wms, public;
 CREATE OR REPLACE FUNCTION procurement.p4_company() RETURNS int LANGUAGE sql STABLE AS $fn$
   SELECT id FROM wms."TBLCOMPANY" WHERE code = 'ONEGATE' LIMIT 1;
 $fn$;
+
+-- Varsayılan yedekler: 4Proc bu alanları ZORUNLU ister, OneGate kayıtlarında boş olabilir.
+CREATE OR REPLACE FUNCTION procurement.p4_def_currency() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLCURRENCY" WHERE "companyId" = procurement.p4_company()
+  ORDER BY (code = 'TRY') DESC, id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_paymentterm() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPAYMENTTERM" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_partnergroup() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPARTNERGROUP" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_producttype() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPRODUCTTYPE" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_productgroup() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPRODUCTGROUP" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_unit() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLUNIT" WHERE "companyId" = procurement.p4_company()
+  ORDER BY (lower(code) IN ('adet','ad','pcs')) DESC, id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_proctype() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT "Id" FROM procurement."TBL4S_ProcurementTypes" ORDER BY "Id" LIMIT 1;
+$fn$;
 `)
 
 for (const s of SPECS) {
   const hasProfile = !!s.profile
   const sel = s.cols.map((col) => {
-    if (col.expr) return `  ${col.expr} AS ${q(col.v)}`
-    if (col.p) return `  p.${q(col.p)} AS ${q(col.v)}`
-    return `  b.${q(col.b)} AS ${q(col.v)}`
+    // fb: elle verilen yedek (FK varsayılanları) — yoksa 4proc zorunluluğuna göre otomatik güvence
+    const raw = col.expr ? col.expr : col.p ? `p.${q(col.p)}` : `b.${q(col.b)}`
+    if (col.v === 'Id') return `  ${raw} AS ${q(col.v)}`
+    const e = col.fb ? `COALESCE(${raw}, ${col.fb})` : guard(s.view, col.v, raw)
+    return `  ${e} AS ${q(col.v)}`
   })
   const where = [s.tenant ? `b."companyId" = ${C}` : null, s.tenantPk ? `b.id = ${C}` : null, s.baseFilter ?? null].filter(Boolean)
   lines.push(`

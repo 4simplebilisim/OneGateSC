@@ -6,15 +6,40 @@ CREATE OR REPLACE FUNCTION procurement.p4_company() RETURNS int LANGUAGE sql STA
   SELECT id FROM wms."TBLCOMPANY" WHERE code = 'ONEGATE' LIMIT 1;
 $fn$;
 
+-- Varsayılan yedekler: 4Proc bu alanları ZORUNLU ister, OneGate kayıtlarında boş olabilir.
+CREATE OR REPLACE FUNCTION procurement.p4_def_currency() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLCURRENCY" WHERE "companyId" = procurement.p4_company()
+  ORDER BY (code = 'TRY') DESC, id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_paymentterm() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPAYMENTTERM" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_partnergroup() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPARTNERGROUP" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_producttype() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPRODUCTTYPE" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_productgroup() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLPRODUCTGROUP" WHERE "companyId" = procurement.p4_company() ORDER BY id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_unit() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT id FROM wms."TBLUNIT" WHERE "companyId" = procurement.p4_company()
+  ORDER BY (lower(code) IN ('adet','ad','pcs')) DESC, id LIMIT 1;
+$fn$;
+CREATE OR REPLACE FUNCTION procurement.p4_def_proctype() RETURNS int LANGUAGE sql STABLE AS $fn$
+  SELECT "Id" FROM procurement."TBL4S_ProcurementTypes" ORDER BY "Id" LIMIT 1;
+$fn$;
+
 
 -- ═══ TBL4S_Companies ← wms."TBLCOMPANY"
 DROP VIEW IF EXISTS procurement."TBL4S_Companies" CASCADE;
 CREATE VIEW procurement."TBL4S_Companies" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLCOMPANY" b
 WHERE b.id = procurement.p4_company();
 
@@ -46,10 +71,10 @@ DROP VIEW IF EXISTS procurement."TBL4S_Organizations" CASCADE;
 CREATE VIEW procurement."TBL4S_Organizations" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."companyId" AS "CompanyId",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."companyId", 0) AS "CompanyId",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLFACILITY" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -81,8 +106,8 @@ DROP VIEW IF EXISTS procurement."TBL4S_Roles" CASCADE;
 CREATE VIEW procurement."TBL4S_Roles" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name"
 FROM wms."TBLROLE" b;
 
 CREATE OR REPLACE FUNCTION procurement.p4_w_roles() RETURNS trigger LANGUAGE plpgsql AS $fn$
@@ -113,9 +138,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_Units" CASCADE;
 CREATE VIEW procurement."TBL4S_Units" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLUNIT" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -147,10 +172,10 @@ DROP VIEW IF EXISTS procurement."TBL4S_Currencies" CASCADE;
 CREATE VIEW procurement."TBL4S_Currencies" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
   b."symbol" AS "Symbol",
-  b."isActive" AS "IsActive"
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLCURRENCY" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -182,10 +207,10 @@ DROP VIEW IF EXISTS procurement."TBL4S_PaymentTerms" CASCADE;
 CREATE VIEW procurement."TBL4S_PaymentTerms" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."days" AS "DaysNet",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."days", 0) AS "DaysNet",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLPAYMENTTERM" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -217,10 +242,10 @@ DROP VIEW IF EXISTS procurement."TBL4S_Incoterms" CASCADE;
 CREATE VIEW procurement."TBL4S_Incoterms" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
   b."description" AS "Description",
-  b."isActive" AS "IsActive"
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLINCOTERM" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -252,9 +277,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_SupplierTypes" CASCADE;
 CREATE VIEW procurement."TBL4S_SupplierTypes" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLPARTNERGROUP" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -286,9 +311,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_MaterialTypes" CASCADE;
 CREATE VIEW procurement."TBL4S_MaterialTypes" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLPRODUCTTYPE" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -320,9 +345,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_MaterialGroups" CASCADE;
 CREATE VIEW procurement."TBL4S_MaterialGroups" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLPRODUCTGROUP" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -354,9 +379,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_WareHouses" CASCADE;
 CREATE VIEW procurement."TBL4S_WareHouses" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLWAREHOUSE" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -388,9 +413,9 @@ DROP VIEW IF EXISTS procurement."TBL4S_GRLocations" CASCADE;
 CREATE VIEW procurement."TBL4S_GRLocations" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  COALESCE(b.name, b.code) AS "Name",
-  b."isActive" AS "IsActive"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(COALESCE(b.name, b.code), '') AS "Name",
+  COALESCE(b."isActive", true) AS "IsActive"
 FROM wms."TBLLOCATION" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -422,11 +447,11 @@ DROP VIEW IF EXISTS procurement."TBL4S_NumberSequences" CASCADE;
 CREATE VIEW procurement."TBL4S_NumberSequences" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  COALESCE(b.prefix, '') AS "Prefix",
-  b."currentValue" AS "CurrentNumber",
-  b."padLength" AS "PaddingLength",
-  b."createdAt" AS "CreatedDate"
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(COALESCE(b.prefix, ''), '') AS "Prefix",
+  COALESCE(b."currentValue", 0) AS "CurrentNumber",
+  COALESCE(b."padLength", 6) AS "PaddingLength",
+  COALESCE(b."createdAt", now()) AS "CreatedDate"
 FROM wms."TBLSEQUENCE" b
 WHERE b."companyId" = procurement.p4_company();
 
@@ -458,7 +483,7 @@ DROP VIEW IF EXISTS procurement."TBL4S_Users" CASCADE;
 CREATE VIEW procurement."TBL4S_Users" AS
 SELECT
   b."id" AS "Id",
-  b."username" AS "Code",
+  COALESCE(b."username", '') AS "Code",
   b.email AS "Email",
   b."passwordHash" AS "PasswordHash",
   NULL::text AS "Password",
@@ -471,18 +496,18 @@ SELECT
   p."jobLocation" AS "JobLocation",
   p."gender" AS "Gender",
   p."lineManagerId" AS "LineManagerId",
-  p."isManager" AS "IsManager",
-  p."isBackup" AS "IsBackup",
-  p."approvalLimit" AS "ApprovalLimit",
-  p."isApprover" AS "IsApprover",
-  b."isSuperAdmin" AS "IsAdmin",
-  p."workLevel" AS "WorkLevel",
-  b."isActive" AS "IsActive",
-  p."hasCompletedOnboarding" AS "HasCompletedOnboarding",
+  COALESCE(p."isManager", false) AS "IsManager",
+  COALESCE(p."isBackup", false) AS "IsBackup",
+  COALESCE(p."approvalLimit", 0) AS "ApprovalLimit",
+  COALESCE(p."isApprover", false) AS "IsApprover",
+  COALESCE(b."isSuperAdmin", false) AS "IsAdmin",
+  COALESCE(p."workLevel", 1) AS "WorkLevel",
+  COALESCE(b."isActive", true) AS "IsActive",
+  COALESCE(p."hasCompletedOnboarding", false) AS "HasCompletedOnboarding",
   b."profilePictureUrl" AS "ProfilePictureUrl",
   p."defaultBackupId" AS "DefaultBackupId",
   p."createdById" AS "CreatedBy",
-  b."createdAt" AS "CreatedDate",
+  COALESCE(b."createdAt", now()) AS "CreatedDate",
   p."updatedById" AS "UpdatedBy",
   b."updatedAt" AS "UpdatedDate"
 FROM wms."TBLUSER" b
@@ -521,17 +546,17 @@ DROP VIEW IF EXISTS procurement."TBL4S_Suppliers" CASCADE;
 CREATE VIEW procurement."TBL4S_Suppliers" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
-  b."name" AS "Name",
+  COALESCE(b."code", '') AS "Code",
+  COALESCE(b."name", '') AS "Name",
   p."heading" AS "Heading",
-  b."partnerGroupId" AS "SupplierTypeId",
+  COALESCE(b."partnerGroupId", procurement.p4_def_partnergroup()) AS "SupplierTypeId",
   p."supplierGroupId" AS "SupplierGroupId",
   p."entCode" AS "EntCode",
   p."companyCode" AS "CompanyCode",
-  p."currencyId" AS "CurrencyId",
-  p."paymentTermId" AS "PaymentTermId",
-  p."leadTimeDays" AS "LeadTimeDays",
-  p."advancePaymentPercent" AS "AdvancePaymentPercent",
+  COALESCE(p."currencyId", procurement.p4_def_currency()) AS "CurrencyId",
+  COALESCE(p."paymentTermId", procurement.p4_def_paymentterm()) AS "PaymentTermId",
+  COALESCE(p."leadTimeDays", 0) AS "LeadTimeDays",
+  COALESCE(p."advancePaymentPercent", 0) AS "AdvancePaymentPercent",
   p."advancePaymentNote" AS "AdvancePaymentNote",
   b."taxNumber" AS "TaxNo",
   b."taxOffice" AS "TaxOffice",
@@ -548,12 +573,12 @@ SELECT
   p."branchCode" AS "BranchCode",
   b."postalCode" AS "PostalCode",
   p."iban" AS "IBAN",
-  p."isInternational" AS "IsInternational",
+  COALESCE(p."isInternational", false) AS "IsInternational",
   p."swiftCode" AS "SwiftCode",
   p."bankAddress" AS "BankAddress",
   p."correspondentBank" AS "CorrespondentBank",
   p."vatId" AS "VatId",
-  p."riskFlag" AS "RiskFlag",
+  COALESCE(p."riskFlag", false) AS "RiskFlag",
   p."riskScore" AS "RiskScore",
   p."blacklistReason" AS "BlacklistReason",
   p."blacklistedAt" AS "BlacklistedAt",
@@ -567,21 +592,21 @@ SELECT
   b."city" AS "City",
   (SELECT r.name FROM wms."TBLREGION" r WHERE r.id = b."regionId") AS "Region",
   b."country" AS "Country",
-  p."sendInfoEmail" AS "SendInfoEmail",
-  p."sendInfoPrint" AS "SendInfoPrint",
+  COALESCE(p."sendInfoEmail", false) AS "SendInfoEmail",
+  COALESCE(p."sendInfoPrint", false) AS "SendInfoPrint",
   p."commodityFamilyId" AS "CommodityFamilyId",
   p."commodityClassId" AS "CommodityClassId",
   p."commodityTypeId" AS "CommodityTypeId",
-  b."isActive" AS "IsActive",
-  p."isForbidden" AS "IsForbidden",
-  p."onboardingStatus" AS "OnboardingStatus",
+  COALESCE(b."isActive", true) AS "IsActive",
+  COALESCE(p."isForbidden", false) AS "IsForbidden",
+  COALESCE(p."onboardingStatus", 'APPROVED') AS "OnboardingStatus",
   p."onboardingNote" AS "OnboardingNote",
   p."approvedAt" AS "ApprovedAt",
   p."approvedById" AS "ApprovedById",
   p."tradeRegNo" AS "TradeRegNo",
   p."bankBranch" AS "BankBranch",
   p."createdById" AS "CreatedBy",
-  b."createdAt" AS "CreatedDate",
+  COALESCE(b."createdAt", now()) AS "CreatedDate",
   p."updatedById" AS "UpdatedBy",
   b."updatedAt" AS "UpdatedDate"
 FROM wms."TBLBUSINESSPARTNER" b
@@ -620,21 +645,21 @@ DROP VIEW IF EXISTS procurement."TBL4S_Materials" CASCADE;
 CREATE VIEW procurement."TBL4S_Materials" AS
 SELECT
   b."id" AS "Id",
-  b."code" AS "Code",
+  COALESCE(b."code", '') AS "Code",
   p."heading" AS "Heading",
   b.name AS "Name",
   b."description" AS "Description",
-  p."procurementTypeId" AS "ProcurementTypeId",
-  b."productTypeId" AS "MaterialTypeId",
-  b."productGroupId" AS "MaterialGroupId",
+  COALESCE(p."procurementTypeId", procurement.p4_def_proctype()) AS "ProcurementTypeId",
+  COALESCE(b."productTypeId", procurement.p4_def_producttype()) AS "MaterialTypeId",
+  COALESCE(b."productGroupId", procurement.p4_def_productgroup()) AS "MaterialGroupId",
   p."categoryId" AS "CategoryId",
   p."commodityFamilyId" AS "CommodityFamilyId",
   p."commodityClassId" AS "CommodityClassId",
   p."commodityId" AS "CommodityId",
-  b."unitId" AS "UnitId",
-  p."minOrderQuantity" AS "MinOrderQuantity",
-  p."orderIncrement" AS "OrderIncrement",
-  p."leadTime" AS "LeadTime",
+  COALESCE(b."unitId", procurement.p4_def_unit()) AS "UnitId",
+  COALESCE(p."minOrderQuantity", 0) AS "MinOrderQuantity",
+  COALESCE(p."orderIncrement", 0) AS "OrderIncrement",
+  COALESCE(p."leadTime", 0) AS "LeadTime",
   p."entCode" AS "EntCode",
   p."supplierPartNo" AS "SupplierPartNo",
   p."unspscCode" AS "UNSPSCCode",
@@ -644,10 +669,10 @@ SELECT
   p."imageUrl" AS "ImageUrl",
   p."msdsUrl" AS "MSDSUrl",
   p."glAccountId" AS "GLAccountId",
-  p."isCatalog" AS "IsCatalog",
-  b."isActive" AS "IsActive",
+  COALESCE(p."isCatalog", false) AS "IsCatalog",
+  COALESCE(b."isActive", true) AS "IsActive",
   p."createdById" AS "CreatedBy",
-  b."createdAt" AS "CreatedDate",
+  COALESCE(b."createdAt", now()) AS "CreatedDate",
   b."updatedAt" AS "UpdatedDate"
 FROM wms."TBLPRODUCT" b
 LEFT JOIN procurement."TBLPRODUCTPROCPROFILE" p ON p."productId" = b.id
