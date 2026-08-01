@@ -73,10 +73,13 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
     axiosInstance.get('/api/statuses', { params: { pageSize: 200, ...p } }).then((r) => setStatuses((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
   }, [companyId])
 
-  // Bu yönde 'Toplu İşlem' işaretli operasyonlar (kaynak = op.bulkAction parametresi)
-  const bulkOps = useMemo(() => ops.filter((o) => o.bulkAction === true && o.direction === direction), [ops, direction])
+  // Bu yönde 'Toplu İşlem' işaretli operasyonlar — TESİS ŞART: seçilen tesise ait (ya da tesis-bağımsız) olanlar
+  const bulkOps = useMemo(
+    () => (facilityId ? ops.filter((o) => o.bulkAction === true && o.direction === direction && (o.facilityId === facilityId || o.facilityId == null)) : []),
+    [ops, direction, facilityId],
+  )
   const bulkOpOpts = useMemo(() => bulkOps.map((o) => ({ value: o.id, label: `${o.code}${o.name ? ' — ' + o.name : ''}` })), [bulkOps])
-  const noBulkOps = ops.length > 0 && bulkOpOpts.length === 0
+  const noBulkOps = !!facilityId && ops.length > 0 && bulkOpOpts.length === 0
 
   const listele = useCallback(() => {
     setLoading(true); setSelected([]); setListed(true)
@@ -123,8 +126,8 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
         <Row gutter={[10, 10]}>
           {/* StokBar sırası: Firma → Tesis → Operasyon → Ürün → Lokasyon → Statü */}
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={companyId} onChange={setCompanyId} placeholder="Firma" showSearch optionFilterProp="label" disabled={companies.length <= 1} options={companies.map((c) => ({ value: c.id, label: `${c.code}${c.name ? ' — ' + c.name : ''}` }))} /></Col>
-          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={facilityId} onChange={setFacilityId} placeholder="Tesis" allowClear showSearch optionFilterProp="label" options={facilities.map((f) => ({ value: f.id, label: `${f.code}${f.name ? ' — ' + f.name : ''}` }))} /></Col>
-          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={opId} onChange={setOpId} placeholder="Operasyon Tipi *" allowClear showSearch optionFilterProp="label" options={bulkOpOpts} status={!opId ? 'warning' : undefined} /></Col>
+          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={facilityId} onChange={(v) => { setFacilityId(v); setOpId(undefined) }} placeholder="Tesis *" allowClear showSearch optionFilterProp="label" options={facilities.map((f) => ({ value: f.id, label: `${f.code}${f.name ? ' — ' + f.name : ''}` }))} status={!facilityId ? 'warning' : undefined} /></Col>
+          <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={opId} onChange={setOpId} placeholder={facilityId ? 'Operasyon Tipi *' : 'Önce Tesis seçin'} disabled={!facilityId} allowClear showSearch optionFilterProp="label" options={bulkOpOpts} status={facilityId && !opId ? 'warning' : undefined} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={productId} onChange={setProductId} placeholder="Ürün" allowClear showSearch optionFilterProp="label" options={products} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={locationId} onChange={setLocationId} placeholder="Lokasyon" allowClear showSearch optionFilterProp="label" options={locations} /></Col>
           <Col xs={24} sm={12} md={6}><Select style={{ width: '100%' }} value={statusId} onChange={setStatusId} placeholder="Statü" allowClear showSearch optionFilterProp="label" options={statuses} /></Col>
