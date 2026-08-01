@@ -5063,6 +5063,8 @@ model TBLUSERPROCPROFILE {
   isApprover             Boolean   @default(false)
   workLevel              Int       @default(1)
   hasCompletedOnboarding Boolean   @default(false)
+  createdById            Int?
+  updatedById            Int?
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -5111,6 +5113,12 @@ model TBLPARTNERPROCPROFILE {
   commodityTypeId       Int?
   entCode               String?   @db.VarChar(40)
   heading               String?   @db.VarChar(150)
+  supplierGroupId       Int?
+  companyCode           String?   @db.VarChar(40)
+  branchAddress         String?   @db.VarChar(255)
+  branchCode            String?   @db.VarChar(40)
+  createdById           Int?
+  updatedById           Int?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -5144,6 +5152,9 @@ model TBLPRODUCTPROCPROFILE {
   glAccountId        Int?
   isCatalog          Boolean  @default(false)
   entCode            String?  @db.VarChar(40)
+  heading            String?  @db.VarChar(150)
+  createdById        Int?
+  updatedById        Int?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
