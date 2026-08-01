@@ -57,6 +57,7 @@ import { companyRoutes } from './routes/companies.js'
 import { userGroupRoutes } from './routes/userGroups.js'
 import { columnAuthorizationRoutes } from './routes/columnAuthorizations.js'
 import { screenRightRoutes } from './routes/screenRights.js'
+import { applicationRoutes } from './routes/applications.js'
 import { handheldMenuGroupRoutes, handheldMenuItemRoutes, handheldMenuRoutes } from './routes/handheldMenu.js'
 import { vehicleRoutes } from './routes/vehicles.js'
 import { shipmentRoutes } from './routes/shipments.js'
@@ -173,6 +174,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(userGroupRoutes, { prefix: '/api/user-groups' })
   await app.register(columnAuthorizationRoutes, { prefix: '/api/column-authorizations' })
   await app.register(screenRightRoutes, { prefix: '/api/screen-rights' })
+  await app.register(applicationRoutes, { prefix: '/api' })
   await app.register(handheldMenuGroupRoutes, { prefix: '/api/handheld-menu-groups' })
   await app.register(handheldMenuItemRoutes, { prefix: '/api/handheld-menu-items' })
   await app.register(handheldMenuRoutes, { prefix: '/api/handheld-menu' })

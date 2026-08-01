@@ -123,6 +123,14 @@ export const LABEL_ITEM_TYPE_OPTS = [
 
 export const FORM_CONFIG: Record<string, FieldDef[]> = {
   // ── Sistem ──
+  'company-licenses': [
+    { name: 'applicationId', label: 'Ürün', type: 'ref', refResource: 'applications', required: true },
+    { name: 'isActive', label: 'Aktif', type: 'bool' },
+    { name: 'validFrom', label: 'Başlangıç (GG.AA.YYYY)', type: 'text' },
+    { name: 'validUntil', label: 'Bitiş (boş = süresiz)', type: 'text' },
+    { name: 'userLimit', label: 'Kullanıcı Limiti (boş = sınırsız)', type: 'number' },
+    { name: 'note', label: 'Not', type: 'text' },
+  ],
   companies: [
     { name: 'code', label: 'Firma Kodu', type: 'text', required: true },
     { name: 'name', label: 'Firma Adı', type: 'text', required: true },

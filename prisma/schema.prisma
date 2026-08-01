@@ -54,6 +54,7 @@ model TBLCOMPANY {
   currencies          TBLCURRENCY[]
   paymentTerms        TBLPAYMENTTERM[]
   incoterms           TBLINCOTERM[]
+  licenses            TBLCOMPANYLICENSE[]
   barcodeTypes        TBLBARCODETYPE[]
   integrationPackages TBLINTEGRATIONPACKAGE[]
   parameters          TBLPARAMETER[]
@@ -97,6 +98,7 @@ model TBLUSER {
   cannotChangePassword Boolean   @default(false) // Şifreyi değiştiremez
   profilePictureUrl    String?   @db.VarChar(255)
   procProfile          TBLUSERPROCPROFILE?
+  appAccess            TBLUSERAPPACCESS[]
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -437,6 +439,60 @@ model TBLUNIT {
 
   @@unique([companyId, code])
   @@index([companyId])
+  @@schema("wms")
+}
+
+// ─── Platform: ürün kataloğu + lisans + kullanıcı erişimi (WMS · Satınalma · sonrakiler) ───
+model TBLAPPLICATION {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.VarChar(20) // WMS, PROC
+  name        String   @db.VarChar(60)
+  description String?  @db.VarChar(255)
+  path        String   @db.VarChar(60) // tek alan adı altındaki yol: / · /satinalma
+  icon        String?  @db.VarChar(40)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  licenses    TBLCOMPANYLICENSE[]
+  userAccess  TBLUSERAPPACCESS[]
+
+  @@schema("wms")
+}
+
+model TBLCOMPANYLICENSE {
+  id            Int       @id @default(autoincrement())
+  companyId     Int
+  applicationId Int
+  isActive      Boolean   @default(true)
+  validFrom     DateTime? @db.Date
+  validUntil    DateTime? @db.Date // null = süresiz
+  userLimit     Int? // null = sınırsız
+  note          String?   @db.VarChar(255)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company     TBLCOMPANY     @relation(fields: [companyId], references: [id])
+  application TBLAPPLICATION @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, applicationId])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Kısıtlama listesi (OneGate deseni): kullanıcı için satır YOKSA lisanslı tüm ürünlere erişir.
+model TBLUSERAPPACCESS {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  applicationId Int
+  createdAt     DateTime @default(now())
+
+  user        TBLUSER        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application TBLAPPLICATION @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, applicationId])
+  @@index([userId])
   @@schema("wms")
 }
 

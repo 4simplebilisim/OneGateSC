@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js'
 import { getUserColumnAuth } from './columnAuthorizations.js'
 import { getUserScreenRights } from './screenRights.js'
 import { getUserCompanies } from '../lib/userAuth.js'
+import { listUserApps } from '../lib/entitlements.js'
 
 const loginSchema = z.object({
   username: z.string().min(1),
@@ -56,7 +57,10 @@ export async function authRoutes(app: FastifyInstance) {
     })
 
     // Ekran (mobil menü) + kolon + ekran-hakkı (web aksiyon) yetkileri — boş ise serbest (frontend süzer)
-    const [screens, columnAuth, screenRights] = await Promise.all([getUserScreens(user.id), getUserColumnAuth(user.id), getUserScreenRights(user.id)])
+    const [screens, columnAuth, screenRights, apps] = await Promise.all([
+      getUserScreens(user.id), getUserColumnAuth(user.id), getUserScreenRights(user.id),
+      listUserApps(user.id, user.companyId),
+    ])
 
     return {
       token,
@@ -72,15 +76,19 @@ export async function authRoutes(app: FastifyInstance) {
         screens,
         columnAuth,
         screenRights,
+        apps, // lisanslı+yetkili ürünler (WMS · Satınalma) — header ürün değiştirici
       },
     }
   })
 
   // Oturum tazeleme — kullanıcının güncel ekran + kolon + hak yetkilerini döndürür
   app.get('/me', { preHandler: [app.authenticate] }, async (request) => {
-    const u = request.user as { sub: number }
-    const [screens, columnAuth, screenRights] = await Promise.all([getUserScreens(u.sub), getUserColumnAuth(u.sub), getUserScreenRights(u.sub)])
-    return { user: { ...request.user, screens, columnAuth, screenRights } }
+    const u = request.user as { sub: number; companyId?: number | null }
+    const [screens, columnAuth, screenRights, apps] = await Promise.all([
+      getUserScreens(u.sub), getUserColumnAuth(u.sub), getUserScreenRights(u.sub),
+      listUserApps(u.sub, u.companyId ?? null),
+    ])
+    return { user: { ...request.user, screens, columnAuth, screenRights, apps } }
   })
 }
 

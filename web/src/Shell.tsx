@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGetIdentity, useLogout } from '@refinedev/core'
-import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip } from 'antd'
-import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined } from '@ant-design/icons'
+import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip, Popover, Tag } from 'antd'
+import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined, ShoppingCartOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
@@ -13,9 +13,54 @@ import { NotificationBell } from './components/NotificationBell'
 const NAVY = '#1B2B4B'
 const NAVY_DARK = '#152341'
 
+type AppEntitlement = { code: string; name: string; description?: string | null; path: string; icon?: string | null; validUntil?: string | null }
+
+// Ürün değiştirici: kullanıcının lisanslı+yetkili olduğu uygulamalar (WMS · Satınalma …).
+// Hepsi tek alan adı altında yol ile ayrışır; tam sayfa geçiş (ayrı uygulamalar).
+const AppSwitcher = ({ apps, color, dark }: { apps: AppEntitlement[]; color: string; dark: boolean }) => {
+  const current = apps.reduce<AppEntitlement | null>((best, a) => {
+    if (a.path === '/') return best ?? a
+    return window.location.pathname.startsWith(a.path) ? a : best
+  }, null)
+  const iconOf = (a: AppEntitlement) => (a.code === 'PROC' ? <ShoppingCartOutlined /> : <AppstoreOutlined />)
+  const content = (
+    <div style={{ width: 288, padding: 2 }}>
+      <div style={{ fontSize: 11.5, letterSpacing: 0.4, color: '#94A3B8', padding: '2px 8px 8px', textTransform: 'uppercase' }}>Ürünler</div>
+      {apps.map((a) => {
+        const active = current?.code === a.code
+        return (
+          <a
+            key={a.code}
+            href={a.path}
+            style={{
+              display: 'flex', gap: 11, alignItems: 'flex-start', padding: '9px 10px', borderRadius: 8,
+              background: active ? (dark ? 'rgba(91,141,239,.16)' : '#EEF4FF') : 'transparent',
+              color: 'inherit', textDecoration: 'none', marginBottom: 2,
+            }}
+          >
+            <span style={{ fontSize: 17, color: '#2563C9', lineHeight: '20px' }}>{iconOf(a)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontWeight: 600, fontSize: 13.5 }}>{a.name}</span>
+                {active && <Tag color="blue" style={{ margin: 0, fontSize: 10.5, lineHeight: '16px', padding: '0 5px' }}>açık</Tag>}
+              </span>
+              {a.description && <span style={{ display: 'block', fontSize: 12, opacity: 0.65, marginTop: 1 }}>{a.description}</span>}
+            </span>
+          </a>
+        )
+      })}
+    </div>
+  )
+  return (
+    <Popover content={content} trigger="click" placement="bottomRight" arrow={false}>
+      <Button type="text" icon={<AppstoreOutlined />} style={{ color }} aria-label="ürünler" />
+    </Popover>
+  )
+}
+
 export const Shell = ({ children }: { children: ReactNode }) => {
   const { mutate: logout } = useLogout()
-  const { data: user } = useGetIdentity<{ fullName?: string; roles?: string[]; isSuperAdmin?: boolean; screens?: string[]; screenRights?: Record<string, { view: boolean }> }>()
+  const { data: user } = useGetIdentity<{ fullName?: string; roles?: string[]; isSuperAdmin?: boolean; screens?: string[]; screenRights?: Record<string, { view: boolean }>; apps?: AppEntitlement[] }>()
   const { mode, toggle } = useThemeMode()
   const location = useLocation()
   const selected = location.pathname.split('/')[1] ?? ''
@@ -97,7 +142,9 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         <div style={{ flex: 1 }} />
         <CompanySwitcher color={chrome.icon} />
         <Space size={4} style={{ marginRight: 8, marginLeft: 8 }}>
-          <Tooltip title="Pano"><Link to="/dashboard"><Button type="text" icon={<AppstoreOutlined />} style={{ color: chrome.icon }} /></Link></Tooltip>
+          {(user?.apps?.length ?? 0) > 1
+            ? <Tooltip title="Ürünler"><span><AppSwitcher apps={user!.apps!} color={chrome.icon} dark={dark} /></span></Tooltip>
+            : <Tooltip title="Pano"><Link to="/dashboard"><Button type="text" icon={<HomeOutlined />} style={{ color: chrome.icon }} /></Link></Tooltip>}
           <Tooltip title={mode === 'dark' ? 'Açık mod' : 'Koyu mod'}>
             <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon }} aria-label="tema" />
           </Tooltip>

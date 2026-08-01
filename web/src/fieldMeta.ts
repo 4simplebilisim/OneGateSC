@@ -7,7 +7,7 @@ export const FK_RESOURCE: Record<string, string> = {
   sourceOperationTypeId: 'operation-types', targetOperationTypeId: 'operation-types',
   entryOperationTypeId: 'operation-types', exitOperationTypeId: 'operation-types', transferOperationTypeId: 'operation-types',
   firstOperationId: 'operation-types', secondOperationId: 'operation-types',
-  warehouseId: 'warehouses', areaId: 'areas',
+  warehouseId: 'warehouses', areaId: 'areas', applicationId: 'applications',
   locationId: 'locations', sourceLocationId: 'locations', targetLocationId: 'locations',
   cancelLocationId: 'locations', sourceLocLinkId: 'locations', targetLocLinkId: 'locations', locationLinkId: 'locations',
   reasonId: 'reasons', reasonCategoryId: 'reason-categories',
@@ -40,7 +40,7 @@ export const FK_RESOURCE: Record<string, string> = {
 
 // FK alan adı → Türkçe etiket
 export const FK_LABEL: Record<string, string> = {
-  operationTypeId: 'Operasyon Tipi', warehouseId: 'Depo', areaId: 'Alan',
+  operationTypeId: 'Operasyon Tipi', warehouseId: 'Depo', areaId: 'Alan', applicationId: 'Ürün',
   locationId: 'Lokasyon', sourceLocationId: 'Kaynak Lokasyon', targetLocationId: 'Hedef Lokasyon',
   reasonId: 'Neden', reasonCategoryId: 'Neden Kategori', partnerId: 'Cari', businessPartnerId: 'Cari',
   productId: 'Ürün', unitId: 'Birim', statusId: 'Statü', sourceStatusId: 'Kaynak Statü', targetStatusId: 'Hedef Statü',
