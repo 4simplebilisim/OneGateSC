@@ -96,6 +96,7 @@ model TBLUSER {
   mustChangePassword   Boolean   @default(false) // Sonraki oturumda şifre değiştir
   cannotChangePassword Boolean   @default(false) // Şifreyi değiştiremez
   profilePictureUrl    String?   @db.VarChar(255)
+  procProfile          TBLUSERPROCPROFILE?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -446,6 +447,7 @@ model TBLCURRENCY {
   code      String   @db.VarChar(10)
   name      String   @db.VarChar(50)
   symbol    String?  @db.VarChar(10)
+  partnerProfiles TBLPARTNERPROCPROFILE[]
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -463,6 +465,7 @@ model TBLPAYMENTTERM {
   code      String   @db.VarChar(20)
   name      String   @db.VarChar(100)
   days      Int      @default(0)
+  partnerProfiles TBLPARTNERPROCPROFILE[]
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -498,6 +501,7 @@ model TBLPRODUCT {
   name              String        @db.VarChar(240)
   shortName         String?       @db.VarChar(50)
   description       String?       @db.VarChar(255)
+  procProfile       TBLPRODUCTPROCPROFILE?
   productGroupCode  String?       @db.VarChar(20)
   productGroupId    Int?
   productSubGroupId Int?
@@ -861,6 +865,7 @@ model TBLBUSINESSPARTNER {
   mapCode            Int? // Harita Kodu (LNGHARITAKOD)
   coordinateX        Decimal? @db.Decimal(18, 8)  // Koordinat X (DBLKOORDINATX)
   coordinateY        Decimal? @db.Decimal(18, 8)  // Koordinat Y (DBLKOORDINATY)
+  procProfile        TBLPARTNERPROCPROFILE?
   isActive       Boolean     @default(true)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
@@ -4037,4 +4042,1112 @@ model TBLLABELTEMPLATEQUERY {
   @@index([companyId])
   @@index([labelTemplateId])
   @@schema("wms")
+}
+// ─── 4Proc platform tabloları (DDL sahipliği; ilişkiler 4Proc reposunda) ───
+// Bu modeller yalnız migration üretimi içindir; OneGate API'si bunları KULLANMAZ.
+// Ortak masterlar (Supplier/Material/User/Unit/...) wms tablolarına eşlendi — burada yoklar.
+
+model P4_Department {
+  Id        Int     @id @default(autoincrement())
+  Code      String  @unique
+  Name      String
+  IsActive  Boolean @default(true)
+  @@map("TBL4S_Departments")
+  @@schema("procurement")
+}
+
+model P4_SubDepartment {
+  Id           Int     @id @default(autoincrement())
+  Code         String  @unique
+  Name         String
+  DepartmentId Int
+  IsActive     Boolean @default(true)
+  @@map("TBL4S_SubDepartments")
+  @@schema("procurement")
+}
+
+model P4_UserJobGroup {
+  Id       Int     @id @default(autoincrement())
+  Code     String  @unique
+  Name     String
+  IsActive Boolean @default(true)
+  @@map("TBL4S_UserJobGroups")
+  @@schema("procurement")
+}
+
+model P4_ProcurementType {
+  Id       Int     @id @default(autoincrement())
+  Code     String  @unique
+  Name     String
+  IsActive Boolean @default(true)
+  @@map("TBL4S_ProcurementTypes")
+  @@schema("procurement")
+}
+
+model P4_CostCenter {
+  Id       Int     @id @default(autoincrement())
+  Code     String  @unique
+  Name     String
+  IsActive Boolean @default(true)
+  @@map("TBL4S_CostCenters")
+  @@schema("procurement")
+}
+
+model P4_GLAccount {
+  Id                  Int       @id @default(autoincrement())
+  Code                String    @unique        // e.g. "770.01.002"
+  Name                String                   // e.g. "Genel Yönetim Giderleri"
+  ParentCode          String?                  // e.g. "770.01"
+  Level               Int       @default(1)    // 1=Ana, 2=Grup, 3=Alt Hesap
+  IsPostable          Boolean   @default(false) // only leaf nodes = true
+  // Procurement
+  ProcurementType     String?                  // DIRECT, INDIRECT, BOTH (null = BOTH)
+  AccountCategory     String?                  // HAMMADDE, HIZMET, DEMIRBASE, GENEL_GIDER, BT_YAZILIM, AMBALAJ, PAZARLAMA
+  // Tax
+  WhtApplicable       Boolean   @default(false) // stopaj uygulanır mı
+  DefaultWhtRate      Float?                   // e.g. 0.20
+  TaxCode             String?                  // e.g. "KDV18", "KDV0"
+  // Budget & control
+  CostCenterRequired  Boolean   @default(false)
+  // Status
+  IsActive            Boolean   @default(true)
+  CreatedDate         DateTime  @default(now())
+  UpdatedDate         DateTime?
+  @@map("TBL4S_GLAccounts")
+  @@schema("procurement")
+}
+
+model P4_CommodityGLMapping {
+  Id              Int       @id @default(autoincrement())
+  CommodityId     Int
+  GLAccountId     Int
+  SpendType       String                     // DIRECT, INDIRECT
+  IsDefault       Boolean   @default(true)
+  IsActive        Boolean   @default(true)
+  CreatedDate     DateTime  @default(now())
+  @@unique([CommodityId, SpendType])
+  @@map("TBL4S_CommodityGLMappings")
+  @@schema("procurement")
+}
+
+model P4_Category {
+  Id          Int     @id @default(autoincrement())
+  Code        String  @unique
+  Name        String
+  ParentId    Int?
+  Level       Int     @default(0)    // 0=root, 1=sub, 2=sub-sub, etc.
+  SortOrder   Int     @default(0)
+  Icon        String?  // lucide icon name
+  IsActive    Boolean @default(true)
+  @@map("TBL4S_Categories")
+  @@schema("procurement")
+}
+
+model P4_Commodity {
+  Id       Int     @id @default(autoincrement())
+  Code     String  @unique
+  Name     String
+  Level    Int     @default(1)
+  ParentId Int?
+  IsActive Boolean @default(true)
+  @@map("TBL4S_CommodityHierarchys")
+  @@schema("procurement")
+}
+
+model P4_SupplierCommodity {
+  Id          Int       @id @default(autoincrement())
+  SupplierId  Int
+  CommodityId Int
+  IsApproved  Boolean   @default(true)
+  ValidUntil  DateTime?
+  Notes       String?
+  @@unique([SupplierId, CommodityId])
+  @@map("TBL4S_SupplierCommodities")
+  @@schema("procurement")
+}
+
+model P4_SupplierProcurementType {
+  Id                Int @id @default(autoincrement())
+  SupplierId        Int
+  ProcurementTypeId Int
+  @@map("TBL4S_SupplierProcurementTypes")
+  @@schema("procurement")
+}
+
+model P4_Contract {
+  Id                    Int       @id @default(autoincrement())
+  Code                  String    @unique
+  Description           String?
+  SupplierId            Int
+  SupplierName          String?
+  SupplierCode          String?
+  CurrencyId            Int
+  PaymentTermId         Int
+  LeadTimeDays          Int       @default(0)
+  IncotermCode          String?
+  IncotermLocation      String?
+  IsBasedOnEXW          Boolean   @default(false)
+  AdvancePaymentPercent Float     @default(0)
+  AdvancePaymentNote    String?
+  StartDate             DateTime?
+  EndDate               DateTime?
+  Status                String
+  TotalNetAmount        Float     @default(0)
+  TotalKDVAmount        Float     @default(0)
+  TotalStopajAmount     Float     @default(0)
+  TotalAmount           Float     @default(0)
+  CompanyId             Int?
+  OrganizationId        Int?
+  FileUrl               String?
+  IsActive              Boolean   @default(true)
+  ApprovedDate          DateTime?
+  RejectedDate          DateTime?
+  RejectedReason        String?
+  CreatedBy             Int?
+  CreatedDate           DateTime  @default(now())
+  UpdatedBy             Int?
+  UpdatedDate           DateTime?
+  @@map("TBL4S_Contracts")
+  @@schema("procurement")
+}
+
+model P4_ContractDetail {
+  Id                Int      @id @default(autoincrement())
+  ContractId        Int
+  LineNo            Int      @default(0)
+  MaterialId        Int?
+  MaterialCode      String?
+  MaterialName      String? @map("MaterialDescription")
+  Description       String?
+  UnitId            Int?
+  UnitCode          String?
+  MOQ               Int      @default(0)
+  VolumeValidity    Float    @default(0)
+  Balance           Float    @default(0)
+  IncrementalQty    Int      @default(0)
+  Quantity          Float    @default(0)
+  UnitPrice         Float    @default(0) @map("Price")
+  KDVPercent        Float    @default(20)
+  StopajPercent     Float    @default(0)
+  NetAmount         Float    @default(0)
+  KDVAmount         Float    @default(0)
+  StopajAmount      Float    @default(0)
+  TotalAmount       Float    @default(0)
+  IsGradualPrice    Boolean  @default(false)
+  IsActive          Boolean  @default(true)
+  IsCanceled        Boolean  @default(false)
+  FileUrl           String?
+  CreatedDate       DateTime @default(now())
+  UpdatedDate       DateTime?
+  @@map("TBL4S_ContractDetails")
+  @@schema("procurement")
+}
+
+model P4_ContractGradualPrice {
+  Id                  Int       @id @default(autoincrement())
+  ContractDetailId    Int
+  LineNo              Int       @default(0)
+  MinQuantity         Float     @default(0)
+  MaxQuantity         Float     @default(0)
+  IncrementalQuantity Int       @default(0)
+  UnitPrice           Float     @default(0) @map("Price")
+  CreatedDate         DateTime  @default(now())
+  UpdatedDate         DateTime?
+  @@map("TBL4S_ContractGradualPrices")
+  @@schema("procurement")
+}
+
+model P4_RateCard {
+  Id                    Int       @id @default(autoincrement())
+  Code                  String    @unique
+  Description           String?
+  SupplierId            Int
+  CommodityFamilyId     Int?
+  CommodityClassId      Int?
+  CommodityTypeId       Int?
+  CurrencyId            Int
+  PaymentTermId         Int
+  IncotermId            Int?
+  IncotermLocation      String?
+  IsBasedOnEXW          Boolean   @default(false)
+  AdvancePaymentPercent Float     @default(0)
+  AdvancePaymentNote    String?
+  StartDate             DateTime?
+  EndDate               DateTime?
+  Status                String
+  TotalNetAmount        Float     @default(0)
+  TotalKDVAmount        Float     @default(0)
+  TotalStopajAmount     Float     @default(0)
+  TotalAmount           Float     @default(0)
+  CompanyId             Int?
+  OrganizationId        Int?
+  IsActive              Boolean   @default(true)
+  IsCanceled            Boolean   @default(false)
+  ApprovedDate          DateTime?
+  RejectedDate          DateTime?
+  RejectedReason        String?
+  CreatedBy             Int?
+  CreatedDate           DateTime  @default(now())
+  UpdatedDate           DateTime?
+  @@map("TBL4S_RateCards")
+  @@schema("procurement")
+}
+
+model P4_RateCardDetail {
+  Id                Int       @id @default(autoincrement())
+  RateCardId        Int
+  LineNo            Int       @default(0)
+  MaterialId        Int?
+  ProductCode       String?
+  ProductDescription String?
+  UnitId            Int?
+  MinOrderQuantity  Float     @default(0)
+  OrderIncrement    Float     @default(0)  // Sipariş artış miktarı
+  VolumeValidity    Float     @default(0)
+  Balance           Float     @default(0)
+  UnitPrice         Float     @default(0)
+  KDVPercent        Float     @default(20)
+  StopajPercent     Float     @default(0)
+  NetAmount         Float     @default(0)
+  KDVAmount         Float     @default(0)
+  StopajAmount      Float     @default(0)
+  TotalAmount       Float     @default(0)
+  IsGradualPrice    Boolean   @default(false)
+  IsActive          Boolean   @default(true)
+  IsCanceled        Boolean   @default(false)
+  CreatedDate       DateTime  @default(now())
+  UpdatedDate       DateTime?
+  @@map("TBL4S_RateCardDetails")
+  @@schema("procurement")
+}
+
+model P4_RateCardDetailItem {
+  Id               Int       @id @default(autoincrement())
+  RateCardDetailId Int
+  LineNo           Int       @default(0)
+  MinQuantity      Float     @default(0)
+  MaxQuantity      Float?
+  UnitPrice        Float     @default(0)
+  StartDate        DateTime?
+  EndDate          DateTime?
+  CreatedDate      DateTime  @default(now())
+  @@map("TBL4S_RateCardDetailItems")
+  @@schema("procurement")
+}
+
+model P4_Catalog {
+  Id              Int       @id @default(autoincrement())
+  Code            String    @unique
+  Name            String
+  Description     String?
+  SupplierId      Int?
+  CurrencyId      Int?
+  CategoryId      Int?
+  IsActive        Boolean   @default(true)
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedBy       Int?
+  UpdatedDate     DateTime?
+  @@map("TBL4S_Catalogs")
+  @@schema("procurement")
+}
+
+model P4_CatalogItem {
+  Id              Int       @id @default(autoincrement())
+  CatalogId       Int
+  MaterialId      Int?
+  ProductCode     String
+  ProductName     String
+  Description     String?
+  UnitId          Int?
+  UnitPrice       Float     @default(0)
+  MinOrderQty     Float     @default(1)
+  OrderIncrement  Float     @default(0)  // Sipariş artış miktarı
+  LeadTimeDays    Int?
+  ImageUrl        String?
+  CategoryId      Int?
+  IsActive        Boolean   @default(true)
+  CreatedDate     DateTime  @default(now())
+  UpdatedDate     DateTime?
+  @@map("TBL4S_CatalogItems")
+  @@schema("procurement")
+}
+
+model P4_Order {
+  Id                           Int       @id @default(autoincrement())
+  Code                         String    @unique
+  OrderType                    Int       // 1=PR, 2=PO
+  ProcurementTypeId            Int?
+  SupplierId                   Int?
+  CompanyId                    Int?
+  OrganizationId               Int?
+  IncotermId                   Int?
+  IncotermLocation             String?
+  IsBasedOnEXW                 Boolean   @default(false)
+  AdvancePaymentPercent        Float     @default(0)
+  Summary                      String?
+  Priority                     String?   // LOW, NORMAL, HIGH, URGENT
+  RequestType                  String?   @default("CONTRACTED") // CONTRACTED or NEED_BASED
+  Justification                String?   // İhtiyaç gerekçesi
+  BuyerNote                    String?   // Satınalmacı notu
+  NeedDate                     DateTime? // İhtiyaç tarihi
+  ContractId                   Int?      // Bağlı sözleşme
+  DeliveryAddress              String?   // Teslimat adresi
+  DeliveryAsPerIncoterm        DateTime?
+  ExpectedDeliveryDateAtSite   DateTime?
+  GRLocationId                 Int?
+  Status                       String
+  TotalNetAmount               Float     @default(0)
+  TotalKDVAmount               Float     @default(0)
+  TotalStopajAmount            Float     @default(0)
+  TotalAmount                  Float     @default(0)
+  SourcePRId                   Int?
+  POId                         Int?
+  IsActive                     Boolean   @default(true)
+  IsCanceled                   Boolean   @default(false)
+  ApprovedDate                 DateTime?
+  RejectedDate                 DateTime?
+  RejectedReason               String?
+  CurrencyId                   Int?      // added via ALTER TABLE
+  PaymentTermId                Int?      // added via ALTER TABLE
+  CreatedBy                    Int?
+  CreatedDate                  DateTime  @default(now())
+  UpdatedBy                    Int?      // added via ALTER TABLE
+  UpdatedDate                  DateTime?
+  SentAt                       DateTime?
+  SentToEmail                  String?
+  SupplierConfirmToken         String?
+  SupplierConfirmedAt          DateTime?
+  SupplierConfirmedBy          String?
+  SupplierRejectedAt           DateTime?
+  SupplierRejectionNote        String?
+  @@map("TBL4S_Orders")
+  @@schema("procurement")
+}
+
+model P4_OrderDetail {
+  Id                         Int       @id @default(autoincrement())
+  OrderId                    Int
+  LineNo                     Int       @default(0)
+  MaterialId                 Int?
+  ContractId                 Int?
+  ContractDetailId           Int?
+  RateCardId                 Int?
+  RateCardDetailId           Int?
+  UnitId                     Int?
+  Quantity                   Float     @default(0)
+  OriginalQty                Float     @default(0)
+  OpenQty                    Float     @default(0)
+  DeliveredQty               Float     @default(0)
+  UnitPrice                  Float     @default(0)
+  KDVPercent                 Float     @default(20)
+  StopajPercent              Float     @default(0)
+  NetAmount                  Float     @default(0)
+  KDVAmount                  Float     @default(0)
+  StopajAmount               Float     @default(0)
+  TotalAmount                Float     @default(0)
+  DeliveryAsPerIncoterm      DateTime?
+  ExpectedDeliveryDateAtSite DateTime?
+  GRLocationId               Int?
+  CostCenterId               Int?
+  GLAccountId                Int?
+  IsCatalog                  Boolean   @default(false)
+  IsRateCard                 Boolean   @default(false)
+  IsService                  Boolean   @default(false)
+  IsActive                   Boolean   @default(true)
+  Status                     String?
+  // Denormalized display fields (added via ALTER TABLE)
+  MaterialCode               String?
+  MaterialName               String?
+  Description                String?
+  UnitCode                   String?
+  CostCenterCode             String?
+  GLAccountCode              String?
+  CreatedDate                DateTime  @default(now())
+  UpdatedDate                DateTime?
+  HasCostSplit    Boolean  @default(false)
+  IsNonCatalog               Boolean   @default(false)
+  SupplierId                 Int?
+  @@map("TBL4S_OrderDetails")
+  @@schema("procurement")
+}
+
+model P4_OrderDetailCostSplit {
+  Id              Int      @id @default(autoincrement())
+  OrderDetailId   Int
+  CostCenterCode  String
+  Percentage      Float    // 60.00, 40.00
+  Amount          Float    @default(0) // calculated: line total x percentage / 100
+  CreatedDate     DateTime @default(now())
+  @@index([OrderDetailId])
+  @@map("TBL4S_OrderDetailCostSplits")
+  @@schema("procurement")
+}
+
+model P4_ApprovalState {
+  Id                  Int       @id @default(autoincrement())
+  EntityType          String  // 'Contract', 'Order', 'RateCard'
+  EntityId            Int
+  OrderId             Int?
+  ContractId          Int?
+  RateCardId          Int?
+  Level               Int
+  Sequence            Int       @default(0)
+  ApproverId          Int
+  ApproverCode        String?
+  ApproverName        String?
+  ApproverLimit       Float     @default(0)
+  Amount              Float     @default(0)
+  ApprovalStateTypeId Int?
+  Status              String  // Pending, Approved, Rejected, Waiting, Observer, Escalated, Delegated
+  IsObserver          Boolean   @default(false)
+  IsDelegated         Boolean   @default(false)
+  DelegatedFromId     Int?      // original approver before delegation
+  EscalationHours     Int?      // hours before escalation
+  EscalatedAt         DateTime? // when escalation triggered
+  ApprovedDate        DateTime?
+  RejectedDate        DateTime?
+  RejectedReason      String?
+  Comments            String?
+  CreatedBy           Int?
+  CreatedDate         DateTime  @default(now())
+  @@map("TBL4S_ApprovalStates")
+  @@schema("procurement")
+}
+
+model P4_ApprovalMatrix {
+  Id               Int       @id @default(autoincrement())
+  Module           String                    // Order, Contract, RateCard
+  SpendType        String?                   // DIRECT, INDIRECT (null = both)
+  CommodityL2Code  String?                   // null = all commodities
+  MinAmount        Float     @default(0)
+  MaxAmount        Float?
+  RequiredLevels   String?
+  Steps            String?                   // JSON string
+  AutoApproveBelow Float?                    // Auto-approve if totalAmount < this value
+  EscalationHours  Int       @default(48)    // hours before escalation
+  IsActive         Boolean   @default(true)
+  CreatedBy        Int?
+  CreatedDate      DateTime  @default(now())
+  UpdatedDate      DateTime?
+  @@map("TBL4S_ApprovalMatrices")
+  @@schema("procurement")
+}
+
+model P4_Delegation {
+  Id            Int       @id @default(autoincrement())
+  DelegatorId   Int                          // user delegating approval power
+  DelegateId    Int                          // user receiving approval power
+  StartDate     DateTime
+  EndDate       DateTime
+  Reason        String?
+  IsActive      Boolean   @default(true)
+  CreatedBy     Int?
+  CreatedDate   DateTime  @default(now())
+  @@map("TBL4S_Delegations")
+  @@schema("procurement")
+}
+
+model P4_Receipt {
+  Id               Int       @id @default(autoincrement())
+  Code             String    @unique
+  OrderId          Int
+  ReceiptDate      DateTime  @default(now())
+  WareHouseId      Int?
+  LocationId       Int?
+  Notes            String?
+  ReceiptType      String    @default("GOODS") // GOODS or SERVICE
+  TotalReceivedQty Float     @default(0)
+  TotalAcceptedQty Float     @default(0)
+  TotalRejectedQty Float     @default(0)
+  IsActive         Boolean   @default(true)
+  CreatedBy        Int?
+  CreatedDate      DateTime  @default(now())
+  UpdatedDate      DateTime?
+  @@map("TBL4S_Receipts")
+  @@schema("procurement")
+}
+
+model P4_ReceiptDetail {
+  Id               Int       @id @default(autoincrement())
+  ReceiptId        Int
+  LineNo           Int       @default(0)
+  OrderDetailId    Int
+  MaterialId       Int?
+  ReceivedQuantity Float     @default(0)
+  AcceptedQuantity Float     @default(0)
+  RejectedQuantity Float     @default(0)
+  RejectReason     String?
+  CreatedDate      DateTime  @default(now())
+  @@map("TBL4S_ReceiptDetails")
+  @@schema("procurement")
+}
+
+model P4_RejectionReason {
+  Id          Int       @id @default(autoincrement())
+  Code        String    @unique
+  Name        String
+  Description String?
+  Module      String?  // Contract, Order, RateCard, or null (all)
+  SortOrder   Int       @default(0)
+  IsActive    Boolean   @default(true)
+  CreatedBy   Int?
+  CreatedDate DateTime  @default(now())
+  @@map("TBL4S_RejectionReasons")
+  @@schema("procurement")
+}
+
+model P4_Budget {
+  Id              Int       @id @default(autoincrement())
+  Code            String    @unique
+  Name            String
+  Year            Int
+  Month           Int?      // 1-12 for monthly budgets, null for annual summary
+  DepartmentId    Int?
+  CostCenterCode  String?
+  GLAccountCode   String?
+  TotalAmount     Float     @default(0)
+  ReservedAmount  Float     @default(0)
+  CommittedAmount Float     @default(0)
+  SpentAmount     Float     @default(0)
+  CurrencyId      Int?
+  IsActive        Boolean   @default(true)
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedBy       Int?
+  UpdatedDate     DateTime?
+  @@index([Year, CostCenterCode, Month])
+  @@map("TBL4S_Budgets")
+  @@schema("procurement")
+}
+
+model P4_Document {
+  Id           Int       @id @default(autoincrement())
+  EntityType   String
+  EntityId     Int
+  FileName     String
+  OriginalName String
+  MimeType     String
+  FileSize     Int
+  FilePath     String
+  UploadedBy   Int?
+  UploadedDate DateTime  @default(now())
+  IsActive     Boolean   @default(true)
+  @@map("TBL4S_Documents")
+  @@schema("procurement")
+}
+
+model P4_Invoice {
+  Id              Int       @id @default(autoincrement())
+  Code            String    @unique
+  OrderId         Int
+  SupplierId      Int?
+  InvoiceNo       String?
+  InvoiceDate     DateTime?
+  DueDate         DateTime?
+  CurrencyId      Int?
+  TotalNetAmount  Float     @default(0)
+  TotalKDVAmount  Float     @default(0)
+  TotalAmount     Float     @default(0)
+  Status          String @default("Draft")
+  PaymentStatus   String    @default("PENDING") // PENDING | PAID | OVERDUE
+  PaymentDate     DateTime?
+  MatchStatus     String @default("Unmatched")
+  Notes           String?
+  IsActive        Boolean   @default(true)
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedBy       Int?
+  UpdatedDate     DateTime?
+  @@map("TBL4S_Invoices")
+  @@schema("procurement")
+}
+
+model P4_InvoiceDetail {
+  Id              Int      @id @default(autoincrement())
+  InvoiceId       Int
+  OrderDetailId   Int?
+  MaterialCode    String?
+  MaterialName    String?
+  Description     String?
+  UnitCode        String?
+  UnitPrice       Float    @default(0)
+  Quantity        Float    @default(0)
+  KDVPercent      Float    @default(0)
+  NetAmount       Float    @default(0)
+  KDVAmount       Float    @default(0)
+  TotalAmount     Float    @default(0)
+  POQuantity      Float?
+  ReceivedQty     Float?
+  MatchResult     String?
+  @@map("TBL4S_InvoiceDetails")
+  @@schema("procurement")
+}
+
+model P4_NotificationLog {
+  Id           Int       @id @default(autoincrement())
+  UserId       Int
+  Type         String   // "approval_pending", "approved", "rejected", "recalled", "invoice_matched", "budget_warning", "po_sent"
+  Title        String
+  Message      String
+  EntityType   String?   // "Order", "Contract", "Invoice", "Budget"
+  EntityId     Int?
+  IsRead       Boolean   @default(false)
+  EmailSent    Boolean   @default(false)
+  CreatedDate  DateTime  @default(now())
+  @@map("TBL4S_NotificationLogs")
+  @@schema("procurement")
+}
+
+model P4_AuditLog {
+  Id          Int       @id @default(autoincrement())
+  UserId      Int?
+  UserName    String?
+  Action      String    // "CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "SUBMIT"
+  EntityType  String    // "Order", "Contract", "Invoice", "Budget", "User", "Supplier"
+  EntityId    Int
+  EntityCode  String?
+  Changes     String?   // JSON diff of old/new values
+  IpAddress   String?
+  CreatedDate DateTime  @default(now())
+  @@map("TBL4S_AuditLogs")
+  @@schema("procurement")
+}
+
+model P4_OutOfOffice {
+  Id            Int       @id @default(autoincrement())
+  UserId        Int
+  BackupUserId  Int
+  StartDate     DateTime
+  EndDate       DateTime
+  Reason        String?   // Izin, Hastalik, Seyahat, Diger
+  IsActive      Boolean   @default(true)
+  CreatedDate   DateTime  @default(now())
+  @@index([UserId, StartDate, EndDate])
+  @@map("TBL4S_OutOfOffice")
+  @@schema("procurement")
+}
+
+model P4_RFQ {
+  Id               Int       @id @default(autoincrement())
+  Code             String    @unique // RFQ-00001
+  Title            String
+  Status           String    @default("Draft") // Draft, Sent, Closed, Awarded, Cancelled
+  SourcePRId       Int?
+  DeadlineDate     DateTime
+  Notes            String?
+  CancelReason     String?
+  WinnerSupplierId Int?
+  WinnerNote       String?
+  AwardedAt        DateTime?
+  IsActive         Boolean   @default(true)
+  CreatedBy        Int?
+  CreatedDate      DateTime  @default(now())
+  UpdatedBy        Int?
+  UpdatedDate      DateTime?
+  @@map("TBL4S_RFQs")
+  @@schema("procurement")
+}
+
+model P4_RFQLine {
+  Id          Int      @id @default(autoincrement())
+  RFQId       Int
+  LineNo      Int      @default(0)
+  MaterialId  Int?
+  Description String
+  Quantity    Float    @default(0)
+  UOMCode     String   @default("ADET")
+  TargetPrice Float?   // buyer's internal target (hidden from supplier)
+  Notes       String?
+  @@map("TBL4S_RFQLines")
+  @@schema("procurement")
+}
+
+model P4_RFQInvitation {
+  Id            Int       @id @default(autoincrement())
+  RFQId         Int
+  SupplierId    Int
+  Token         String    @unique @default(dbgenerated("gen_random_uuid()"))
+  Status        String    @default("Pending") // Pending, Sent, Viewed, Submitted, Declined, Expired
+  SentAt        DateTime?
+  ViewedAt      DateTime?
+  SubmittedAt   DateTime?
+  DeclinedAt    DateTime?
+  DeclineReason String?
+  ExpiresAt     DateTime
+  @@map("TBL4S_RFQInvitations")
+  @@schema("procurement")
+}
+
+model P4_RFQQuote {
+  Id           Int      @id @default(autoincrement())
+  InvitationId Int      @unique
+  ValidUntil   DateTime
+  DeliveryDays Int      @default(0)
+  PaymentTerms String?
+  Notes        String?
+  TotalAmount  Float    @default(0)
+  CurrencyCode String   @default("TRY")
+  SubmittedAt  DateTime @default(now())
+  IsWinner     Boolean  @default(false)
+  @@map("TBL4S_RFQQuotes")
+  @@schema("procurement")
+}
+
+model P4_RFQQuoteLine {
+  Id          Int    @id @default(autoincrement())
+  QuoteId     Int
+  RFQLineId   Int
+  UnitPrice   Float  @default(0)
+  TotalPrice  Float  @default(0)
+  DeliveryDays Int?
+  Notes       String?
+  @@map("TBL4S_RFQQuoteLines")
+  @@schema("procurement")
+}
+
+model P4_SupplierCertificate {
+  Id           Int       @id @default(autoincrement())
+  SupplierId   Int
+  Type         String    // ISO_9001 | ISO_14001 | CE | TSE | OTHER
+  CertNumber   String?
+  IssuedAt     DateTime?
+  ExpiresAt    DateTime
+  AlertSentAt  DateTime?
+  IsActive     Boolean   @default(true)
+  CreatedBy    Int?
+  CreatedDate  DateTime  @default(now())
+  @@map("TBL4S_SupplierCertificates")
+  @@schema("procurement")
+}
+
+model P4_CreditNote {
+  Id           Int       @id @default(autoincrement())
+  Code         String    @unique
+  InvoiceId    Int
+  Type         String    // CREDIT | DEBIT
+  Amount       Float
+  Reason       String
+  Status       String    @default("DRAFT") // DRAFT | APPROVED | APPLIED
+  CreatedBy    Int?
+  CreatedDate  DateTime  @default(now())
+  ApprovedAt   DateTime?
+  ApprovedById Int?
+  @@map("TBL4S_CreditNotes")
+  @@schema("procurement")
+}
+
+model P4_ContractTemplate {
+  Id            Int       @id @default(autoincrement())
+  Code          String    @unique
+  Name          String
+  Description   String?
+  Category      String?   // SERVICE, SUPPLY, FRAMEWORK, NDA
+  Clauses       String?   // JSON array of clause objects
+  DefaultTerms  String?   // Default terms text
+  IsActive      Boolean   @default(true)
+  CreatedBy     Int?
+  CreatedDate   DateTime  @default(now())
+  UpdatedBy     Int?
+  UpdatedDate   DateTime?
+  @@map("TBL4S_ContractTemplates")
+  @@schema("procurement")
+}
+
+model P4_ContractChangeOrder {
+  Id              Int       @id @default(autoincrement())
+  Code            String    @unique
+  ContractId      Int
+  ChangeType      String    // AMENDMENT | EXTENSION | PRICE_CHANGE | SCOPE_CHANGE | TERMINATION
+  Description     String
+  OldValue        String?   // JSON: what changed (before)
+  NewValue        String?   // JSON: what changed (after)
+  EffectiveDate   DateTime?
+  Status          String    @default("Draft") // Draft | Pending | Approved | Rejected
+  ApprovedAt      DateTime?
+  ApprovedById    Int?
+  RejectedReason  String?
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedBy       Int?
+  UpdatedDate     DateTime?
+  @@map("TBL4S_ContractChangeOrders")
+  @@schema("procurement")
+}
+
+model P4_WebhookConfig {
+  Id           Int       @id @default(autoincrement())
+  Name         String
+  Url          String
+  Secret       String?   // HMAC signing secret
+  Events       String    // JSON array: ["order.created","invoice.matched","approval.completed"]
+  IsActive     Boolean   @default(true)
+  RetryCount   Int       @default(3)
+  TimeoutMs    Int       @default(5000)
+  CreatedBy    Int?
+  CreatedDate  DateTime  @default(now())
+  UpdatedBy    Int?
+  UpdatedDate  DateTime?
+  @@map("TBL4S_WebhookConfigs")
+  @@schema("procurement")
+}
+
+model P4_WebhookLog {
+  Id            Int       @id @default(autoincrement())
+  WebhookId     Int
+  Event         String
+  Payload       String?   // JSON payload sent
+  ResponseCode  Int?
+  ResponseBody  String?
+  Attempt       Int       @default(1)
+  Status        String    @default("Pending") // Pending | Success | Failed
+  Error         String?
+  SentAt        DateTime  @default(now())
+  CompletedAt   DateTime?
+  @@index([WebhookId, SentAt])
+  @@map("TBL4S_WebhookLogs")
+  @@schema("procurement")
+}
+
+model P4_SupplierPortalToken {
+  Id          Int       @id @default(autoincrement())
+  SupplierId  Int
+  Token       String    @unique @default(dbgenerated("gen_random_uuid()"))
+  Email       String
+  IsActive    Boolean   @default(true)
+  LastLoginAt DateTime?
+  ExpiresAt   DateTime
+  CreatedDate DateTime  @default(now())
+  @@map("TBL4S_SupplierPortalTokens")
+  @@schema("procurement")
+}
+
+model P4_EInvoice {
+  Id              Int       @id @default(autoincrement())
+  OrderId         Int?      // bağlı PO
+  InvoiceId       Int?      // bağlı fatura
+  Direction       String    // OUTGOING | INCOMING
+  Status          String    @default("DRAFT") // DRAFT | SENDING | SENT | DELIVERED | REJECTED | RECEIVED | PROCESSING | MATCHED | ERROR
+  ETTN            String?   // GIB UUID
+  InvoiceNumber   String
+  InvoiceDate     DateTime
+  SenderVKN       String
+  ReceiverVKN     String
+  TotalAmount     Float     @default(0)
+  TaxAmount       Float     @default(0)
+  RawXml          String?
+  Integrator      String?   // "mock" | "foriba" | "logo"
+  IntegratorRef   String?
+  ErrorMessage    String?
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedDate     DateTime?
+  @@index([Status])
+  @@index([Direction])
+  @@map("TBL4S_EInvoices")
+  @@schema("procurement")
+}
+
+model P4_EArchiveReceipt {
+  Id            Int       @id @default(autoincrement())
+  InvoiceId     Int
+  ReceiptNumber String
+  IssuedAt      DateTime
+  PdfUrl        String?
+  CreatedDate   DateTime  @default(now())
+  @@map("TBL4S_EArchiveReceipts")
+  @@schema("procurement")
+}
+
+model P4_ConsentRecord {
+  Id          Int       @id @default(autoincrement())
+  UserId      Int
+  ConsentType String    // KVKK_AYDINLATMA | KVKK_ACIK_RIZA | DPA_SOZLESME | KULLANIM_KOSULLARI
+  Version     String    @default("1.0")
+  AcceptedAt  DateTime  @default(now())
+  IpAddress   String?
+  UserAgent   String?
+  @@index([UserId])
+  @@map("TBL4S_ConsentRecords")
+  @@schema("procurement")
+}
+
+model P4_IntegrationConfig {
+  Id              Int       @id @default(autoincrement())
+  Provider        String    @default("LOGO") // LOGO | SAP | MIKRO | CUSTOM
+  Name            String    // "Logo Tiger Üretim", "Logo Netsis" etc.
+  BaseUrl         String    // http://192.168.1.100:32001/api/v1
+  ClientId        String?
+  ClientSecret    String?
+  Username        String?
+  Password        String?
+  FirmNo          Int       @default(1)
+  PeriodNo        Int       @default(1)
+  AccessToken     String?
+  RefreshToken    String?
+  TokenExpiresAt  DateTime?
+  SyncMaterials   Boolean   @default(true)
+  SyncSuppliers   Boolean   @default(true)
+  SyncUnits       Boolean   @default(false)
+  SyncCurrencies  Boolean   @default(false)
+  SyncCostCenters Boolean   @default(false)
+  SyncGLAccounts  Boolean   @default(false)
+  SyncPaymentTerms Boolean  @default(false)
+  SyncWarehouses  Boolean   @default(false)
+  SyncPO          Boolean   @default(false) // PO push to ERP
+  SyncInvoice     Boolean   @default(false) // Invoice push to ERP
+  SyncInterval    Int       @default(60) // minutes
+  LastSyncAt      DateTime?
+  IsActive        Boolean   @default(true)
+  CreatedBy       Int?
+  CreatedDate     DateTime  @default(now())
+  UpdatedDate     DateTime?
+  @@map("TBL4S_IntegrationConfigs")
+  @@schema("procurement")
+}
+
+model P4_IntegrationLog {
+  Id              Int       @id @default(autoincrement())
+  ConfigId        Int
+  SyncType        String    // MATERIAL_PULL | SUPPLIER_PULL | UNIT_PULL | PO_PUSH | INVOICE_PUSH | TOKEN_REFRESH
+  Direction       String    @default("PULL") // PULL (ERP→4Proc) | PUSH (4Proc→ERP)
+  Status          String    @default("RUNNING") // RUNNING | SUCCESS | PARTIAL | FAILED
+  TotalRecords    Int       @default(0)
+  CreatedRecords  Int       @default(0)
+  UpdatedRecords  Int       @default(0)
+  SkippedRecords  Int       @default(0)
+  FailedRecords   Int       @default(0)
+  ErrorMessage    String?
+  ErrorDetails    String?   // JSON array of per-record errors
+  StartedAt       DateTime  @default(now())
+  CompletedAt     DateTime?
+  DurationMs      Int?
+  @@index([ConfigId])
+  @@index([SyncType])
+  @@index([Status])
+  @@index([StartedAt])
+  @@map("TBL4S_IntegrationLogs")
+  @@schema("procurement")
+}
+
+model P4_IntegrationMapping {
+  Id              Int       @id @default(autoincrement())
+  ConfigId        Int
+  EntityType      String    // MATERIAL | SUPPLIER | UNIT | CURRENCY | COST_CENTER
+  LocalId         Int       // 4Proc record Id
+  ExternalId      String    // Logo LOGICALREF
+  ExternalCode    String?   // Logo CODE
+  LastSyncAt      DateTime  @default(now())
+  SyncHash        String?   // MD5 of external record for change detection
+  @@unique([ConfigId, EntityType, LocalId])
+  @@unique([ConfigId, EntityType, ExternalId])
+  @@index([EntityType])
+  @@map("TBL4S_IntegrationMappings")
+  @@schema("procurement")
+}
+// ─── 1:1 satınalma profilleri (K2 kararı): çekirdek kartlar temiz, 4Proc alanları burada ───
+model TBLUSERPROCPROFILE {
+  id                     Int       @id @default(autoincrement())
+  userId                 Int       @unique
+  departmentId           Int?
+  subDepartmentId        Int?
+  userJobGroupId         Int?
+  position               String?   @db.VarChar(100)
+  jobLocation            String?   @db.VarChar(100)
+  gender                 String?   @db.VarChar(20)
+  lineManagerId          Int?
+  isManager              Boolean   @default(false)
+  isBackup               Boolean   @default(false)
+  defaultBackupId        Int?
+  approvalLimit          Decimal   @default(0) @db.Decimal(18, 2)
+  isApprover             Boolean   @default(false)
+  workLevel              Int       @default(1)
+  hasCompletedOnboarding Boolean   @default(false)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  user TBLUSER @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("procurement")
+}
+
+model TBLPARTNERPROCPROFILE {
+  id                    Int       @id @default(autoincrement())
+  partnerId             Int       @unique
+  currencyId            Int?
+  paymentTermId         Int?
+  leadTimeDays          Int       @default(0)
+  advancePaymentPercent Decimal   @default(0) @db.Decimal(5, 2)
+  advancePaymentNote    String?   @db.VarChar(255)
+  iban                  String?   @db.VarChar(40)
+  bankName              String?   @db.VarChar(100)
+  accountHolder         String?   @db.VarChar(100)
+  accountNumber         String?   @db.VarChar(40)
+  swiftCode             String?   @db.VarChar(20)
+  bankAddress           String?   @db.VarChar(255)
+  correspondentBank     String?   @db.VarChar(100)
+  bankBranch            String?   @db.VarChar(100)
+  shebaNumber           String?   @db.VarChar(40)
+  isInternational       Boolean   @default(false)
+  vatId                 String?   @db.VarChar(40)
+  economicCode          String?   @db.VarChar(40)
+  tradeRegNo            String?   @db.VarChar(40)
+  deliveryPoint         String?   @db.VarChar(100)
+  otherTerms            String?   @db.VarChar(255)
+  riskFlag              Boolean   @default(false)
+  riskScore             Decimal?  @db.Decimal(5, 2)
+  isForbidden           Boolean   @default(false)
+  blacklistReason       String?   @db.VarChar(255)
+  blacklistedAt         DateTime?
+  blacklistedById       Int?
+  onboardingStatus      String    @default("APPROVED") @db.VarChar(20)
+  onboardingNote        String?   @db.VarChar(255)
+  approvedAt            DateTime?
+  approvedById          Int?
+  sendInfoEmail         Boolean   @default(false)
+  sendInfoPrint         Boolean   @default(false)
+  commodityFamilyId     Int?
+  commodityClassId      Int?
+  commodityTypeId       Int?
+  entCode               String?   @db.VarChar(40)
+  heading               String?   @db.VarChar(150)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  partner     TBLBUSINESSPARTNER @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  currency    TBLCURRENCY?       @relation(fields: [currencyId], references: [id])
+  paymentTerm TBLPAYMENTTERM?    @relation(fields: [paymentTermId], references: [id])
+
+  @@index([currencyId])
+  @@index([paymentTermId])
+  @@schema("procurement")
+}
+
+model TBLPRODUCTPROCPROFILE {
+  id                 Int      @id @default(autoincrement())
+  productId          Int      @unique
+  procurementTypeId  Int?
+  categoryId         Int?
+  commodityFamilyId  Int?
+  commodityClassId   Int?
+  commodityId        Int?
+  minOrderQuantity   Int      @default(0)
+  orderIncrement     Int      @default(0)
+  leadTime           Int      @default(0)
+  supplierPartNo     String?  @db.VarChar(60)
+  unspscCode         String?  @db.VarChar(20)
+  manufacturerName   String?  @db.VarChar(100)
+  manufacturerPartNo String?  @db.VarChar(60)
+  technicalSpecs     String?  @db.VarChar(255)
+  imageUrl           String?  @db.VarChar(255)
+  msdsUrl            String?  @db.VarChar(255)
+  glAccountId        Int?
+  isCatalog          Boolean  @default(false)
+  entCode            String?  @db.VarChar(40)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  product TBLPRODUCT @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@schema("procurement")
 }
