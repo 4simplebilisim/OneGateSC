@@ -1,6 +1,8 @@
 # 4Procurement+ × OneGate — Tek Veri Tabanında Birleşim Planı (2026-08-01)
 
-Hedef: 4Procurement+ ürünü OneGate ile **aynı tabloları** kullanacak; ana veri tek kaynak, satınalma→depo akışı kesintisiz.
+> **GÜNCEL KARAR (2026-08-01, kullanıcı):** İki ürün **AYRI platform** kalır (bağımsız da çalışabilir); yalnız **ortak çekirdek tablolar** paylaşılır ve benzer amaçlı kolonlar hizalanır. Alan-alan eşleme + hizalama önerileri: [`4PROC-ORTAK-CEKIRDEK-ESLEME.md`](4PROC-ORTAK-CEKIRDEK-ESLEME.md). Aşağıdaki B-mimarisi bölümü tarihsel bağlamdır; "A varyantı + şema sahipliği ayrımı" altın kuralı geçerlidir.
+
+Hedef: 4Procurement+ ürünü OneGate ile **ortak çekirdek tabloları** kullanacak; ana veri tek kaynak, satınalma→depo akışı kesintisiz.
 
 ## Mevcut durum (OneGate tarafı — hazır olanlar)
 - PostgreSQL 16, 5 şema: `wms · procurement · sales · logistics · finance` (çok-kiracılı, `companyId`).
