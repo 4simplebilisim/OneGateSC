@@ -142,6 +142,9 @@ function RightsSection({ owner }: { owner: Owner }) {
   const [draft, setDraft] = useState<Record<string, SR>>({})
   const [q, setQ] = useState('')
   const [busy, setBusy] = useState(false)
+  // Bölüm daralt/genişlet — StokBar ağacı gibi; arama aktifken hepsi açık (eşleşme gizlenmesin)
+  const [closed, setClosed] = useState<string[]>([])
+  const toggleSec = (sec: string) => setClosed((c) => (c.includes(sec) ? c.filter((s) => s !== sec) : [...c, sec]))
 
   const load = useCallback(() => {
     axiosInstance.get('/api/screen-rights', { params: owner }).then((r) => {
@@ -196,6 +199,9 @@ function RightsSection({ owner }: { owner: Owner }) {
     <>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
         <Input allowClear placeholder="Ekran ara…" onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 260 }} />
+        <Button size="small" onClick={() => setClosed(closed.length ? [] : [...sections])}>
+          {closed.length ? 'Tümünü Genişlet' : 'Tümünü Daralt'}
+        </Button>
         <span style={{ flex: 1 }} />
         {dirty > 0 && <Tag color="orange">{dirty} kaydedilmemiş değişiklik</Tag>}
         <Button size="small" disabled={!dirty || busy} onClick={() => setDraft({})}>Vazgeç</Button>
@@ -211,14 +217,19 @@ function RightsSection({ owner }: { owner: Owner }) {
             </span>
           )})}
         </div>
-        {sections.map((sec) => { const st = secState(sec); return (
+        {sections.map((sec) => { const st = secState(sec); const isOpen = !!ql || !closed.includes(sec); const cnt = list.filter((r) => r.section === sec).length; return (
           <div key={sec}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--og-sunken)', borderBottom: '1px solid var(--og-border-soft)', fontWeight: 700, fontSize: 12 }}>
-              <Checkbox checked={st.all} indeterminate={!st.all && !st.none}
-                onChange={(e) => setCells(list.filter((r) => r.section === sec).map((r) => r.name), 'ALL', e.target.checked)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', background: 'var(--og-sunken)', borderBottom: '1px solid var(--og-border-soft)', fontWeight: 700, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => toggleSec(sec)}>
+              <span onClick={(e) => e.stopPropagation()}>
+                <Checkbox checked={st.all} indeterminate={!st.all && !st.none}
+                  onChange={(e) => setCells(list.filter((r) => r.section === sec).map((r) => r.name), 'ALL', e.target.checked)} />
+              </span>
+              <span style={{ width: 12, color: 'var(--og-muted)' }}>{isOpen ? '▾' : '▸'}</span>
               {sec}
+              <span style={{ fontWeight: 400, color: 'var(--og-muted)' }}>({cnt})</span>
             </div>
-            {list.filter((r) => r.section === sec).map((r) => { const sr = eff(r.name); const changed = draft[r.name] && JSON.stringify(draft[r.name]) !== JSON.stringify(map[r.name] ?? FULL); return (
+            {isOpen && list.filter((r) => r.section === sec).map((r) => { const sr = eff(r.name); const changed = draft[r.name] && JSON.stringify(draft[r.name]) !== JSON.stringify(map[r.name] ?? FULL); return (
               <div key={r.name} style={{ display: 'flex', alignItems: 'center', padding: '3px 10px', borderBottom: '1px dotted var(--og-border-soft)', background: changed ? 'rgba(37,99,201,.05)' : undefined }}>
                 <span style={{ width: 40, textAlign: 'center' }}>
                   <Checkbox checked={allOf(sr)} indeterminate={!allOf(sr) && (sr.canView || sr.canAdd || sr.canEdit || sr.canDelete)} onChange={(e) => setCells([r.name], 'ALL', e.target.checked)} />
