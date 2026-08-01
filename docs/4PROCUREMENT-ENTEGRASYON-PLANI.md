@@ -37,7 +37,16 @@ Tek kaynak (wms): Firma=tenant · Kullanıcı+yetki · Ürün/Birim/Barkod · Ca
 - **Faz 3 — Talep/Teklif/Onay:** 4P+'a özgü akışlar (PR/RFQ/onay zinciri) şema+ekran olarak eklenir.
 - **Faz 4 — Fatura & raporlar:** 3-yollu eşleşme + satınalma raporları; 4P+ eski sistemi kapatılır.
 
-## Senden gerekenler (Faz 0 girdileri)
-1. 4P+ teknolojisi ve kod/DB erişimi (hangi dil/DB, tablo dökümü ya da örnek yedek).
-2. Canlıda kullanılan akışlar (yalnız PO mu; talep/onay/teklif var mı?) ve kullanıcı sayısı.
-3. Taşınacak tarihsel veri kapsamı (açık PO'lar mı, tüm geçmiş mi).
+## Faz 0 — Keşif SONUÇLARI (2026-08-01)
+**Kod:** `github.com/4simplebilisim/4proc` → lokale klonlandı: **`E:\4proc`** (asıl ürün `4proc-next/`; kökteki `4proc/` boş).
+**Stack:** Next.js + TypeScript + tRPC + **Prisma** + **Supabase/PostgreSQL** (proje ref `sbnkaxhuqtqjacyrjpzt`) — OneGate ile aynı ORM + aynı DB motoru; şema birleşimi Prisma→Prisma.
+**Deploy:** kendi Hetzner kurulumu var: `/opt/4proc/4proc-next`, PM2 süreci `4proc` (OneGate ile AYNI sunucu).
+**Şema:** 72 model, tümü `@@map`'li (TBL4S_* tablo adları — SQLEXPRESS'teki `4PROC`/`4procdb` MSSQL kopyalarıyla aynı adlar; `E:\PROC` ve `E:\4Procurement` içindeki `STOKBAR_PROC` MSSQL dosyaları legacy referans, kod değil).
+**Modül envanteri (ekranlar):** buying-wizard · direct/indirect purchase **requests** + **orders** · approvals + approval-matrix + delegations · RFQ (line/invitation/quote) · contracts (+template/change-order/gradual price) · ratecards · catalogs · **receipts** (mal kabul) · invoices + **e-invoice/e-archive** · budgets · spend-analytics · suppliers (+commodity/certificate/**portal**) · materials · commodity definition/relation · master-data · integration (config/log/mapping + webhook) · reports · audit-trail · users + user-permissions · rejection-reasons.
+**Ortak master çakışmaları (Faz 1 eşleme):** User/Role/Screen ↔ wms TBLUSER+ekran hakları · Company/Organization ↔ TBLCOMPANY · Supplier ↔ TBLBUSINESSPARTNER(SUPPLIER) · Material/MaterialType/MaterialGroup ↔ TBLPRODUCT(+grup/tip) · Unit ↔ TBLUNIT · WareHouse/GRLocation ↔ TBLWAREHOUSE/TBLLOCATION · Currency/PaymentTerm/Incoterm/NumberSequence ↔ mevcut karşılıkları (sayaç=TBLCOUNTER).
+**Taşıma işinin gerçek maliyeti:** şema+veri kolay (pg_dump Supabase→`procurement` şeması); asıl iş **UI/iş mantığı portu** — tRPC router'ları → Fastify rotaları, Next.js sayfaları → Refine/AntD ekranları (OneGate metadata-driven desenine).
+
+## Senden gerekenler (kalan girdiler)
+1. Canlıda aktif kullanılan akışlar (yalnız PO mu; talep/RFQ/onay da mı?) ve kullanıcı sayısı.
+2. Taşınacak tarihsel veri kapsamı (açık PO'lar mı, tüm geçmiş mi).
+3. Supabase bağlantısı (veri taşıma fazında; sırrı sunucuya/ortama koyarız, chat'e değil).
