@@ -83,4 +83,8 @@ Kaynaklar: `E:\onegate\prisma\schema.prisma` (121 model, camelCase, çok-kiracı
 - **K2 — Uzantı deseni: 1:1 profil tabloları** (`procurement.TBLUSERPROCPROFILE` / `TBLPARTNERPROCPROFILE` / `TBLPRODUCTPROCPROFILE`); çekirdek kartlar temiz, şema sahipliği ayrık.
 - **K3 — Kimlik: TAM ortak.** Tek kullanıcı+rol+ekran hakkı sistemi; 4Proc ekran adları TBLUSERSCREENRIGHT'a kendi isim uzayıyla girer. Tek login, tek yetki matrisi.
 
-**Uygulama durumu:** Adım 1 ✅ (migration `shared_core_finance_masters`: TBLCURRENCY/TBLPAYMENTTERM/TBLINCOTERM + TBLPRODUCT.description + TBLUSER.profilePictureUrl). Adım 2 (profil tabloları) bilinçli olarak veri taşıma fazına ertelendi — içlerindeki Commodity/Department/GLAccount FK hedefleri 4Proc tablolarıyla birlikte gelecek.
+**Uygulama durumu (2026-08-01, canlıda):**
+- Adım 1 ✅ migration `20260801120000_shared_core_finance_masters` — TBLCURRENCY/TBLPAYMENTTERM/TBLINCOTERM + TBLPRODUCT.description + TBLUSER.profilePictureUrl.
+- Adım 2 ✅ migration `20260801123000_procurement_4proc_platform_profiles` — 53 P4_* platform tablosu (TBL4S_* adlarıyla `procurement` şemasında, relation'sız DDL sahipliği; OneGate API kullanmaz) + 3 profil tablosu (TBLUSERPROCPROFILE/TBLPARTNERPROCPROFILE/TBLPRODUCTPROCPROFILE, çekirdeğe cross-schema FK'lı). SQL, canlı DB'ye karşı `prisma migrate diff --from-config-datasource` ile sunucuda üretildi (Prisma 7'de `--from-url` KALKTI) ve denetlendi.
+- Faz B ✅ Supabase dökümü sunucuda: `/var/backups/onegate-wms/4proc-supabase-20260801-121557.dump` (652K; PG17 kaynak → sunucuya yalnız `postgresql-client-17` kuruldu, PG16 sunucusuna dokunulmadı). Envanter: Materials 187 · Users 58 · Suppliers 23 · Orders 27 · Budgets 312. Kod çakışması: Supplier 0 · Material 0 · Unit 6 · User 1 (admin) — Faz D'de kesin raporu SQL join ile alınacak (comm sıralama uyarısı güvenilmez).
+- Sırada: Faz D (veri taşıma scripti, dry-run önce) → Faz E (4proc-next şema geçişi + DATABASE_URL Hetzner + PM2).
