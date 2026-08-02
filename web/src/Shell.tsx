@@ -85,7 +85,13 @@ const QuickAppSwitch = ({ apps, dark }: { apps: AppEntitlement[]; dark: boolean 
     <Tooltip title={`${a.name}'a geç`}>
       <Button
         onClick={go}
-        icon={<ShoppingCartOutlined />}
+        icon={
+          // Procurement'taki "WMS" rozetiyle aynı: ürün ikonu değil, OneGate amblemi
+          <svg width={15} height={15} viewBox="0 0 94 94" aria-hidden="true" style={{ verticalAlign: '-2px' }}>
+            <g fill="currentColor"><rect width="42" height="42" rx="6" /><rect x="52" y="52" width="42" height="42" rx="6" /></g>
+            <g fill="#2563C9"><circle cx="73" cy="21" r="21" /><circle cx="21" cy="73" r="21" /></g>
+          </svg>
+        }
         style={{
           height: 30, borderRadius: 15, padding: '0 12px', fontSize: 12.5, fontWeight: 600,
           background: dark ? 'rgba(91,141,239,.18)' : '#EEF4FF',
