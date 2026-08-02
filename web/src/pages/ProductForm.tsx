@@ -320,7 +320,7 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   }
 
   const defTab = (
-    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true }}>
+    <Form form={form} layout="vertical" onFinish={onFinish} initialValues={{ isActive: true, usageScope: 'BOTH' }}>
       {mode === 'create' && (
         <Alert type="info" showIcon style={{ marginBottom: 14 }} title="Önce ürünü kaydedin — ardından Ölçü Birimleri ve Ek Gruplar sekmeleri açılır." />
       )}
@@ -340,6 +340,22 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Col xs={24} sm={8}><Form.Item name="productSubGroupId" label="Ürün Alt-Grubu"><Select options={productSubGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productTypeId" label="Ürün Tipi"><Select options={productTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="detailTypeId" label="Detay Tipi"><Select options={productDetailTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
+          <Col xs={24} sm={8}>
+            <Form.Item
+              name="usageScope"
+              label="Kullanım Alanı"
+              tooltip="Ürün hangi platformlarda kullanılabilir? Her ikisi seçiliyse tüm ürünlerde görünür; tek platform seçilirse yalnız orada listelenir."
+            >
+              <Select
+                placeholder="Her ikisi"
+                options={[
+                  { value: 'BOTH', label: 'Her ikisi (WMS + Procurement)' },
+                  { value: 'WMS', label: 'Yalnız WMS' },
+                  { value: 'PROC', label: 'Yalnız Procurement' },
+                ]}
+              />
+            </Form.Item>
+          </Col>
           <Col xs={24} sm={8}>
             <div className="og-switchrow" style={{ marginTop: 30 }}>
               <span className="og-switchrow__label">Aktif</span>

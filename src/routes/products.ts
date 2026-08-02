@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { firstBadRef } from '../lib/refGuard.js'
+import { attachScopes, setProductScope, usableInAppFilter, scopeFromCodes, type ProductScope } from '../lib/productScope.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 import { importRows, codeMap, resolveCode, str, parseBool } from '../lib/importer.js'
 
@@ -23,6 +24,7 @@ const createSchema = z.object({
   minWeight: z.number().nonnegative().nullable().optional(),
   maxWeight: z.number().nonnegative().nullable().optional(),
   facilities: z.array(z.number().int().positive()).optional(), // kullanılabilir tesisler (boş = tüm tesisler)
+  usageScope: z.enum(['BOTH', 'WMS', 'PROC']).optional(), // ürün hangi platformlarda kullanılır
   isActive: z.boolean().optional(),
 })
 
@@ -41,6 +43,7 @@ const updateSchema = z.object({
   minWeight: z.number().nonnegative().nullable().optional(),
   maxWeight: z.number().nonnegative().nullable().optional(),
   facilities: z.array(z.number().int().positive()).optional(),
+  usageScope: z.enum(['BOTH', 'WMS', 'PROC']).optional(),
   isActive: z.boolean().optional(),
 })
 
@@ -53,17 +56,19 @@ async function validFacilityIds(companyId: number, facilities: number[] | undefi
 
 export async function productRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
-    const q = request.query as { search?: string }
+    const q = request.query as { search?: string; app?: string }
     const where = {
       ...companyListFilter(request),
       ...(q.search ? { OR: [{ code: { contains: q.search, mode: 'insensitive' as const } }, { name: { contains: q.search, mode: 'insensitive' as const } }] } : {}),
+      // ?app=WMS|PROC → yalnız o platformda kullanılabilen ürünler (kısıtsızlar dahil)
+      ...(q.app ? usableInAppFilter(q.app) : {}),
     }
     const p = parsePagination(request)
     const [data, total] = await Promise.all([
       prisma.tBLPRODUCT.findMany({ where, orderBy: { code: 'asc' }, include: { unit: true }, skip: p.skip, take: p.take }),
       prisma.tBLPRODUCT.count({ where }),
     ])
-    return paginated(data, total, p)
+    return paginated(await attachScopes(data), total, p)
   })
 
   app.get('/:id', async (request, reply) => {
@@ -72,10 +77,10 @@ export async function productRoutes(app: FastifyInstance) {
 
     const product = await prisma.tBLPRODUCT.findFirst({
       where: { id, ...companyListFilter(request) },
-      include: { unit: true, facilities: { select: { facilityId: true } } },
+      include: { unit: true, facilities: { select: { facilityId: true } }, applications: { select: { application: { select: { code: true } } } } },
     })
     if (!product) return reply.code(404).send({ error: 'Product not found' })
-    return product
+    return { ...product, usageScope: scopeFromCodes(product.applications.map((a) => a.application.code)) }
   })
 
   app.post('/', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
@@ -84,7 +89,7 @@ export async function productRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     }
     const companyId = getCompanyId(request)
-    const { facilities, ...rest } = parsed.data
+    const { facilities, usageScope, ...rest } = parsed.data
     // FK'ler bu firmaya ait mi (çapraz-firma izolasyon)
     const bad = await firstBadRef(companyId, [
       ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
@@ -98,7 +103,8 @@ export async function productRoutes(app: FastifyInstance) {
       const product = await prisma.tBLPRODUCT.create({
         data: { ...rest, shelfLifeControl, companyId, facilities: { create: facIds.map((fid) => ({ companyId, facilityId: fid })) } },
       })
-      return reply.code(201).send(product)
+      if (usageScope) await setProductScope(product.id, companyId, usageScope as ProductScope)
+      return reply.code(201).send({ ...product, usageScope: usageScope ?? 'BOTH' })
     } catch (err) {
       const code = (err as { code?: string }).code
       if (code === 'P2002') {
@@ -156,7 +162,7 @@ export async function productRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
     const existing = await prisma.tBLPRODUCT.findFirst({ where: { id, ...companyListFilter(request) } })
     if (!existing) return reply.code(404).send({ error: 'Product not found' })
-    const { facilities, ...rest } = parsed.data
+    const { facilities, usageScope, ...rest } = parsed.data
     // FK'ler ürünün firmasına ait mi (çapraz-firma izolasyon; og_company değil)
     const bad = await firstBadRef(existing.companyId, [
       ['birim', 'unit', rest.unitId], ['ürün grubu', 'productGroup', rest.productGroupId], ['alt grup', 'productSubGroup', rest.productSubGroupId],
@@ -173,7 +179,8 @@ export async function productRoutes(app: FastifyInstance) {
     }
     try {
       const product = await prisma.tBLPRODUCT.update({ where: { id }, data, include: { unit: true, facilities: { select: { facilityId: true } } } })
-      return product
+      if (usageScope) await setProductScope(id, existing.companyId, usageScope as ProductScope)
+      return { ...product, ...(usageScope ? { usageScope } : {}) }
     } catch (err) {
       if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
       throw err

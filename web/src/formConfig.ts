@@ -123,6 +123,15 @@ export const LABEL_ITEM_TYPE_OPTS = [
 
 export const FORM_CONFIG: Record<string, FieldDef[]> = {
   // ── Sistem ──
+  // WMS ↔ Procurement entegrasyonu: kayıt yoksa entegrasyon KAPALI (ürünler bağımsız çalışır)
+  'platform-integration': [
+    { name: 'isActive', label: 'Entegrasyon Aktif', type: 'bool' },
+    { name: 'facilityId', label: 'Tesis (boş = tüm tesisler)', type: 'ref', refResource: 'facilities' },
+    { name: 'receiptOperationTypeId', label: 'Mal Kabul Operasyon Tipi', type: 'ref', refResource: 'operation-types' },
+    { name: 'autoCreateReceipt', label: 'Sipariş onayında mal kabul belgesi oluştur', type: 'bool' },
+    { name: 'updateOrderOnComplete', label: 'Mal kabul tamamlanınca siparişi güncelle', type: 'bool' },
+    { name: 'note', label: 'Not', type: 'text' },
+  ],
   'company-licenses': [
     { name: 'applicationId', label: 'Ürün', type: 'ref', refResource: 'applications', required: true },
     { name: 'isActive', label: 'Aktif', type: 'bool' },

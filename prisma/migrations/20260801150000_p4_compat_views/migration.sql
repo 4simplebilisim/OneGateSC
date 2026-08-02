@@ -611,7 +611,7 @@ SELECT
   b."updatedAt" AS "UpdatedDate"
 FROM wms."TBLBUSINESSPARTNER" b
 LEFT JOIN procurement."TBLPARTNERPROCPROFILE" p ON p."partnerId" = b.id
-WHERE b."companyId" = procurement.p4_company() AND b.type = 'SUPPLIER';
+WHERE b."companyId" = procurement.p4_company() AND b.type IN ('SUPPLIER', 'BOTH');
 
 CREATE OR REPLACE FUNCTION procurement.p4_w_suppliers() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE v_id int;
@@ -676,7 +676,9 @@ SELECT
   b."updatedAt" AS "UpdatedDate"
 FROM wms."TBLPRODUCT" b
 LEFT JOIN procurement."TBLPRODUCTPROCPROFILE" p ON p."productId" = b.id
-WHERE b."companyId" = procurement.p4_company();
+WHERE b."companyId" = procurement.p4_company() AND (NOT EXISTS (SELECT 1 FROM wms."TBLPRODUCTAPPLICATION" pa WHERE pa."productId" = b.id)
+       OR EXISTS (SELECT 1 FROM wms."TBLPRODUCTAPPLICATION" pa JOIN wms."TBLAPPLICATION" ap ON ap.id = pa."applicationId"
+                  WHERE pa."productId" = b.id AND ap.code = 'PROC'));
 
 CREATE OR REPLACE FUNCTION procurement.p4_w_materials() RETURNS trigger LANGUAGE plpgsql AS $fn$
 DECLARE v_id int;

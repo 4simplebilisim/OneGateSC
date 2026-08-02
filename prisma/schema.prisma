@@ -55,6 +55,7 @@ model TBLCOMPANY {
   paymentTerms        TBLPAYMENTTERM[]
   incoterms           TBLINCOTERM[]
   licenses            TBLCOMPANYLICENSE[]
+  platformIntegrations TBLPLATFORMINTEGRATION[]
   barcodeTypes        TBLBARCODETYPE[]
   integrationPackages TBLINTEGRATIONPACKAGE[]
   parameters          TBLPARAMETER[]
@@ -457,6 +458,7 @@ model TBLAPPLICATION {
 
   licenses    TBLCOMPANYLICENSE[]
   userAccess  TBLUSERAPPACCESS[]
+  products    TBLPRODUCTAPPLICATION[]
 
   @@schema("wms")
 }
@@ -493,6 +495,48 @@ model TBLUSERAPPACCESS {
 
   @@unique([userId, applicationId])
   @@index([userId])
+  @@schema("wms")
+}
+
+// Platformlar arası entegrasyon ayarı: WMS ↔ Procurement bağlantısı açık mı, hangi
+// operasyona senkronlanacak. Firma (ve istenirse tesis) bazlı; satır yoksa entegrasyon KAPALI.
+// Böylece yalnız WMS, yalnız Procurement, ikisi bağımsız veya ikisi entegre kurulumlar desteklenir.
+model TBLPLATFORMINTEGRATION {
+  id                    Int      @id @default(autoincrement())
+  companyId             Int
+  facilityId            Int? // boş = tüm tesisler için geçerli
+  isActive              Boolean  @default(false)
+  receiptOperationTypeId Int? // onaylı sipariş → mal kabul belgesi bu operasyon tipiyle doğar
+  autoCreateReceipt     Boolean  @default(true) // sipariş onayında belge otomatik oluşsun
+  updateOrderOnComplete Boolean  @default(true) // mal kabul tamamlanınca sipariş karşılanan miktarı güncellensin
+  note                  String?  @db.VarChar(255)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  company             TBLCOMPANY       @relation(fields: [companyId], references: [id])
+  facility            TBLFACILITY?     @relation(fields: [facilityId], references: [id])
+  receiptOperationType TBLOPERATIONTYPE? @relation("PlatformIntegrationReceiptOp", fields: [receiptOperationTypeId], references: [id])
+
+  @@unique([companyId, facilityId])
+  @@index([companyId])
+  @@schema("wms")
+}
+
+// Ürünün hangi platformlarda kullanıldığı. KISITLAMA listesi: satır YOKSA her üründe görünür.
+// (Kullanıcı erişimindeki TBLUSERAPPACCESS ile aynı desen — yeni ürün eklendiğinde enum değişmez.)
+model TBLPRODUCTAPPLICATION {
+  id            Int      @id @default(autoincrement())
+  companyId     Int
+  productId     Int
+  applicationId Int
+  createdAt     DateTime @default(now())
+
+  product     TBLPRODUCT     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  application TBLAPPLICATION @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, applicationId])
+  @@index([companyId])
+  @@index([productId])
   @@schema("wms")
 }
 
@@ -558,6 +602,7 @@ model TBLPRODUCT {
   shortName         String?       @db.VarChar(50)
   description       String?       @db.VarChar(255)
   procProfile       TBLPRODUCTPROCPROFILE?
+  applications      TBLPRODUCTAPPLICATION[]
   productGroupCode  String?       @db.VarChar(20)
   productGroupId    Int?
   productSubGroupId Int?
@@ -1142,6 +1187,8 @@ model TBLOPERATIONTYPE {
   locationLinks   TBLOPERATIONTYPELOCATION[]
   reasonLinks     TBLOPERATIONTYPEREASON[]
   palletTypeLinks TBLOPERATIONTYPEPALLETTYPE[]
+
+  platformIntegrations TBLPLATFORMINTEGRATION[] @relation("PlatformIntegrationReceiptOp")
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2372,6 +2419,8 @@ model TBLFACILITY {
   printers   TBLPRINTER[]
   areas      TBLAREA[]
   locations  TBLLOCATION[]
+
+  platformIntegrations TBLPLATFORMINTEGRATION[]
 
   @@unique([companyId, code])
   @@index([companyId])

@@ -111,7 +111,8 @@ const SPECS = [
 
   // ── Tedarikçi: cari kartı + satınalma profili ─────────────────────────────
   { view: 'TBL4S_Suppliers', base: 'wms."TBLBUSINESSPARTNER"', tenant: true,
-    baseFilter: `b.type = 'SUPPLIER'`,
+    // "Hepsi" (BOTH) tipindeki cariler de tedarikcidir — yalniz SUPPLIER filtresi onlari gizliyordu
+    baseFilter: `b.type IN ('SUPPLIER', 'BOTH')`,
     extraInsert: [['type', `'SUPPLIER'`]],
     profile: { table: 'procurement."TBLPARTNERPROCPROFILE"', fk: 'partnerId' },
     cols: [
@@ -144,6 +145,10 @@ const SPECS = [
 
   // ── Malzeme: ürün kartı + satınalma profili ───────────────────────────────
   { view: 'TBL4S_Materials', base: 'wms."TBLPRODUCT"', tenant: true,
+    // Kullanim Alani: kisit satiri yoksa her platformda; varsa yalniz secilen platformda
+    baseFilter: `(NOT EXISTS (SELECT 1 FROM wms."TBLPRODUCTAPPLICATION" pa WHERE pa."productId" = b.id)
+       OR EXISTS (SELECT 1 FROM wms."TBLPRODUCTAPPLICATION" pa JOIN wms."TBLAPPLICATION" ap ON ap.id = pa."applicationId"
+                  WHERE pa."productId" = b.id AND ap.code = 'PROC'))`,
     profile: { table: 'procurement."TBLPRODUCTPROCPROFILE"', fk: 'productId' },
     cols: [
       c('Id', 'id'), c('Code', 'code'), p('Heading', 'heading'),

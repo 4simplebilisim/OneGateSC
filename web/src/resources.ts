@@ -176,6 +176,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'user-groups', label: 'Kullanıcı Grup', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'auth-center', label: 'Ekran Yetkileri', section: 'Uyarlamalar', group: 'Sistem' },
   { name: 'company-licenses', label: 'Ürün Lisansları', section: 'Uyarlamalar', group: 'Sistem' },
+  { name: 'platform-integration', label: 'Platform Entegrasyonu', section: 'Uyarlamalar', group: 'Sistem' },
 
   // ── Raporlar — her rapor AYRI menü öğesi (tek çatı Rapor Merkezi kaldırıldı; motor aynı: report-run + fixedCode) ──
   { name: 'stock-report', label: 'Stok Raporu', section: 'Raporlar', group: 'Stok' },
