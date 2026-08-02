@@ -173,8 +173,15 @@ lines.push(`-- 4Proc uyumluluk katmanı (OTOMATİK ÜRETİLDİ — gen-compat-vi
 -- 4proc kodu TBL4S_* adlarını kullanmaya devam eder; veri wms tablolarında yaşar.
 SET search_path = procurement, wms, public;
 
+-- Oturumdaki kiracı. Uygulama bağlantıyı açarken "app.company_id" ayarını taşır
+-- (her firma kendi bağlantı havuzunu kullanır → kiracılar arası sızıntı olmaz).
+-- Ayar yoksa: tek firmalı kurulumda o firma; birden çok firma varsa NULL (boş liste),
+-- çünkü yanlış kiracının verisini göstermektense hiç göstermemek doğrudur.
 CREATE OR REPLACE FUNCTION procurement.p4_company() RETURNS int LANGUAGE sql STABLE AS $fn$
-  SELECT id FROM wms."TBLCOMPANY" WHERE code = 'ONEGATE' LIMIT 1;
+  SELECT COALESCE(
+    NULLIF(current_setting('app.company_id', true), '')::int,
+    (SELECT id FROM wms."TBLCOMPANY" WHERE (SELECT count(*) FROM wms."TBLCOMPANY") = 1 LIMIT 1)
+  );
 $fn$;
 
 -- Varsayılan yedekler: 4Proc bu alanları ZORUNLU ister, OneGate kayıtlarında boş olabilir.
