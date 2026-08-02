@@ -6,7 +6,12 @@ OneGate artık **tek platform, birden çok ürün**: WMS ve 4Procurement+ ayrı 
 | Ürün | Adres | Teknoloji | Süreç |
 |---|---|---|---|
 | OneGate WMS | `https://onegate.4simple.com.tr/` | React SPA + Fastify API (`:3010`) | systemd `onegate-wms-api` |
-| 4Procurement+ | `https://onegate.4simple.com.tr/satinalma` | Next.js (`:3000`) | PM2 `4proc` |
+| OneGate Procurement | `https://onegate.4simple.com.tr/satinalma` | Next.js (`:3000`) | PM2 `4proc` |
+
+**Marka:** çatı ürün adı **OneGate**. Giriş ekranı, sekme başlığı ve platform yüzeyleri yalnız "OneGate" der; ürün adı ancak ürüne girildikten sonra kullanılır (**OneGate WMS**, **OneGate Procurement**). Ürün adları `TBLAPPLICATION` kataloğundan okunur — yeniden adlandırmak için tek yer orası.
+
+### Giriş sonrası ürün seçimi
+Birden çok ürüne erişimi olan kullanıcı girişten sonra **/platform** ekranına düşer: ürün kartları + lisanssız ürünler soluk (satış görünürlüğü) + "bir dahaki girişte son kullandığım ürüne git" tercihi (`og_last_app`/`og_app_remember`). Tek ürünü olan kullanıcı bu ekranı görmez, doğrudan ürününe girer. Header'daki ürün değiştirici her an geçiş sağlar.
 
 nginx (`/etc/nginx/sites-enabled/onegate-wms`) `/satinalma` yolunu Next.js'e yönlendirir; Next tarafında `basePath` aynı değerle ayarlıdır (`NEXT_PUBLIC_BASE_PATH`, varsayılan `/satinalma`). Eski adres `proc.4simple.com.tr` çalışmaya devam eder.
 
