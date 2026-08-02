@@ -43,7 +43,8 @@ Ekran hakları da ortak: 4Proc'un `UserPermissions.Screens` JSON'u `wms.TBLUSERS
 | Renk | Tek vurgu: `#2563C9`; koyu ton `#1B2B4B`. Procurement'ın cyan/mor kartelası kaldırıldı |
 | Yazı tipi | Gövde `Inter`, başlıklar `Plus Jakarta Sans` |
 | Menü | Genişlik 280px, daralmış 56px; öğeler 11.5px `uppercase` `0.04em`, bölüm başlıkları 11.5px/700 |
-| Başlık çubuğu | 56px sabit (`flexShrink: 0` — dikey flex içinde sıkışıyordu) |
+| İskelet | Başlık ÜSTTE ve tam genişlikte (56px sabit, `flexShrink: 0`); menü başlığın ALTINDA, `calc(100vh - 56px)`. Marka bloğu yalnız başlıkta — menüde tekrarlanmaz |
+| Menü arama | Menünün en üstünde "Menüde ara" kutusu (bölüm adı ya da alt etiket eşleşmesi) |
 | Pano | Ölçüm kartları + bölümlü kısayol karoları (`og-metric` / `og-tile` / `og-lp-section`) |
 | Tercihler | Tema `og_theme`, menü daraltma `og_menu_collapsed` — **ortak localStorage anahtarları** (aynı alan adı), yani bir üründe değiştirince diğeri de aynı gelir |
 | Geçiş | Her iki başlıkta diğer ürüne tek tıkla geçiş rozeti (SSO bileti ile, şifresiz) |
