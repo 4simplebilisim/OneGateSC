@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
+import { writeBackOnComplete } from './procurementBridge.js'
 import { suggestPutawayLocations } from './routing.js'
 import { writeLedger } from './ledger.js'
 import { refreshDocStatus } from './documentStatus.js'
@@ -423,7 +424,7 @@ async function assertNoActiveCountBlock(
 }
 
 export async function completeDocument(documentId: number, breakOpts: CompleteOpts = {}) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const doc = await tx.tBLDOCUMENT.findUniqueOrThrow({
       where: { id: documentId },
       include: { operationType: true, lines: { orderBy: { lineNo: 'asc' }, include: { scopes: { orderBy: { scopeNo: 'asc' } } } } },
@@ -909,6 +910,15 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     })
     return Object.assign(updated, { referenceDocument, sequentialDocument })
   })
+
+  // Procurement köprüsü: belge bir satınalma siparişinden doğduysa sonucu siparişe yaz
+  // (kısmi/tam karşılama + mal kabul özeti). Entegrasyon kapalıysa sessizce hiçbir şey yapmaz.
+  // Hata tamamlanmayı GERİ ALMAZ — stok hareketi işlendi, özet ikincildir.
+  await writeBackOnComplete(documentId).catch((e) => {
+    console.warn('[köprü] sipariş geri yazma başarısız:', (e as Error).message)
+  })
+
+  return result
 }
 
 /**

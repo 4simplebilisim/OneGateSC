@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { firstBadRef } from '../lib/refGuard.js'
+import { syncOrdersToDocuments } from '../lib/procurementBridge.js'
 
 // WMS ↔ Procurement entegrasyon ayarı.
 // Satır YOKSA entegrasyon kapalıdır: firma yalnız WMS, yalnız Procurement ya da ikisini
@@ -59,6 +60,13 @@ export async function platformIntegrationRoutes(app: FastifyInstance) {
     ])
     if (bad) return reply.code(400).send({ error: `Geçersiz ${bad} — bu firmaya ait değil` })
     return prisma.tBLPLATFORMINTEGRATION.update({ where: { id: Number(id) }, data: parsed.data })
+  })
+
+  // Açık satınalma siparişlerini WMS belge tablosuna taşı (idempotent, elle tetikleme)
+  app.post('/sync-orders', { preHandler: [app.authenticate, app.requireWrite] }, async (request) => {
+    const u = request.user as { sub: number }
+    const q = request.query as { facilityId?: string }
+    return syncOrdersToDocuments(getCompanyId(request), u.sub, q.facilityId ? Number(q.facilityId) : null)
   })
 
   app.delete('/:id', { preHandler: [app.authenticate, app.requireAdmin] }, async (request, reply) => {

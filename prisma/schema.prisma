@@ -1212,6 +1212,7 @@ model TBLDOCUMENT {
   createdById     Int
   partnerId       Int?
   reasonId        Int? // legacy LNGOPERASYONNEDENKOD
+  sourceOrderId   Int?           @unique // Procurement siparişinden doğduysa bağ (köprü, idempotency)
   referenceDocumentId Int? // legacy LNGREFBELGENO — referans zinciri: bu belge hangi belgeden üredi (Referans Kontrollü oto-giriş)
   documentDate    DateTime       @default(now())
   completedAt     DateTime?
