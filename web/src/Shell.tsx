@@ -68,6 +68,37 @@ const AppSwitcher = ({ apps, color, dark }: { apps: AppEntitlement[]; color: str
   )
 }
 
+// Diğer ürüne tek tıkla geçiş rozeti (Procurement üst çubuğundaki "WMS" rozetinin eşi).
+// İki üründen fazlası varsa rozet gösterilmez; grid ikonundaki tam liste devreye girer.
+const QuickAppSwitch = ({ apps, dark }: { apps: AppEntitlement[]; dark: boolean }) => {
+  const other = apps.filter((a) => a.path !== '/')
+  if (apps.length !== 2 || other.length !== 1) return null
+  const a = other[0]
+  const short = a.name.replace(/^OneGate\s*/i, '')
+  const go = () => {
+    localStorage.setItem('og_last_app', a.code)
+    axiosInstance.get(`/api/sso/ticket?app=${a.code}`)
+      .then(({ data }) => { window.location.href = data.url })
+      .catch(() => message.error('Ürüne geçiş yapılamadı.'))
+  }
+  return (
+    <Tooltip title={`${a.name}'a geç`}>
+      <Button
+        onClick={go}
+        icon={<ShoppingCartOutlined />}
+        style={{
+          height: 30, borderRadius: 15, padding: '0 12px', fontSize: 12.5, fontWeight: 600,
+          background: dark ? 'rgba(91,141,239,.18)' : '#EEF4FF',
+          color: dark ? '#BFD6FF' : '#2563C9',
+          border: `1px solid ${dark ? 'rgba(91,141,239,.28)' : '#D6E4FF'}`,
+        }}
+      >
+        {short}
+      </Button>
+    </Tooltip>
+  )
+}
+
 export const Shell = ({ children }: { children: ReactNode }) => {
   const { mutate: logout } = useLogout()
   const { data: user } = useGetIdentity<{ fullName?: string; roles?: string[]; isSuperAdmin?: boolean; screens?: string[]; screenRights?: Record<string, { view: boolean }>; apps?: AppEntitlement[] }>()
@@ -157,7 +188,10 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         <CompanySwitcher color={chrome.icon} />
         <Space size={4} style={{ marginRight: 8, marginLeft: 8 }}>
           {(user?.apps?.length ?? 0) > 1
-            ? <Tooltip title="Ürünler"><span><AppSwitcher apps={user!.apps!} color={chrome.icon} dark={dark} /></span></Tooltip>
+            ? <>
+                <QuickAppSwitch apps={user!.apps!} dark={dark} />
+                <Tooltip title="Ürünler"><span><AppSwitcher apps={user!.apps!} color={chrome.icon} dark={dark} /></span></Tooltip>
+              </>
             : <Tooltip title="Pano"><Link to="/dashboard"><Button type="text" icon={<HomeOutlined />} style={{ color: chrome.icon }} /></Link></Tooltip>}
           <Tooltip title={mode === 'dark' ? 'Açık mod' : 'Koyu mod'}>
             <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon }} aria-label="tema" />
