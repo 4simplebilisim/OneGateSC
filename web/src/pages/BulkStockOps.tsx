@@ -67,7 +67,7 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
   useEffect(() => {
     const p = { companyId }
     axiosInstance.get('/api/operation-types', { params: { pageSize: 300, ...p } }).then((r) => setOps(arr(r.data) as Op[]))
-    axiosInstance.get('/api/facilities', { params: { pageSize: 300, ...p } }).then((r) => setFacilities(arr(r.data) as { id: number; code: string; name?: string }[]))
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300, operational: 1, ...p } }).then((r) => setFacilities(arr(r.data) as { id: number; code: string; name?: string }[]))
     axiosInstance.get('/api/products', { params: { pageSize: 500, ...p } }).then((r) => setProducts((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
     axiosInstance.get('/api/locations', { params: { pageSize: 500, ...p } }).then((r) => setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
     axiosInstance.get('/api/statuses', { params: { pageSize: 200, ...p } }).then((r) => setStatuses((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))

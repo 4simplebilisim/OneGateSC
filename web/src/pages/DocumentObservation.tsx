@@ -61,7 +61,7 @@ export const DocumentObservation = ({ direction }: { direction: 'INBOUND' | 'OUT
   const [busy, setBusy] = useState<string | null>(null) // hangi aksiyon yürüyor (buton spinner'ı)
 
   useEffect(() => {
-    axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) => setFacilities(arr(r.data) as Facility[]))
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300, operational: 1 } }).then((r) => setFacilities(arr(r.data) as Facility[]))
     axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) => setOps(arr(r.data) as Op[]))
     axiosInstance.get('/api/partners', { params: { pageSize: 500 } }).then((r) => setPartners((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: codeName(x.code, x.name) }))))
     // Parametre: GozlemBasTarihiGunEkle / GozlemBitTarihiGunEkle — açılışta varsayılan tarih aralığı (bugün+N gün)

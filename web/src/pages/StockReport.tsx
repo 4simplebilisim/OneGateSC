@@ -44,7 +44,7 @@ export const StockReport = () => {
 
   // Filtre kaynakları (bir kez)
   useEffect(() => {
-    axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) => setFacilities((r.data.data ?? r.data) as Facility[]))
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300, operational: 1 } }).then((r) => setFacilities((r.data.data ?? r.data) as Facility[]))
     axiosInstance.get('/api/warehouses', { params: { pageSize: 300 } }).then((r) => setWarehouses((r.data.data ?? r.data) as Warehouse[]))
     axiosInstance.get('/api/products', { params: { pageSize: 500 } }).then((r) => setProducts((r.data.data ?? r.data).map((x: { id: number; code: string; name?: string }) => ({ value: x.id, label: codeName(x.code, x.name) }))))
     axiosInstance.get('/api/statuses', { params: { pageSize: 100 } }).then((r) => setStatuses((r.data.data ?? r.data).map((x: { id: number; code: string; name?: string }) => ({ value: x.id, label: codeName(x.code, x.name) }))))

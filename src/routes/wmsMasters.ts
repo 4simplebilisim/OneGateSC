@@ -21,9 +21,13 @@ function masterRoutes(delegate: MasterDelegate, createSchema: ZodTypeAny, update
   const badRef = (companyId: number, data: Record<string, unknown>) =>
     firstBadRef(companyId, refs.map(([label, model, field]) => [label, model, data[field] as number | null | undefined]))
   return async function (app: FastifyInstance) {
-    app.get('/', async (request) =>
-      delegate.findMany({ where: { ...companyListFilter(request) }, orderBy: { code: 'asc' } }),
-    )
+    app.get('/', async (request) => {
+      // ?operational=1 → yalnız operasyon yürütülen kayıtlar (idari birimler hariç).
+      // Belge/stok/mal kabul ekranları bunu kullanır; tanım ekranı tümünü görür.
+      const q = request.query as { operational?: string }
+      const opFilter = q.operational === '1' || q.operational === 'true' ? { isAdministrative: false } : {}
+      return delegate.findMany({ where: { ...companyListFilter(request), ...opFilter }, orderBy: { code: 'asc' } })
+    })
 
     app.get('/:id', async (request, reply) => {
       const id = Number((request.params as { id: string }).id)
@@ -131,7 +135,7 @@ export const exitConditionTypeRoutes = masterRoutes(prisma.tBLEXITCONDITIONTYPE 
 export const routingTypeRoutes = masterRoutes(prisma.tBLROUTINGTYPE as unknown as MasterDelegate, condType, condUpdate, 'Yönlendirme tipi kodu zaten var', 'Routing type not found')
 
 // Tesis (bizim eklediğimiz) · Bölge (legacy MSDBOLGE) · Cari grup (legacy MUSTERIGRUP)
-const facility = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(100), isActive: z.boolean().optional() })
+const facility = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(100), isAdministrative: z.boolean().optional(), isActive: z.boolean().optional() })
 export const facilityRoutes = masterRoutes(prisma.tBLFACILITY as unknown as MasterDelegate, facility, facility.partial().omit({ code: true }), 'Tesis kodu zaten var', 'Facility not found')
 const codeName60 = z.object({ code: z.string().min(1).max(20), name: z.string().min(1).max(60), isActive: z.boolean().optional() })
 const codeName60Upd = codeName60.partial().omit({ code: true })

@@ -838,6 +838,7 @@ export const FORM_CONFIG: Record<string, FieldDef[]> = {
   facilities: [
     { name: 'code', label: 'Kod', type: 'text', required: true },
     { name: 'name', label: 'Ad', type: 'text', required: true },
+    { name: 'isAdministrative', label: 'İdari Birim (depo operasyonu yok)', type: 'bool' },
     { name: 'isActive', label: 'Aktif', type: 'bool' },
   ],
   'product-units': [

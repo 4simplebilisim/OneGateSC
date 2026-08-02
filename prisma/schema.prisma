@@ -2409,6 +2409,9 @@ model TBLFACILITY {
   code      String   @db.VarChar(20)
   name      String   @db.VarChar(100)
   isActive  Boolean  @default(true)
+  // İdari birim: depo operasyonu yürütülmez (merkez/HQ gibi). Belge, stok, mal kabul
+  // ekranlarında tesis olarak seçilemez; satınalma organizasyonu olarak kullanılabilir.
+  isAdministrative Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

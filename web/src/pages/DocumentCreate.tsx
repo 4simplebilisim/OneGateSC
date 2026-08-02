@@ -44,7 +44,7 @@ export const DocumentCreate = () => {
   useEffect(() => {
     axiosInstance.get('/api/operation-types', { params: { pageSize: 300 } }).then((r) =>
       setOps((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}`, direction: x.direction as string, facilityId: (x.facilityId as number) ?? null, controlMode: x.controlMode as string | undefined }))))
-    axiosInstance.get('/api/facilities', { params: { pageSize: 300 } }).then((r) =>
+    axiosInstance.get('/api/facilities', { params: { pageSize: 300, operational: 1 } }).then((r) =>
       setFacilities((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
     axiosInstance.get('/api/products', { params: { pageSize: 300 } }).then((r) =>
       setProducts((arr(r.data) as Record<string, unknown>[]).map((x) => ({ value: x.id as number, label: `${x.code} — ${x.name}` }))))
