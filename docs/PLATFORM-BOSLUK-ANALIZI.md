@@ -4,15 +4,24 @@
 
 ---
 
+> **Durum notu (2026-08-02):** Madde 1 KAPANDI (aşağıda ✅). Sıradaki: madde 2 (sipariş motoru tekilleştirme) → madde 3 (köprü) → madde 4 (ekran hakları).
+
 ## 🔴 P1 — Kritik (ikinci müşteriden önce mutlaka)
 
-### 1. Procurement tek firmaya çivili (çok-kiracılık kırık)
+### 1. ✅ ÇÖZÜLDÜ — Procurement tek firmaya çivili (çok-kiracılık kırık)
+**Çözüm (2026-08-02):** `p4_company()` artık PostgreSQL oturum ayarı `app.company_id`'yi okuyor; ayar yoksa tek firmalı kurulumda o firmaya, birden çok firma varsa NULL'a (boş liste) düşüyor — yanlış kiracıyı göstermektense hiç göstermemek. Uygulama tarafında `src/server/tenantDb.ts`: her firma **kendi bağlantı havuzunu** kullanıyor (`options=-c app.company_id=<id>`), böylece havuzdan gelen bağlantı başka kiracının ayarını taşıyamaz. `createContext` tek noktadan `ctx.prisma`'yı kiracıya kapsıyor → tüm router'lar otomatik doğru firmayı görüyor; `companyId` oturum/JWT'ye eklendi.
+**Doğrulandı (canlı):** ayar=10 → 209 malzeme · ayar=999 → **0 kayıt** (sızıntı yok) · ayarsız → 209 (mevcut kurulum bozulmadı).
+
+<details><summary>Sorunun özgün tanımı</summary>
 `procurement.p4_company()` fonksiyonu **kod ile `'ONEGATE'` firmasını** döndürüyor. Tüm uyumluluk view'ları bunu kullanıyor.
 ```sql
 SELECT id FROM wms."TBLCOMPANY" WHERE code = 'ONEGATE' LIMIT 1;
 ```
 **Sonuç:** ikinci kiracı eklendiğinde Procurement, oturum hangi firmada olursa olsun **ONEGATE'in verisini** gösterir. WMS'te tam çalışan çok-kiracılık (JWT `companies[]`, `getCompanyId`, CompanySwitcher) Procurement'ta **hiç yok**.
-**Yapılması gereken:** oturumdaki firmayı DB oturumuna taşımak (`SET LOCAL app.company_id`) ve `p4_company()`'yi ondan okumak; 4Proc tarafında firma bağlamı + firma değiştirici.
+**Yapılması gereken:** oturumdaki firmayı DB oturumuna taşımak ve `p4_company()`'yi ondan okumak; 4Proc tarafında firma bağlamı.
+</details>
+
+**Kalan (küçük):** 4Proc'ta firma değiştirici arayüzü yok — çok firmalı kullanıcı şimdilik kendi firmasını görür.
 
 ### 2. İki sipariş motoru yan yana
 | Tablo | Kayıt | Durum |
