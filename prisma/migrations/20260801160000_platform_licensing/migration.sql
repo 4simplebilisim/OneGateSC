@@ -42,8 +42,8 @@ CREATE INDEX "TBLUSERAPPACCESS_userId_idx" ON wms."TBLUSERAPPACCESS"("userId");
 
 -- Ürün kataloğu
 INSERT INTO wms."TBLAPPLICATION" ("code","name","description","path","icon","sortOrder","updatedAt") VALUES
-  ('WMS','OneGate WMS','Depo yönetimi: mal kabul, yerleştirme, toplama, sayım','/','AppstoreOutlined',1,now()),
-  ('PROC','4Procurement+','Satınalma: talep, teklif, sipariş, sözleşme, fatura','/satinalma','ShoppingCartOutlined',2,now());
+  ('WMS','OneGate WMS','Mal kabul, yerleştirme, toplama, sayım, sevkiyat','/','AppstoreOutlined',1,now()),
+  ('PROC','OneGate Procurement','Talep, teklif, sipariş, sözleşme, fatura','/satinalma','ShoppingCartOutlined',2,now());
 
 -- Mevcut firmalara her iki ürünü de lisansla (tek firma kurulumu; sonradan ekranından yönetilir)
 INSERT INTO wms."TBLCOMPANYLICENSE" ("companyId","applicationId","isActive","updatedAt")

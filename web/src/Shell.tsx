@@ -110,6 +110,9 @@ export const Shell = ({ children }: { children: ReactNode }) => {
 
   const openState = query.trim() ? allOpenKeys : openKeys
 
+  // Bu uygulama katalogda WMS ürünü; adı katalogdan okunur ("OneGate WMS" → "WMS")
+  const productLabel = (user?.apps?.find((a) => a.code === 'WMS')?.name ?? 'OneGate WMS').replace(/^OneGate\s*/i, '')
+
   // Chrome (header+sider) mod-bağımlı: açık modda beyaz (Nexus), koyu modda navy
   const dark = mode === 'dark'
   const chrome = {
@@ -136,8 +139,9 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           <g fill={dark ? '#C7D5E9' : '#1B2B4B'}><rect width="42" height="42" rx="6" /><rect x="52" y="52" width="42" height="42" rx="6" /></g>
           <g fill={dark ? '#5B8DEF' : '#2563C9'}><circle cx="73" cy="21" r="21" /><circle cx="21" cy="73" r="21" /></g>
         </svg>
+        {/* Marka platform seviyesinde: OneGate. Ürün adı (WMS · Procurement) katalogdan gelir. */}
         <Typography.Text strong style={{ color: chrome.brandText, fontSize: 19, letterSpacing: 0.3 }}>
-          One<span style={{ color: '#2563C9' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>WMS</span>
+          One<span style={{ color: '#2563C9' }}>Gate</span> <span style={{ color: chrome.brandSub, fontWeight: 500, fontSize: 14 }}>{productLabel}</span>
         </Typography.Text>
         <div style={{ flex: 1 }} />
         <CompanySwitcher color={chrome.icon} />

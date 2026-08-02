@@ -11,6 +11,7 @@ import { GenericForm } from './pages/GenericForm'
 import { GenericDetail } from './pages/GenericDetail'
 import { TxnCreate } from './pages/TxnCreate'
 import { Dashboard } from './pages/Dashboard'
+import { PlatformSelect } from './pages/PlatformSelect'
 import { DocumentCreate } from './pages/DocumentCreate'
 import { ProductUnitBarcodes } from './pages/ProductUnitBarcodes'
 import { LocationBulkGenerate } from './pages/LocationBulkGenerate'
@@ -104,6 +105,7 @@ export default function App() {
         >
           <Route index element={<Navigate to="/dashboard" />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="platform" element={<PlatformSelect />} />
           <Route path="documents/new" element={<DocumentCreate />} />
           <Route path="product-units/:id/barcodes" element={<ProductUnitBarcodes />} />
           <Route path="extra-fields/:id/options" element={<ExtraFieldOptions />} />

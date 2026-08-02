@@ -10,7 +10,14 @@ export const authProvider: AuthProvider = {
       if (data.user.companyId) localStorage.setItem('og_company', String(data.user.companyId))
       // Mobil (el terminali) kullanıcı → backoffice yerine el terminaline düşer
       if (!data.user.isMobileUser) localStorage.setItem('og_notif_greet', '1') // ilk girişte zil popup'ı (backoffice)
-      return { success: true, redirectTo: data.user.isMobileUser ? '/m' : '/' }
+      // Birden çok ürüne erişimi olan kullanıcı önce ürün seçer; "son kullandığıma git" işaretliyse atlanır
+      const apps: { code: string; path: string }[] = data.user.apps ?? []
+      const remembered = localStorage.getItem('og_app_remember') !== '0' ? localStorage.getItem('og_last_app') : null
+      const target = remembered ? apps.find((a) => a.code === remembered) : null
+      if (data.user.isMobileUser) return { success: true, redirectTo: '/m' }
+      if (target && target.path !== '/') { window.location.href = target.path; return { success: true } }
+      if (apps.length > 1 && !target) return { success: true, redirectTo: '/platform' }
+      return { success: true, redirectTo: '/' }
     } catch {
       return { success: false, error: { name: 'Giriş hatası', message: 'Kullanıcı adı veya şifre hatalı' } }
     }

@@ -54,22 +54,22 @@ export const Login = () => {
         {/* logo */}
         <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 11 }}>
           {/* Koyu gradyan panelde beyaz varyant — navy kareler zeminde kaybolmasın */}
-          <svg width={40} height={40} viewBox="0 0 94 94" role="img" aria-label="OneGate WMS">
+          <svg width={40} height={40} viewBox="0 0 94 94" role="img" aria-label="OneGate">
             <g fill="#FFFFFF"><rect width="42" height="42" rx="6" /><rect x="52" y="52" width="42" height="42" rx="6" /></g>
             <g fill="#BFD6FF"><circle cx="73" cy="21" r="21" /><circle cx="21" cy="73" r="21" /></g>
           </svg>
           <span className="og-display" style={{ fontSize: 23, fontWeight: 800, letterSpacing: 0.2 }}>
-            OneGate <span style={{ fontWeight: 600, opacity: 0.85 }}>WMS</span>
+            OneGate
           </span>
         </div>
 
         {/* başlık + istatistikler */}
         <div style={{ position: 'relative', marginTop: 'auto', marginBottom: 'auto' }}>
           <h1 style={{ fontSize: 36, lineHeight: 1.18, fontWeight: 700, margin: '0 0 16px', maxWidth: 440 }}>
-            Depo operasyonlarınız<br />tek kapıda.
+            Tedarik zinciriniz<br />tek kapıda.
           </h1>
           <p style={{ fontSize: 15.5, opacity: 0.92, maxWidth: 400, lineHeight: 1.75, margin: 0 }}>
-            Mal kabul, yönlendirme, stok, sipariş ve iş emri — WMS &amp; Procurement tek platformda.
+            Depo ve satınalma operasyonları tek platformda: <strong style={{ fontWeight: 600 }}>OneGate WMS</strong> ve <strong style={{ fontWeight: 600 }}>OneGate Procurement</strong>.
           </p>
           <div style={{ display: 'flex', gap: 14, marginTop: 34, flexWrap: 'wrap' }}>
             <Stat value="1.240" label="Stok kalemi" />

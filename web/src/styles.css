@@ -273,3 +273,8 @@ h1, h2, h3, h4, h5,
   50% { transform: translateY(-14px); }
 }
 .og-float { animation: og-float 9s ease-in-out infinite; }
+
+/* Ürün seçim kartları — hover'da hafif yükselme (tıklanabilir olduğu belli olsun) */
+.og-app-card { transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.og-app-card:hover { border-color: #2563C9 !important; box-shadow: 0 6px 18px rgba(37,99,201,.13); transform: translateY(-2px); }
+.og-app-card:focus-visible { outline: 2px solid #2563C9; outline-offset: 2px; }
