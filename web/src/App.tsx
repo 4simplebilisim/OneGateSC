@@ -105,7 +105,6 @@ export default function App() {
         >
           <Route index element={<Navigate to="/dashboard" />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="platform" element={<PlatformSelect />} />
           <Route path="documents/new" element={<DocumentCreate />} />
           <Route path="product-units/:id/barcodes" element={<ProductUnitBarcodes />} />
           <Route path="extra-fields/:id/options" element={<ExtraFieldOptions />} />
@@ -209,6 +208,15 @@ export default function App() {
           }
         >
           <Route path="/login" element={<Login />} />
+          {/* Ürün seçimi kabuğun DIŞINDA: WMS menüsü görünmemeli, henüz ürün seçilmedi */}
+          <Route
+            path="/platform"
+            element={
+              <Authenticated key="platform" fallback={<Navigate to="/login" />}>
+                <PlatformSelect />
+              </Authenticated>
+            }
+          />
         </Route>
       </Routes>
     </Refine>

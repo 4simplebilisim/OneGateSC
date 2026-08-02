@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGetIdentity, useLogout } from '@refinedev/core'
-import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip, Popover, Tag } from 'antd'
+import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip, Popover, Tag, message } from 'antd'
 import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined, ShoppingCartOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
@@ -8,6 +8,7 @@ import { useThemeMode } from './themeMode'
 import { screenRight } from './screenRight'
 import { CompanySwitcher } from './components/CompanySwitcher'
 import { NotificationBell } from './components/NotificationBell'
+import { axiosInstance } from './providers/dataProvider'
 
 // 4Simple kurumsal kimliği: navy #1B2B4B + mavi #2563C9 (4simple.com.tr paleti)
 const NAVY = '#1B2B4B'
@@ -32,6 +33,15 @@ const AppSwitcher = ({ apps, color, dark }: { apps: AppEntitlement[]; color: str
           <a
             key={a.code}
             href={a.path}
+            onClick={(e) => {
+              // Ayrı ürüne geçiş: oturum devri bileti al, tekrar giriş sorulmasın
+              if (a.path === '/') return
+              e.preventDefault()
+              localStorage.setItem('og_last_app', a.code)
+              axiosInstance.get(`/api/sso/ticket?app=${a.code}`)
+                .then(({ data }) => { window.location.href = data.url })
+                .catch(() => message.error('Ürüne geçiş yapılamadı.'))
+            }}
             style={{
               display: 'flex', gap: 11, alignItems: 'flex-start', padding: '9px 10px', borderRadius: 8,
               background: active ? (dark ? 'rgba(91,141,239,.16)' : '#EEF4FF') : 'transparent',
