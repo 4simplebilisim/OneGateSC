@@ -34,6 +34,22 @@ Doğrulama scripti: `scripts/4proc/og-sso-verify.sh` (sunucuda çalışır; bile
 
 Ekran hakları da ortak: 4Proc'un `UserPermissions.Screens` JSON'u `wms.TBLUSERSCREENRIGHT` satırlarına yazılır/okunur (uyumluluk view'ı + trigger).
 
+## Tek tema — iki üründe aynı görünüm
+İki ürün ayrı uygulamalar ama **aynı uygulamaymış gibi** görünür. Ortak kurallar:
+
+| Öğe | Değer |
+|---|---|
+| Marka | Amblem: iki navy kare + iki mavi daire (aynı SVG). Yazı: `One` + mavi `Gate` + soluk küçük ürün adı (`WMS` / `Procurement`) |
+| Renk | Tek vurgu: `#2563C9`; koyu ton `#1B2B4B`. Procurement'ın cyan/mor kartelası kaldırıldı |
+| Yazı tipi | Gövde `Inter`, başlıklar `Plus Jakarta Sans` |
+| Menü | Genişlik 280px, daralmış 56px; öğeler 11.5px `uppercase` `0.04em`, bölüm başlıkları 11.5px/700 |
+| Başlık çubuğu | 56px sabit (`flexShrink: 0` — dikey flex içinde sıkışıyordu) |
+| Pano | Ölçüm kartları + bölümlü kısayol karoları (`og-metric` / `og-tile` / `og-lp-section`) |
+| Tercihler | Tema `og_theme`, menü daraltma `og_menu_collapsed` — **ortak localStorage anahtarları** (aynı alan adı), yani bir üründe değiştirince diğeri de aynı gelir |
+| Geçiş | Her iki başlıkta diğer ürüne tek tıkla geçiş rozeti (SSO bileti ile, şifresiz) |
+
+Yeni ekran yazarken bu değerlerden sapma: iki ürün görsel olarak ayrışır.
+
 ## Lisanslama modeli (`wms` şeması)
 | Tablo | İş |
 |---|---|
