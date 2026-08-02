@@ -17,8 +17,17 @@ nginx (`/etc/nginx/sites-enabled/onegate-wms`) `/satinalma` yolunu Next.js'e yö
 
 ⚠️ **Tuzak:** Next.js middleware'inde `req.nextUrl.basePath` BOŞ gelir. Yönlendirme kurarken `src/lib/basePath.ts` sabitini kullan, yoksa kullanıcı WMS'in login ekranına düşer.
 
-## Kimlik
-Her iki ürün de `wms.TBLUSER` tablosunu ve aynı bcrypt `passwordHash` kolonunu kullanır → **aynı kullanıcı adı/şifre ikisinde de geçerli**. Oturumlar ayrıdır (WMS: JWT · 4Proc: NextAuth); tek oturum açma (SSO) henüz yok, her ürüne bir kez giriş yapılır.
+## Kimlik ve ürünler arası tek oturum (SSO)
+Her iki ürün de `wms.TBLUSER` tablosunu ve aynı bcrypt `passwordHash` kolonunu kullanır → **aynı kullanıcı adı/şifre ikisinde de geçerli**.
+
+Ürün değiştirirken **yeniden giriş sorulmaz**: OneGate 60 sn ömürlü, HMAC-SHA256 imzalı bir **devir bileti** üretir (`GET /api/sso/ticket?app=PROC` — `src/routes/sso.ts`), hedef ürün bileti paylaşılan sırla doğrulayıp kendi oturumunu açar (`/satinalma/api/sso` → NextAuth `sso` sağlayıcısı). Bilet kullanıcı kimliği + hedef ürün (`aud`) taşır ve lisans kontrolü devirde de uygulanır.
+
+Paylaşılan sır: `SSO_SECRET`, **yalnız sunucuda** (`/root/.onegate_sso_secret`, her iki `.env` dosyasına yazılı).
+
+⚠️ **Tuzaklar (yaşandı):**
+- Bilet doğrulaması **Web Crypto** ile yapılır, `node:crypto` ile DEĞİL. 4Proc middleware'i Edge çalışma zamanındadır; `node:crypto` importu tüm korumalı sayfaları 500'e düşürür.
+- 4Proc middleware'inde yol **basePath'i içerir** (`/satinalma/api/...`). Kontrollerden önce normalize edilmeli, yoksa API yolları kimlik kapısına takılır.
+- Vekil sunucu arkasında route handler'da `req.url` iç adresi (`localhost:3000`) gösterir → **göreli** `Location` kullanılır.
 
 Ekran hakları da ortak: 4Proc'un `UserPermissions.Screens` JSON'u `wms.TBLUSERSCREENRIGHT` satırlarına yazılır/okunur (uyumluluk view'ı + trigger).
 
