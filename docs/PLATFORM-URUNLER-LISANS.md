@@ -28,6 +28,9 @@ Paylaşılan sır: `SSO_SECRET`, **yalnız sunucuda** (`/root/.onegate_sso_secre
 - Bilet doğrulaması **Web Crypto** ile yapılır, `node:crypto` ile DEĞİL. 4Proc middleware'i Edge çalışma zamanındadır; `node:crypto` importu tüm korumalı sayfaları 500'e düşürür.
 - 4Proc middleware'inde yol **basePath'i içerir** (`/satinalma/api/...`). Kontrollerden önce normalize edilmeli, yoksa API yolları kimlik kapısına takılır.
 - Vekil sunucu arkasında route handler'da `req.url` iç adresi (`localhost:3000`) gösterir → **göreli** `Location` kullanılır.
+- **NextAuth + yol öneki (en can sıkıcısı):** GELEN istekte Next öneki route handler'da zaten ayırır → Auth.js `basePath` **varsayılan** (`/api/auth`) kalmalı; `/satinalma/api/auth` verilirse tüm auth uçları `400 "Bad request."` döner. `AUTH_URL`/`NEXTAUTH_URL` **yalnız origin** olmalı (`https://onegate.4simple.com.tr`) — yol içerirse Auth.js onu kendi kökü sanar, yine 400. GİDEN yollar (`pages.signIn`/`error`) ve İSTEMCİ (`SessionProvider basePath`) ise önekli olmalı; aksi hâlde istek OneGate API'sine düşer ve kullanıcı `Route GET:/api/auth/error not found` görür.
+
+Doğrulama scripti: `scripts/4proc/og-sso-verify.sh` (sunucuda çalışır; bileti yerel olarak üretir, OneGate'e login YAPMAZ — tek-oturum kuralı gereği canlıda admin girişi kullanıcının oturumunu düşürür).
 
 Ekran hakları da ortak: 4Proc'un `UserPermissions.Screens` JSON'u `wms.TBLUSERSCREENRIGHT` satırlarına yazılır/okunur (uyumluluk view'ı + trigger).
 
