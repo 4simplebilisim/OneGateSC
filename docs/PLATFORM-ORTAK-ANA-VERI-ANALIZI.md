@@ -121,3 +121,38 @@ Bu netleşmeden PO→mal kabul köprüsü yazılmamalı.
 2. **HQ tesisi**: gerçek bir tesis mi, yoksa idari birim mi? (Köprü tasarımını belirler.)
 3. **Tesis bağı**: şimdi kurulsun mu, yoksa ikinci tesis gerçekten devreye girene kadar "tümü serbest" mi kalsın?
 4. **Hizmet kalemleri**: satınalmada hizmet kalemi açılacak mı? (Açılacaksa WMS ürün listelerinden gizlenmeli.)
+
+
+---
+
+## 8. Uygulanan (2026-08-02) — kullanıcı kararıyla
+
+Kullanıcı, türetilmiş görünüm yerine **ürün kartında açık bir parametre** istedi. Uygulandı:
+
+### Ürün kartı → "Kullanım Alanı"
+`Her ikisi (WMS + Procurement)` · `Yalnız WMS` · `Yalnız Procurement`
+
+Depoda `wms.TBLPRODUCTAPPLICATION` (productId × applicationId) — **kısıtlama listesi**: satır yoksa ürün her platformda görünür. Enum yerine ürün kataloğuna (`TBLAPPLICATION`) bağlandı; 3. ürün eklendiğinde şema değişmez, seçenek kendiliğinden gelir.
+- API: `GET /api/products` yanıtında `usageScope`; `?app=WMS|PROC` süzgeci; POST/PATCH `usageScope` kabul eder.
+- Procurement malzeme listesi bu alana uyar (doğrulandı: bir ürün "Yalnız WMS" yapılınca 209 → 208).
+- Mevcut 209 ürün etkilenmedi (kısıt satırı yok = her ikisi).
+
+### Uyarlamalar › Sistem → "Platform Entegrasyonu"
+`wms.TBLPLATFORMINTEGRATION` (firma + opsiyonel tesis):
+| Alan | İş |
+|---|---|
+| Entegrasyon Aktif | WMS ↔ Procurement bağlantısı açık mı |
+| Tesis | boş = tüm tesisler; doluysa o tesise özel ayar (tesis uçurumunun çözüm yeri) |
+| Mal Kabul Operasyon Tipi | onaylı sipariş hangi operasyonla mal kabul belgesine dönecek |
+| Sipariş onayında belge oluştur | otomatik/manuel |
+| Mal kabul tamamlanınca siparişi güncelle | karşılanan miktar geri yazılsın mı |
+
+**Kayıt yoksa entegrasyon KAPALI.** Böylece dört kurulum da desteklenir: yalnız WMS · yalnız Procurement · ikisi bağımsız · ikisi entegre. Çözücü: `resolvePlatformIntegration(companyId, facilityId)` — tesise özel satır önceliklidir, yoksa firma geneline düşer.
+
+### Cari filtresi düzeltmesi
+Tedarikçi listesi artık `SUPPLIER + BOTH` gösteriyor (canlıda 27 → **29**). "Hepsi" tipindeki cariler görünmüyordu.
+
+### Firma/tesis tabloları
+Zaten ortak — Procurement'ın gördüğü firma `wms.TBLCOMPANY`, organizasyonlar `wms.TBLFACILITY` (view; aynı id'ler). Ayrı tablo yok, eşleşme sorunu yok.
+
+**Kalan:** rol yükseltme kuralı (aynı kod → BOTH), tip bazlı toplu kullanım-alanı doldurma, PO→mal kabul köprüsünün bu ayarı tüketmesi.
