@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { App, Alert, Button, Card, Col, DatePicker, Input, Modal, Row, Select, Space, Table, Tag, Typography } from 'antd'
+import { App, Alert, Button, Card, Col, DatePicker, Input, Modal, Row, Select, Space, Table, Tag, Typography, InputNumber } from 'antd'
 import { ReloadOutlined, ThunderboltOutlined, SettingOutlined, SearchOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import type { Dayjs } from 'dayjs'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 
-type Op = { id: number; code: string; name?: string; direction: string; bulkAction?: boolean; facilityId?: number | null }
+type Op = { id: number; code: string; name?: string; direction: string; bulkAction?: boolean; facilityId?: number | null ; partialUsage?: boolean }
 type StockRow = {
   id: number; batchNo: string | null; serialNo: string | null; expiryDate: string | null
   mainQty: string; reservedQty: string; availableQty: string
@@ -28,7 +28,9 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
   const [facilities, setFacilities] = useState<{ id: number; code: string; name?: string }[]>([])
   const [products, setProducts] = useState<{ value: number; label: string }[]>([])
   const [locations, setLocations] = useState<{ value: number; label: string }[]>([])
-  const [statuses, setStatuses] = useState<{ value: number; label: string }[]>([])
+  const [allStatuses, setAllStatuses] = useState<{ id: number; code: string; name?: string; facilityId?: number | null }[]>([])
+  // Parçalı işlem: satır bazında miktar (operasyon tipinde Parçalı Kullanım açıksa)
+  const [qty, setQty] = useState<Record<number, number>>({})
 
   const [opId, setOpId] = useState<number>()
   const [facilityId, setFacilityId] = useState<number>()
@@ -70,8 +72,22 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
     axiosInstance.get('/api/facilities', { params: { pageSize: 300, operational: 1, ...p } }).then((r) => setFacilities(arr(r.data) as { id: number; code: string; name?: string }[]))
     axiosInstance.get('/api/products', { params: { pageSize: 500, ...p } }).then((r) => setProducts((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
     axiosInstance.get('/api/locations', { params: { pageSize: 500, ...p } }).then((r) => setLocations((arr(r.data) as { id: number; code: string }[]).map((x) => ({ value: x.id, label: x.code }))))
-    axiosInstance.get('/api/statuses', { params: { pageSize: 200, ...p } }).then((r) => setStatuses((arr(r.data) as { id: number; code: string; name?: string }[]).map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` }))))
+    // Statü TESİS bazlı tanımlanır — seçili tesisin statüleri gösterilir (tesis yoksa hepsi)
+    axiosInstance.get('/api/statuses', { params: { pageSize: 200, ...p } }).then((r) => {
+      const all = arr(r.data) as { id: number; code: string; name?: string; facilityId?: number | null }[]
+      setAllStatuses(all)
+    })
   }, [companyId])
+
+  const statuses = useMemo(
+    () => allStatuses
+      .filter((x) => !facilityId || x.facilityId == null || x.facilityId === facilityId)
+      .map((x) => ({ value: x.id, label: `${x.code}${x.name ? ' — ' + x.name : ''}` })),
+    [allStatuses, facilityId],
+  )
+
+  // Seçili operasyonda parçalı kullanım açık mı (legacy BYTPARCALIKULLANIM)
+  const partialAllowed = useMemo(() => ops.find((o) => o.id === opId)?.partialUsage === true, [ops, opId])
 
   // Bu yönde 'Toplu İşlem' işaretli operasyonlar — TESİS ŞART: seçilen tesise ait (ya da tesis-bağımsız) olanlar
   const bulkOps = useMemo(
@@ -102,7 +118,20 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
   const islemUygula = async () => {
     setBusy(true)
     try {
-      const r = await axiosInstance.post('/api/stock/bulk-action', { operationTypeId: opId, stockIds: selected, targetLocationId: targetLocId ?? null })
+      // Parçalı kullanım açıksa, eldekinden AZ girilen satırların miktarını gönder
+      const quantities = partialAllowed
+        ? selected
+            .map((id) => {
+              const row = rows.find((x) => x.id === id)
+              const q = qty[id]
+              return row && q != null && q > 0 && q < Number(row.mainQty) ? { stockId: id, quantity: q } : null
+            })
+            .filter(Boolean)
+        : []
+      const r = await axiosInstance.post('/api/stock/bulk-action', {
+        operationTypeId: opId, stockIds: selected, targetLocationId: targetLocId ?? null,
+        ...(quantities.length ? { quantities } : {}),
+      })
       message.success(`${r.data.documentNo}: ${r.data.lineCount} satır / ${r.data.totalQty} miktar işlendi`)
       if (r.data.skipped?.length) message.warning(`Atlanan: ${r.data.skipped.join(', ')}`)
       setIslemOpen(false)
@@ -160,7 +189,25 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
             { title: 'Seri', dataIndex: 'serialNo', render: (v) => v ?? '—' },
             { title: 'Palet', render: (_, r) => r.pallet?.palletNo ?? '—' },
             { title: 'SKT', dataIndex: 'expiryDate', render: (v: string | null) => (v ? v.slice(0, 10) : '—') },
-            { title: 'Miktar', dataIndex: 'mainQty', align: 'right' as const, render: (v, r) => <span>{Number(v)} {r.unit?.code}</span> },
+            {
+              title: partialAllowed ? 'Miktar (düzenlenebilir)' : 'Miktar',
+              dataIndex: 'mainQty', align: 'right' as const,
+              render: (v, r) => {
+                const eldeki = Number(v)
+                // Parçalı kullanım açık + satır seçili → miktar girilebilir (eldekini aşamaz)
+                if (!partialAllowed || !selected.includes(r.id)) return <span>{eldeki} {r.unit?.code}</span>
+                return (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <InputNumber
+                      size="small" min={0.0001} max={eldeki} step={1} style={{ width: 96 }}
+                      value={qty[r.id] ?? eldeki}
+                      onChange={(val) => setQty((q) => ({ ...q, [r.id]: Number(val ?? eldeki) }))}
+                    />
+                    <span style={{ opacity: 0.6, fontSize: 12 }}>/ {eldeki} {r.unit?.code}</span>
+                  </span>
+                )
+              },
+            },
             { title: 'Rezerve', dataIndex: 'reservedQty', align: 'right' as const, render: (v) => Number(v) > 0 ? <Tag color="gold">{Number(v)}</Tag> : '—' },
           ]}
         />

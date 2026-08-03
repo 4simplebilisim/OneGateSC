@@ -21,7 +21,15 @@ export interface BulkStockResult {
   skipped: string[] // sıfır miktarlı vb. atlanan satırlar (bilgi)
 }
 
-export async function bulkStockOperation(companyId: number, operationTypeId: number, stockIds: number[], userId?: number | null, targetLocationId?: number | null): Promise<BulkStockResult> {
+export async function bulkStockOperation(
+  companyId: number,
+  operationTypeId: number,
+  stockIds: number[],
+  userId?: number | null,
+  targetLocationId?: number | null,
+  /** Satır bazında miktar (parçalı işlem). Verilmezse her satırın TAMAMI işlenir. */
+  quantities?: { stockId: number; quantity: number }[] | null,
+): Promise<BulkStockResult> {
   const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: operationTypeId, companyId }, include: { sequence: true } })
   if (!op) throw new BulkStockError('Operasyon bulunamadı', 404)
   if (!op.bulkAction) throw new BulkStockError("Bu operasyonda 'Toplu İşlem' işaretli değil — Operasyon Tipi › Toplu İşlem parametresini açın")
@@ -55,9 +63,41 @@ export async function bulkStockOperation(companyId: number, operationTypeId: num
   const tgtLocOf = (s: { locationId: number }) => targetLocationId ?? s.locationId
   const tgtStaOf = (s: { statusId: number }) => transStatusId ?? s.statusId
 
+  // Parçalı işlem: yalnız operasyon tanımında "Parçalı Kullanım" açıksa (legacy BYTPARCALIKULLANIM).
+  // Miktar verilmeyen satır tam işlenir; verilen miktar 0 < q <= eldeki olmalı.
+  const qtyOf = new Map<number, number>()
+  if (quantities?.length) {
+    if (!op.partialUsage) {
+      throw new BulkStockError("Bu operasyonda 'Parçalı Kullanım' kapalı — miktar değiştirilemez (Operasyon Tipi › Parçalı Kullanım)")
+    }
+    for (const q of quantities) {
+      const st = stocks.find((s) => s.id === q.stockId)
+      if (!st) throw new BulkStockError(`Stok satırı bulunamadı: #${q.stockId}`)
+      if (!(q.quantity > 0)) throw new BulkStockError(`#${q.stockId}: miktar 0'dan büyük olmalı`)
+      if (st.mainQty.lt(q.quantity)) throw new BulkStockError(`#${q.stockId}: eldeki miktar ${st.mainQty} — ${q.quantity} işlenemez`)
+      qtyOf.set(q.stockId, q.quantity)
+    }
+  }
+  const useQty = (s: { id: number; mainQty: Prisma.Decimal }) => qtyOf.get(s.id) ?? s.mainQty
+
+  // Operasyonun statü kuralı: tanımda kaynak statü(ler) varsa, stok o statülerden birinde olmalı.
+  // Okutma yolunda bu kural zaten uygulanıyordu; toplu işlemde HİÇ kontrol edilmiyordu.
+  const opStatuses = await prisma.tBLOPERATIONTYPESTATUS.findMany({
+    where: { companyId, operationTypeId: op.id }, select: { sourceStatusId: true },
+  })
+  const allowedSources = new Set(opStatuses.map((o) => o.sourceStatusId).filter((v): v is number => v != null))
+  const statusNames = allowedSources.size
+    ? (await prisma.tBLSTATUS.findMany({ where: { id: { in: [...allowedSources] } }, select: { id: true, code: true } }))
+    : []
+  const allowedLabel = statusNames.map((s) => s.code).join(', ')
+
   const skipped: string[] = []
   const usable = stocks.filter((s) => {
     if (s.mainQty.lte(0)) { skipped.push(`#${s.id} (miktar 0)`); return false }
+    if (allowedSources.size && !allowedSources.has(s.statusId)) {
+      skipped.push(`#${s.id} (statü uyumsuz — bu operasyon yalnız ${allowedLabel} statüsünde çalışır)`)
+      return false
+    }
     if (op.direction === 'INTERNAL' && tgtLocOf(s) === s.locationId && tgtStaOf(s) === s.statusId) { skipped.push(`#${s.id} (hedef = mevcut konum/statü)`); return false }
     return true
   })
@@ -76,14 +116,14 @@ export async function bulkStockOperation(companyId: number, operationTypeId: num
       lines: {
         create: usable.map((s, i) => ({
           companyId, lineNo: i + 1, productId: s.productId, unitId: s.unitId,
-          quantity: s.mainQty, collectedQty: s.mainQty,
+          quantity: useQty(s), collectedQty: useQty(s),
           batchNo: s.batchNo, serialNo: s.serialNo, palletId: s.palletId,
           customerId: s.customerId, poNo: s.poNo, poLine: s.poLine,
           sourceLocationId: s.locationId, sourceStatusId: s.statusId,
           ...(op.direction === 'INTERNAL' ? { targetLocationId: tgtLocOf(s), targetStatusId: tgtStaOf(s) } : {}),
           scopes: {
             create: [{
-              companyId, scopeNo: 1, quantity: s.mainQty, unitId: s.unitId,
+              companyId, scopeNo: 1, quantity: useQty(s), unitId: s.unitId,
               batchNo: s.batchNo, serialNo: s.serialNo, palletId: s.palletId,
               customerId: s.customerId, poNo: s.poNo, poLine: s.poLine,
               sourceLocationId: s.locationId, sourceStatusId: s.statusId,
