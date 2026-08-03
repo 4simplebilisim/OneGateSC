@@ -233,7 +233,17 @@ export const Shell = ({ children }: { children: ReactNode }) => {
                 mode="inline"
                 selectedKeys={[selected]}
                 openKeys={collapsed ? undefined : (openState as string[])}
-                onOpenChange={(k) => setOpenKeys(k as string[])}
+                onOpenChange={(k) => {
+                  // Akordeon: bir ÜST bölüm açılınca diğer üst bölümler (ve alt grupları) kapanır.
+                  // Alt gruplar kendi bölümü içinde serbest — yalnız üst seviye tekil.
+                  const next = k as string[]
+                  const opened = next.find((key) => !openKeys.includes(key))
+                  if (opened && (SECTIONS as readonly string[]).includes(opened)) {
+                    setOpenKeys([opened, ...next.filter((key) => key.startsWith(`${opened}::`))])
+                  } else {
+                    setOpenKeys(next)
+                  }
+                }}
                 items={menuItems as never}
                 style={{ background: chrome.siderBg, borderInlineEnd: 'none' }}
               />
