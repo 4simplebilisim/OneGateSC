@@ -37,6 +37,7 @@ const DELETE_OK = new Set([
   'pick-order-parameters', 'dashboard-reports', 'warehouse-vehicles', 'work-order-general-parameters',
   'work-order-reasons', 'work-order-reference-operations', 'rack-feed-parameters', 'menu-groups',
   'users', 'companies', 'user-groups', 'handheld-menu-groups', 'handheld-menu-items',
+  'platform-integration', 'company-licenses',
 ])
 
 const PRETTY: Record<string, string> = {
