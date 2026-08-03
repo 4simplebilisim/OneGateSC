@@ -218,6 +218,27 @@ export default function App() {
             }
           />
         </Route>
+        {/* Bilinmeyen adres: önceden bomboş beyaz ekran çıkıyordu (yalnız konsolda uyarı) */}
+        <Route
+          path="*"
+          element={
+            <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--og-page-bg)', padding: 24 }}>
+              <div style={{ textAlign: 'center', maxWidth: 420 }}>
+                <svg width={44} height={44} viewBox="0 0 94 94" aria-hidden="true" style={{ marginBottom: 18, opacity: 0.9 }}>
+                  <g fill="#1B2B4B"><rect width="42" height="42" rx="6" /><rect x="52" y="52" width="42" height="42" rx="6" /></g>
+                  <g fill="#2563C9"><circle cx="73" cy="21" r="21" /><circle cx="21" cy="73" r="21" /></g>
+                </svg>
+                <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 6px' }}>Sayfa bulunamadı</h2>
+                <p style={{ fontSize: 14, opacity: 0.7, margin: '0 0 20px' }}>
+                  Aradığınız adres taşınmış ya da hiç var olmamış olabilir.
+                </p>
+                <a href="/" style={{ display: 'inline-block', background: '#2563C9', color: '#fff', padding: '9px 18px', borderRadius: 8, fontWeight: 600, fontSize: 14, textDecoration: 'none' }}>
+                  Ana sayfaya dön
+                </a>
+              </div>
+            </div>
+          }
+        />
       </Routes>
     </Refine>
   )

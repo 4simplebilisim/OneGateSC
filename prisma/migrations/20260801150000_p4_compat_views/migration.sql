@@ -2,15 +2,8 @@
 -- 4proc kodu TBL4S_* adlarını kullanmaya devam eder; veri wms tablolarında yaşar.
 SET search_path = procurement, wms, public;
 
--- Oturumdaki kiracı. Uygulama bağlantıyı açarken "app.company_id" ayarını taşır
--- (her firma kendi bağlantı havuzunu kullanır → kiracılar arası sızıntı olmaz).
--- Ayar yoksa: tek firmalı kurulumda o firma; birden çok firma varsa NULL (boş liste),
--- çünkü yanlış kiracının verisini göstermektense hiç göstermemek doğrudur.
 CREATE OR REPLACE FUNCTION procurement.p4_company() RETURNS int LANGUAGE sql STABLE AS $fn$
-  SELECT COALESCE(
-    NULLIF(current_setting('app.company_id', true), '')::int,
-    (SELECT id FROM wms."TBLCOMPANY" WHERE (SELECT count(*) FROM wms."TBLCOMPANY") = 1 LIMIT 1)
-  );
+  SELECT id FROM wms."TBLCOMPANY" WHERE code = 'ONEGATE' LIMIT 1;
 $fn$;
 
 -- Varsayılan yedekler: 4Proc bu alanları ZORUNLU ister, OneGate kayıtlarında boş olabilir.
@@ -507,7 +500,9 @@ SELECT
   COALESCE(p."isBackup", false) AS "IsBackup",
   COALESCE(p."approvalLimit", 0) AS "ApprovalLimit",
   COALESCE(p."isApprover", false) AS "IsApprover",
-  COALESCE(b."isSuperAdmin", false) AS "IsAdmin",
+  COALESCE((b."isSuperAdmin" OR EXISTS (
+        SELECT 1 FROM wms."TBLUSERROLE" ur JOIN wms."TBLROLE" r ON r.id = ur."roleId"
+        WHERE ur."userId" = b.id AND r.code = 'ADMIN')), false) AS "IsAdmin",
   COALESCE(p."workLevel", 1) AS "WorkLevel",
   COALESCE(b."isActive", true) AS "IsActive",
   COALESCE(p."hasCompletedOnboarding", false) AS "HasCompletedOnboarding",
@@ -525,8 +520,8 @@ CREATE OR REPLACE FUNCTION procurement.p4_w_users() RETURNS trigger LANGUAGE plp
 DECLARE v_id int;
 BEGIN
   IF TG_OP = 'INSERT' THEN
-    INSERT INTO wms."TBLUSER" ("username", "isSuperAdmin", "isActive", "profilePictureUrl", "email", "passwordHash", "fullName", "companyId", "updatedAt")
-    VALUES (NEW."Code", NEW."IsAdmin", NEW."IsActive", NEW."ProfilePictureUrl", COALESCE(NULLIF(NEW."Email", ''), lower(NEW."Code") || '@4proc.local'), COALESCE(NULLIF(NEW."PasswordHash", ''), '!4proc-disabled'), COALESCE(NULLIF(trim(concat_ws(' ', NEW."FirstName", NEW."LastName")), ''), NEW."Code"), procurement.p4_company(), now()) RETURNING id INTO v_id;
+    INSERT INTO wms."TBLUSER" ("username", "isActive", "profilePictureUrl", "email", "passwordHash", "fullName", "companyId", "updatedAt")
+    VALUES (NEW."Code", NEW."IsActive", NEW."ProfilePictureUrl", COALESCE(NULLIF(NEW."Email", ''), lower(NEW."Code") || '@4proc.local'), COALESCE(NULLIF(NEW."PasswordHash", ''), '!4proc-disabled'), COALESCE(NULLIF(trim(concat_ws(' ', NEW."FirstName", NEW."LastName")), ''), NEW."Code"), procurement.p4_company(), now()) RETURNING id INTO v_id;
     NEW."Id" := v_id;
     INSERT INTO procurement."TBLUSERPROCPROFILE" ("userId", "departmentId", "subDepartmentId", "userJobGroupId", "position", "jobLocation", "gender", "lineManagerId", "isManager", "isBackup", "approvalLimit", "isApprover", "workLevel", "hasCompletedOnboarding", "defaultBackupId", "createdById", "updatedById", "updatedAt")
     VALUES (v_id, NEW."DepartmentId", NEW."SubDepartmentId", NEW."UserJobGroupId", NEW."Position", NEW."JobLocation", NEW."Gender", NEW."LineManagerId", NEW."IsManager", NEW."IsBackup", NEW."ApprovalLimit", NEW."IsApprover", NEW."WorkLevel", NEW."HasCompletedOnboarding", NEW."DefaultBackupId", NEW."CreatedBy", NEW."UpdatedBy", now())
@@ -534,7 +529,7 @@ BEGIN
     RETURN NEW;
   ELSIF TG_OP = 'UPDATE' THEN
     v_id := OLD."Id";
-    UPDATE wms."TBLUSER" SET "username" = NEW."Code", "isSuperAdmin" = NEW."IsAdmin", "isActive" = NEW."IsActive", "profilePictureUrl" = NEW."ProfilePictureUrl", "email" = COALESCE(NULLIF(NEW."Email", ''), lower(NEW."Code") || '@4proc.local'), "passwordHash" = COALESCE(NULLIF(NEW."PasswordHash", ''), '!4proc-disabled'), "fullName" = COALESCE(NULLIF(trim(concat_ws(' ', NEW."FirstName", NEW."LastName")), ''), NEW."Code"), "updatedAt" = now() WHERE id = v_id;
+    UPDATE wms."TBLUSER" SET "username" = NEW."Code", "isActive" = NEW."IsActive", "profilePictureUrl" = NEW."ProfilePictureUrl", "email" = COALESCE(NULLIF(NEW."Email", ''), lower(NEW."Code") || '@4proc.local'), "passwordHash" = COALESCE(NULLIF(NEW."PasswordHash", ''), '!4proc-disabled'), "fullName" = COALESCE(NULLIF(trim(concat_ws(' ', NEW."FirstName", NEW."LastName")), ''), NEW."Code"), "updatedAt" = now() WHERE id = v_id;
     INSERT INTO procurement."TBLUSERPROCPROFILE" ("userId", "departmentId", "subDepartmentId", "userJobGroupId", "position", "jobLocation", "gender", "lineManagerId", "isManager", "isBackup", "approvalLimit", "isApprover", "workLevel", "hasCompletedOnboarding", "defaultBackupId", "createdById", "updatedById", "updatedAt")
     VALUES (v_id, NEW."DepartmentId", NEW."SubDepartmentId", NEW."UserJobGroupId", NEW."Position", NEW."JobLocation", NEW."Gender", NEW."LineManagerId", NEW."IsManager", NEW."IsBackup", NEW."ApprovalLimit", NEW."IsApprover", NEW."WorkLevel", NEW."HasCompletedOnboarding", NEW."DefaultBackupId", NEW."CreatedBy", NEW."UpdatedBy", now())
     ON CONFLICT ("userId") DO UPDATE SET "departmentId" = EXCLUDED."departmentId", "subDepartmentId" = EXCLUDED."subDepartmentId", "userJobGroupId" = EXCLUDED."userJobGroupId", "position" = EXCLUDED."position", "jobLocation" = EXCLUDED."jobLocation", "gender" = EXCLUDED."gender", "lineManagerId" = EXCLUDED."lineManagerId", "isManager" = EXCLUDED."isManager", "isBackup" = EXCLUDED."isBackup", "approvalLimit" = EXCLUDED."approvalLimit", "isApprover" = EXCLUDED."isApprover", "workLevel" = EXCLUDED."workLevel", "hasCompletedOnboarding" = EXCLUDED."hasCompletedOnboarding", "defaultBackupId" = EXCLUDED."defaultBackupId", "createdById" = EXCLUDED."createdById", "updatedById" = EXCLUDED."updatedById", "updatedAt" = now();
