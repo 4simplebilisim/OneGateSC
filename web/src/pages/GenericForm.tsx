@@ -146,7 +146,9 @@ export const GenericForm = ({ resource, mode }: { resource: string; mode: 'creat
         placeholder={waiting ? `Önce ${parentLabel} seçin` : 'Seçiniz'} disabled={ro || waiting} />
     }
     if (f.type === 'textarea') return <Input.TextArea rows={10} style={{ fontFamily: 'Consolas, monospace', fontSize: 12.5 }} spellCheck={false} disabled={ro} />
-    return <Input disabled={ro || (mode === 'edit' && f.name === 'code')} />
+    // Kod düzenlemede AÇIK: ilişkiler id üzerinden kurulu, kod değişse de bağlar kopmaz.
+    // (Kod ile bağlanan tek yer kalmadığı doğrulandı; tekillik firma+kod kısıtında.)
+    return <Input disabled={ro} />
   }
 
   // Ekranda kanonik alan sırası: Firma (üstte, ayrı) → Tesis → Kod → Ad → (diğerleri config sırası, Aktif genelde sonda).

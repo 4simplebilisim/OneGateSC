@@ -57,7 +57,13 @@ const createSchema = z.object({
   name: z.string().min(1).max(100),
   ...baseShape,
 })
-const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), ...baseShape }).partial()
+// Kod DEĞİŞTİRİLEBİLİR (StokBar'da da öyleydi). İlişkiler id (FK) üzerinden kurulu,
+// kod ile bağlama yok → kod değişince hiçbir bağ kopmaz. Tekillik companyId+code'da.
+const updateSchema = z.object({
+  code: z.string().min(1).max(20).optional(),
+  name: z.string().min(1).max(100).optional(),
+  ...baseShape,
+}).partial()
 
 // Ters operasyon yön kuralı: kategorisi giriş(INBOUND) olan operasyonun ters operasyonu giriş olamaz
 // (çıkış için de simetrik) — ters hareket yönü çevirir. INTERNAL/COUNT için kısıt yok.
