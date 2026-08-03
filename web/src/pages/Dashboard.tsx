@@ -71,10 +71,11 @@ export const Dashboard = () => {
   const metrics: { label: string; value: number | string; to: string; icon: ReactNode }[] = [
     { label: 'Açık belge', value: sum?.openDocs ?? 0, to: '/documents', icon: <ContainerOutlined /> },
     { label: 'Aktif kullanıcı', value: sum?.activeUsers ?? 0, to: '/users', icon: <TeamOutlined /> },
-    { label: 'Bugün onaylanan', value: sum?.approvedToday ?? 0, to: '/documents', icon: <CheckCircleOutlined /> },
-    { label: 'Mal kabul (bugün)', value: sum?.receiptsToday ?? 0, to: '/documents-in-obs', icon: <LoginOutlined /> },
-    { label: 'Sevkiyat (bugün)', value: sum?.shipmentsToday ?? 0, to: '/documents-out-obs', icon: <SendOutlined /> },
-    { label: 'Transfer (bugün)', value: sum?.transfersToday ?? 0, to: '/documents-tr-obs', icon: <SwapOutlined /> },
+    /* "(bugün)" eki alt başlıkta zaten yazıyor; etiketler tek satıra sığsın diye çıkarıldı */
+    { label: 'Onaylanan', value: sum?.approvedToday ?? 0, to: '/documents', icon: <CheckCircleOutlined /> },
+    { label: 'Mal kabul', value: sum?.receiptsToday ?? 0, to: '/documents-in-obs', icon: <LoginOutlined /> },
+    { label: 'Sevkiyat', value: sum?.shipmentsToday ?? 0, to: '/documents-out-obs', icon: <SendOutlined /> },
+    { label: 'Transfer', value: sum?.transfersToday ?? 0, to: '/documents-tr-obs', icon: <SwapOutlined /> },
   ]
 
   return (
