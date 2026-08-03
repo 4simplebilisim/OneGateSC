@@ -4,6 +4,7 @@ import { ReloadOutlined, ThunderboltOutlined, SettingOutlined, SearchOutlined } 
 import { Link } from 'react-router-dom'
 import type { Dayjs } from 'dayjs'
 import { axiosInstance } from '../providers/dataProvider'
+import { screenRight } from '../screenRight'
 import { PageHeader } from '../components/PageHeader'
 
 type Op = { id: number; code: string; name?: string; direction: string; bulkAction?: boolean; facilityId?: number | null ; partialUsage?: boolean }
@@ -24,6 +25,9 @@ const DIR_LABEL: Record<string, string> = { OUTBOUND: 'Çıkış', INTERNAL: 'Tr
 // seçilen operasyonla belge otomatik doğar + TAMAMLANIR (statü değiştirme = statü-geçişli Transfer op).
 export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL' }) => {
   const { message } = App.useApp()
+  // Yapilandirma yonergesi yalniz operasyon tipini duzenleyebilenlere gosterilir
+  const canConfigureOps = screenRight('operation-types', 'edit')
+
   const [ops, setOps] = useState<Op[]>([])
   const [facilities, setFacilities] = useState<{ id: number; code: string; name?: string }[]>([])
   const [products, setProducts] = useState<{ value: number; label: string }[]>([])
@@ -148,7 +152,9 @@ export const BulkStockOps = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL'
       {noBulkOps && (
         <Alert type="warning" showIcon style={{ marginBottom: 14 }}
           message={`${DIR_LABEL[direction]} yönünde 'Toplu İşlem' işaretli operasyon yok`}
-          description={<span>Bir operasyonun burada seçilebilmesi için tanımında <b>Toplu İşlem</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>} />
+          description={canConfigureOps
+            ? <span>Bir operasyonun burada seçilebilmesi için tanımında <b>Toplu İşlem</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>
+            : <span>Bu ekranin calismasi icin operasyon taniminda ilgili parametre acik olmalidir. Sistem yoneticinizden bu ayari acmasini isteyin.</span>} />
       )}
 
       <Card className="og-toolbar" size="small" style={{ marginBottom: 14 }} styles={{ body: { padding: '12px 14px' } }}>

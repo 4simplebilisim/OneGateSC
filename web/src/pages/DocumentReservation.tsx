@@ -3,6 +3,7 @@ import { App, Alert, Button, Card, Modal, Select, Space, Table, Tag } from 'antd
 import { ReloadOutlined, LockOutlined, UnlockOutlined, SettingOutlined } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
+import { screenRight } from '../screenRight'
 import { PageHeader } from '../components/PageHeader'
 
 type Doc = { id: number; documentNo: string; status: string; operationTypeId?: number; operationType?: { code?: string }; documentStatus?: { name?: string; color?: string }; _count?: { lines?: number } }
@@ -16,6 +17,9 @@ const DIR_LABEL: Record<string, string> = { OUTBOUND: 'Çıkış', INTERNAL: 'Tr
 // açık belgeleri listelenir; belgeye stok ayrılır → o stok YALNIZ o belgede okutulabilir. Yön-bağlı: Çıkış/Transfer.
 export const DocumentReservation = ({ direction }: { direction: 'OUTBOUND' | 'INTERNAL' }) => {
   const { message } = App.useApp()
+  // Yapılandırma yönergesi yalnız operasyon tipini düzenleyebilenlere gösterilir
+  const canConfigureOps = screenRight('operation-types', 'edit')
+
   const [opId, setOpId] = useState<number>()
   const [rows, setRows] = useState<Doc[]>([])
   const [ops, setOps] = useState<Op[]>([])
@@ -91,7 +95,9 @@ export const DocumentReservation = ({ direction }: { direction: 'OUTBOUND' | 'IN
         <Alert
           type="warning" showIcon style={{ marginBottom: 14 }}
           message={`${DIR_LABEL[direction]} yönünde 'Rezervasyon' işaretli operasyon yok`}
-          description={<span>Bir operasyonun burada görünmesi için tanımında <b>Rezervasyon</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>}
+          description={canConfigureOps
+            ? <span>Bir operasyonun burada görünmesi için tanımında <b>Rezervasyon</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>
+            : <span>Bu ekranın çalışması için operasyon tanımında ilgili parametre açık olmalıdır. Sistem yöneticinizden bu ayarı açmasını isteyin.</span>}
         />
       )}
 

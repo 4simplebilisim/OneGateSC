@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useGetIdentity, useLogout } from '@refinedev/core'
 import { Layout, Menu, Button, Typography, Space, Input, Avatar, Tooltip, Popover, Tag, message } from 'antd'
-import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined, ShoppingCartOutlined } from '@ant-design/icons'
+import { MenuOutlined, AppstoreOutlined, QuestionCircleOutlined, LogoutOutlined, SearchOutlined, MoonOutlined, SunOutlined, DatabaseOutlined, SwapOutlined, SettingOutlined, BarChartOutlined, HomeOutlined, ShoppingCartOutlined, DownOutlined } from '@ant-design/icons'
 import { Link, useLocation } from 'react-router-dom'
 import { RESOURCES, SECTIONS, sectionOf } from './resources'
 import { useThemeMode } from './themeMode'
@@ -202,16 +202,36 @@ export const Shell = ({ children }: { children: ReactNode }) => {
           <NotificationBell color={chrome.icon} />
           <Tooltip title="Yardım"><Button type="text" icon={<QuestionCircleOutlined />} style={{ color: chrome.icon, fontSize: 17 }} /></Tooltip>
         </Space>
-        <Space size={10}>
-          <Avatar size={28} style={{ background: 'linear-gradient(135deg,#5B8DEF,#1B2B4B)', fontSize: 13, fontWeight: 600 }}>
-            {(user?.fullName ?? '?').slice(0, 1).toUpperCase()}
-          </Avatar>
-          <Typography.Text style={{ color: chrome.userText, fontSize: 13 }}>
-            {user?.fullName}
-            {user?.roles?.length ? <span style={{ color: chrome.userSub }}> · {user.roles.join(', ')}</span> : ''}
-          </Typography.Text>
-          <Tooltip title="Çıkış"><Button type="text" icon={<LogoutOutlined />} onClick={() => logout()} style={{ color: chrome.icon, fontSize: 17 }} /></Tooltip>
-        </Space>
+        {/* Profil bloğu Procurement ile aynı: baş harfler + iki satır (ad / rol) + açılır menü */}
+        <Popover
+          trigger="click"
+          placement="bottomRight"
+          arrow={false}
+          content={
+            <div style={{ width: 190, padding: 2 }}>
+              <div style={{ padding: '8px 10px 10px', borderBottom: '1px solid var(--og-border-soft, #E8EDF3)', marginBottom: 4 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{user?.fullName}</div>
+                <div style={{ fontSize: 12, opacity: 0.6 }}>{user?.roles?.join(', ') || 'Kullanıcı'}</div>
+              </div>
+              <Button type="text" block style={{ textAlign: 'left', justifyContent: 'flex-start', fontSize: 13.5 }}>Profil</Button>
+              <Button type="text" block danger icon={<LogoutOutlined />} onClick={() => logout()}
+                style={{ textAlign: 'left', justifyContent: 'flex-start', fontSize: 13.5 }}>
+                Çıkış Yap
+              </Button>
+            </div>
+          }
+        >
+          <Space size={9} style={{ cursor: 'pointer', paddingLeft: 4 }}>
+            <Avatar size={28} style={{ background: 'linear-gradient(135deg,#5B8DEF,#1B2B4B)', fontSize: 12, fontWeight: 600 }}>
+              {(user?.fullName ?? '?').split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase()}
+            </Avatar>
+            <span style={{ lineHeight: 1.15 }}>
+              <span style={{ display: 'block', color: chrome.brandText, fontSize: 12.5, fontWeight: 600 }}>{user?.fullName}</span>
+              <span style={{ display: 'block', color: chrome.userSub, fontSize: 11 }}>{user?.roles?.join(', ') || 'Kullanıcı'}</span>
+            </span>
+            <DownOutlined style={{ color: chrome.icon, fontSize: 10 }} />
+          </Space>
+        </Popover>
       </Layout.Header>
 
       <Layout>

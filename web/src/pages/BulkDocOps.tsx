@@ -4,6 +4,7 @@ import { ReloadOutlined, CheckCircleOutlined, SettingOutlined, SendOutlined, Rol
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
+import { screenRight } from '../screenRight'
 import { PageHeader } from '../components/PageHeader'
 
 type Doc = { id: number; documentNo: string; status: string; operationTypeId?: number; operationType?: { code?: string; direction?: string }; documentStatus?: { name?: string; color?: string }; _count?: { lines?: number } }
@@ -25,6 +26,9 @@ const ACTIONS: ActionDef[] = [
 // operasyonların belgeleri görünür. Ekran yön-bağlıdır: Giriş/Çıkış/Transfer menülerinin her birinde kendi yönü.
 export const BulkDocOps = ({ direction }: { direction: 'INBOUND' | 'OUTBOUND' | 'INTERNAL' }) => {
   const { message, modal } = App.useApp()
+  // Yapilandirma yonergesi yalniz operasyon tipini duzenleyebilenlere gosterilir
+  const canConfigureOps = screenRight('operation-types', 'edit')
+
   const [opId, setOpId] = useState<number>() // toplu-işlemli operasyonlardan biri (boş = hepsi)
   const [rows, setRows] = useState<Doc[]>([])
   const [ops, setOps] = useState<Op[]>([])
@@ -99,7 +103,9 @@ export const BulkDocOps = ({ direction }: { direction: 'INBOUND' | 'OUTBOUND' | 
         <Alert
           type="warning" showIcon style={{ marginBottom: 14 }}
           message={`${DIR_LABEL[direction]} yönünde 'Toplu İşlem' işaretli operasyon yok`}
-          description={<span>Bir operasyonun burada görünmesi için tanımında <b>Toplu İşlem</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>}
+          description={canConfigureOps
+            ? <span>Bir operasyonun burada görünmesi için tanımında <b>Toplu İşlem</b> parametresi açık olmalıdır. <Link to="/operation-types"><SettingOutlined /> Uyarlamalar › Operasyon Tipi</Link>'nden işaretleyin.</span>
+            : <span>Bu ekranin calismasi icin operasyon taniminda ilgili parametre acik olmalidir. Sistem yoneticinizden bu ayari acmasini isteyin.</span>}
         />
       )}
 
