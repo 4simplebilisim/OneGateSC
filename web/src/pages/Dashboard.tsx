@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Card, Col, Row, Statistic, Table, Spin } from 'antd'
+import { Card, Table, Spin } from 'antd'
 import {
   ContainerOutlined, TeamOutlined, CheckCircleOutlined, LoginOutlined, SendOutlined, SwapOutlined,
   InboxOutlined, BarcodeOutlined, ApartmentOutlined, GoldOutlined, DatabaseOutlined, FileSearchOutlined,
   ApiOutlined, BarChartOutlined, UserSwitchOutlined, ShoppingOutlined, TagsOutlined, ThunderboltOutlined,
+  ArrowUpOutlined,
 } from '@ant-design/icons'
 import { Link } from 'react-router-dom'
 import { axiosInstance } from '../providers/dataProvider'
@@ -67,60 +68,54 @@ export const Dashboard = () => {
 
   if (loading) return <div style={{ padding: 80, textAlign: 'center' }}><Spin size="large" /></div>
 
-  const card = (title: string, value: number | string, to: string, accent: string, accentSoft: string, icon: ReactNode) => (
-    <Col xs={12} sm={8} md={8} lg={4}>
-      <Link to={to}>
-        <Card size="small" hoverable className="og-stat"
-          styles={{ body: { padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 14 } }}
-          style={{ ['--accent' as string]: accent, ['--accent-soft' as string]: accentSoft }}>
-          <span className="og-stat__icon">{icon}</span>
-          <Statistic title={title} value={value} styles={{ content: { fontSize: 24, fontWeight: 700, color: 'var(--og-ink)', lineHeight: 1.1 } }} />
-        </Card>
-      </Link>
-    </Col>
-  )
+  const metrics: { label: string; value: number | string; to: string; icon: ReactNode }[] = [
+    { label: 'Açık belge', value: sum?.openDocs ?? 0, to: '/documents', icon: <ContainerOutlined /> },
+    { label: 'Aktif kullanıcı', value: sum?.activeUsers ?? 0, to: '/users', icon: <TeamOutlined /> },
+    { label: 'Bugün onaylanan', value: sum?.approvedToday ?? 0, to: '/documents', icon: <CheckCircleOutlined /> },
+    { label: 'Mal kabul (bugün)', value: sum?.receiptsToday ?? 0, to: '/documents-in-obs', icon: <LoginOutlined /> },
+    { label: 'Sevkiyat (bugün)', value: sum?.shipmentsToday ?? 0, to: '/documents-out-obs', icon: <SendOutlined /> },
+    { label: 'Transfer (bugün)', value: sum?.transfersToday ?? 0, to: '/documents-tr-obs', icon: <SwapOutlined /> },
+  ]
 
   return (
     <div className="og-page">
-      <PageHeader title="Dashboard" subtitle="Depo operasyonları — tek bakışta (bugünkü hareketler)" />
+      <PageHeader title="Kontrol Paneli" subtitle="Depo operasyonları — tek bakışta (bugünkü hareketler)" />
 
-      <Row gutter={[16, 16]} style={{ marginBottom: 20 }}>
-        {card('Açık belge', sum?.openDocs ?? 0, '/documents', '#2563C9', 'rgba(37,99,201,.12)', <ContainerOutlined />)}
-        {card('Aktif kullanıcı', sum?.activeUsers ?? 0, '/users', '#16a3b3', 'rgba(91,141,239,.14)', <TeamOutlined />)}
-        {card('Bugün onaylanan', sum?.approvedToday ?? 0, '/documents', '#22a06b', 'rgba(34,160,107,.14)', <CheckCircleOutlined />)}
-        {card('Mal kabul (bugün)', sum?.receiptsToday ?? 0, '/documents-in-obs', '#22a06b', 'rgba(34,160,107,.12)', <LoginOutlined />)}
-        {card('Sevkiyat (bugün)', sum?.shipmentsToday ?? 0, '/documents-out-obs', '#f59e0b', 'rgba(245,158,11,.14)', <SendOutlined />)}
-        {card('Transfer (bugün)', sum?.transfersToday ?? 0, '/documents-tr-obs', '#1B2B4B', 'rgba(27,43,75,.12)', <SwapOutlined />)}
-      </Row>
+      {/* Ölçüm kartları */}
+      <div className="og-grid og-grid--metric">
+        {metrics.map((m) => (
+          <Link key={m.label} to={m.to} className="og-metric">
+            <span className="og-metric__icon">{m.icon}</span>
+            <span style={{ minWidth: 0 }}>
+              <span className="og-metric__label">{m.label}</span>
+              <span className="og-metric__value">{m.value}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
 
+      {/* Kısayol karoları */}
       {TILE_GROUPS.map((g) => (
         <div key={g.section}>
           <div className="og-lp-section">{g.section}</div>
-          <Row gutter={[12, 12]} style={{ marginBottom: 6 }}>
+          <div className="og-grid og-grid--tile">
             {g.section === 'Operasyon' && myOpen != null && (
-              <Col xs={12} sm={8} md={6} lg={4}>
-                <Link to="/documents">
-                  <Card size="small" hoverable className="og-tile">
-                    <span className="og-tile__icon" style={{ background: 'rgba(245,158,11,.14)', color: '#f59e0b' }}><CheckCircleOutlined /></span>
-                    <div className="og-tile__title">Bekleyen İşlerim</div>
-                    <div className="og-tile__sub">Bana atanmış açık belgeler</div>
-                    <div className="og-tile__count">{myOpen}</div>
-                  </Card>
-                </Link>
-              </Col>
+              <Link to="/documents" className="og-tile">
+                <span className="og-tile__icon"><CheckCircleOutlined /></span>
+                <span className="og-tile__title">Bekleyen İşlerim</span>
+                <span className="og-tile__sub">Bana atanmış açık belgeler</span>
+                <span className="og-tile__count">{myOpen}</span>
+              </Link>
             )}
             {g.tiles.map((t) => (
-              <Col key={t.to} xs={12} sm={8} md={6} lg={4}>
-                <Link to={t.to}>
-                  <Card size="small" hoverable className="og-tile">
-                    <span className="og-tile__icon">{t.icon}</span>
-                    <div className="og-tile__title">{t.title}</div>
-                    <div className="og-tile__sub">{t.sub}</div>
-                  </Card>
-                </Link>
-              </Col>
+              <Link key={t.to} to={t.to} className="og-tile">
+                <span className="og-tile__icon">{t.icon}</span>
+                <span className="og-tile__title">{t.title}</span>
+                <span className="og-tile__sub">{t.sub}</span>
+                <ArrowUpOutlined className="og-tile__arrow" rotate={45} />
+              </Link>
             ))}
-          </Row>
+          </div>
         </div>
       ))}
 
