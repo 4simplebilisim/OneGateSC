@@ -194,16 +194,13 @@ export const Shell = ({ children }: { children: ReactNode }) => {
         <CompanySwitcher color={chrome.icon} />
         <Space size={4} style={{ marginRight: 8, marginLeft: 8 }}>
           {(user?.apps?.length ?? 0) > 1
-            ? <>
-                <QuickAppSwitch apps={user!.apps!} dark={dark} />
-                <Tooltip title="Ürünler"><span><AppSwitcher apps={user!.apps!} color={chrome.icon} dark={dark} /></span></Tooltip>
-              </>
+            ? <QuickAppSwitch apps={user!.apps!} dark={dark} />
             : <Tooltip title="Pano"><Link to="/dashboard"><Button type="text" icon={<HomeOutlined />} style={{ color: chrome.icon }} /></Link></Tooltip>}
           <Tooltip title={mode === 'dark' ? 'Açık mod' : 'Koyu mod'}>
-            <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon }} aria-label="tema" />
+            <Button type="text" icon={mode === 'dark' ? <SunOutlined /> : <MoonOutlined />} onClick={toggle} style={{ color: chrome.icon, fontSize: 17 }} aria-label="tema" />
           </Tooltip>
           <NotificationBell color={chrome.icon} />
-          <Tooltip title="Yardım"><Button type="text" icon={<QuestionCircleOutlined />} style={{ color: chrome.icon }} /></Tooltip>
+          <Tooltip title="Yardım"><Button type="text" icon={<QuestionCircleOutlined />} style={{ color: chrome.icon, fontSize: 17 }} /></Tooltip>
         </Space>
         <Space size={10}>
           <Avatar size={28} style={{ background: 'linear-gradient(135deg,#5B8DEF,#1B2B4B)', fontSize: 13, fontWeight: 600 }}>
@@ -213,7 +210,7 @@ export const Shell = ({ children }: { children: ReactNode }) => {
             {user?.fullName}
             {user?.roles?.length ? <span style={{ color: chrome.userSub }}> · {user.roles.join(', ')}</span> : ''}
           </Typography.Text>
-          <Tooltip title="Çıkış"><Button type="text" icon={<LogoutOutlined />} onClick={() => logout()} style={{ color: chrome.icon }} /></Tooltip>
+          <Tooltip title="Çıkış"><Button type="text" icon={<LogoutOutlined />} onClick={() => logout()} style={{ color: chrome.icon, fontSize: 17 }} /></Tooltip>
         </Space>
       </Layout.Header>
 

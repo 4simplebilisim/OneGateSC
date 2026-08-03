@@ -87,7 +87,7 @@ export const NotificationBell = ({ color }: { color: string }) => {
     // click-trigger enjeksiyonu kırılıyordu (popover hiç açılmıyordu). İpucu native title ile veriliyor.
     <Popover content={content} trigger="click" open={open} onOpenChange={setOpen} placement="bottomRight">
       <Badge count={total} size="small" offset={[-2, 2]}>
-        <Button type="text" icon={<BellOutlined />} style={{ color }} aria-label="bildirimler" title="Bildirimler" />
+        <Button type="text" icon={<BellOutlined />} style={{ color, fontSize: 17 }} aria-label="bildirimler" title="Bildirimler" />
       </Badge>
     </Popover>
   )
