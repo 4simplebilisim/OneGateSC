@@ -44,10 +44,12 @@ export async function reportRoutes(app: FastifyInstance) {
     const [openDocs, activeUsers, approvedToday, receiptsToday, shipmentsToday, transfersToday] = await Promise.all([
       prisma.tBLDOCUMENT.count({ where: { companyId, status: { in: ['DRAFT', 'CONFIRMED'] } } }), // açık belge (tamamlanmamış)
       prisma.tBLUSER.count({ where: { companyId, isActive: true } }), // aktif (etkin) kullanıcı
-      prisma.tBLDOCUMENT.count({ where: { companyId, status: { in: ['CONFIRMED', 'COMPLETED'] }, updatedAt: today } }), // bugün onaylanan/tamamlanan
-      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'INBOUND' } } }), // bugün mal kabul
-      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'OUTBOUND' } } }), // bugün sevkiyat/çıkış
-      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', updatedAt: today, operationType: { direction: 'INTERNAL' } } }), // bugün transfer
+      // "Bugün" ölçütü İŞ TARİHİ (documentDate) — updatedAt kullanılıyordu, o teknik bir damga:
+      // üç ay önceki bir belgeyi düzeltmek onu "bugün mal kabul" sayısına ekliyordu.
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: { in: ['CONFIRMED', 'COMPLETED'] }, documentDate: today } }), // bugün onaylanan/tamamlanan
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', documentDate: today, operationType: { direction: 'INBOUND' } } }), // bugün mal kabul
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', documentDate: today, operationType: { direction: 'OUTBOUND' } } }), // bugün sevkiyat/çıkış
+      prisma.tBLDOCUMENT.count({ where: { companyId, status: 'COMPLETED', documentDate: today, operationType: { direction: 'INTERNAL' } } }), // bugün transfer
     ])
     return { openDocs, activeUsers, approvedToday, receiptsToday, shipmentsToday, transfersToday }
   })
