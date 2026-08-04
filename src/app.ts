@@ -104,6 +104,16 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
 
   // origin: true tek başına metodları GET,HEAD,POST ile sınırlıyordu → tarayıcıdan PATCH/DELETE preflight'ta patlıyordu.
   await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] })
+
+  // BOŞ GÖVDE + application/json → boş nesne say.
+  // Fastify varsayılanı "Body cannot be empty when content-type is set to
+  // 'application/json'" ile 400 veriyordu. Birçok istemci (curl, bazı HTTP
+  // kütüphaneleri, entegrasyon araçları) gövdesiz POST/DELETE'e de content-type
+  // koyar; aksiyon uçları (confirm/complete/reserve/sil) gövde beklemiyor.
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body: string, done) => {
+    if (!body || !body.trim()) return done(null, {})
+    try { done(null, JSON.parse(body)) } catch (err) { done(err as Error, undefined) }
+  })
   // Token ÖMÜRLÜ olmalı: süresiz token sızarsa sonsuza kadar geçerli kalıyordu.
   // 12 saat = bir vardiyayı kesmeden kapsar (el terminali vardiya ortasında düşmesin).
   // Süre dolunca dataProvider 401'i yakalayıp oturumu temizler ve login'e döner.
