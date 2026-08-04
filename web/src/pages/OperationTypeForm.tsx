@@ -223,7 +223,9 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     if (f.t === 'select') return <Select options={f.opts} allowClear disabled={f.disabled} />
     // Ref alanı: "Veri Yok" durumunda dropdown'dan hızlı-ekle (formConfig'i olan kaynaklarda) — kayıt sonrası refetch + otomatik seç
     if (f.t === 'ref') return <QuickCreateSelect resource={f.ref!} options={refOpts[f.ref!] ?? []} onCreated={() => refetchRef(f.ref!)} placeholder="Seçiniz" disabled={f.disabled} />
-    return <Input disabled={(mode === 'edit' && f.n === 'code') || !!f.disabled} />
+    // Kod DÜZENLENEBİLİR (StokBar'da da öyleydi): bağlar id üzerinden kurulu,
+    // kod değişince hiçbir ilişki kopmaz. Tekillik firma+kod'da, API doğruluyor.
+    return <Input disabled={!!f.disabled} />
   }
 
   // "Stok İşlemleri" parametreleri operasyon YÖNÜNE göre filtrelenir:
