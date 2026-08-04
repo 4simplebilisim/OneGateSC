@@ -197,7 +197,9 @@ export async function countDifferences(companyId: number, onlyCompleted: boolean
   const lines = await prisma.tBLSTOCKCOUNTLINE.findMany({
     where: {
       countedQty: { not: null },
-      count: { companyId, ...(onlyCompleted ? { status: 'COMPLETED' } : { status: { in: ['DRAFT', 'COMPLETED'] } }) },
+      // Sayılmaya başlanan sayımın durumu COUNTING olur; filtre yalnız DRAFT/COMPLETED
+      // arıyordu → farkları inceleyip onaylayacağın AŞAMADA ekran boş kalıyordu.
+      count: { companyId, ...(onlyCompleted ? { status: 'COMPLETED' } : { status: { in: ['DRAFT', 'COUNTING', 'COMPLETED'] } }) },
     },
     include: { count: { select: { countNo: true, status: true } } },
     orderBy: [{ countId: 'desc' }, { lineNo: 'asc' }],
