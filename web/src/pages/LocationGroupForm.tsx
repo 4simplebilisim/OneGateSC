@@ -13,7 +13,7 @@ const arr = (d: unknown) => (Array.isArray(d) ? d : ((d as { data?: unknown[] })
 /**
  * Lokasyon Grubu — tanım + ÜYELİK.
  * Grup tanımlanabiliyordu ama içine lokasyon eklenecek bir yer yoktu; uç
- * (/api/location-group-links/:id/locations) vardı, ekranı yoktu.
+ * (/api/location-groups/:id/locations) vardı, ekranı yoktu.
  * Grup üyeliği operasyon lokasyon kurallarında kullanılır (LOCATION_GROUP kapsamı).
  */
 export const LocationGroupForm = ({ mode }: { mode: 'create' | 'edit' }) => {
@@ -42,7 +42,7 @@ export const LocationGroupForm = ({ mode }: { mode: 'create' | 'edit' }) => {
 
   const yenileUyeler = () => {
     if (!id) return
-    axiosInstance.get(`/api/location-group-links/${id}/locations`)
+    axiosInstance.get(`/api/location-groups/${id}/locations`)
       .then((r) => setUyeler(arr(r.data) as Loc[]))
       .catch(() => setUyeler([]))
   }
@@ -74,7 +74,7 @@ export const LocationGroupForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     let ok = 0
     const hatalar: string[] = []
     for (const locId of seciliLok) {
-      try { await axiosInstance.post(`/api/location-group-links/${id}/locations`, { locationId: locId }); ok++ }
+      try { await axiosInstance.post(`/api/location-groups/${id}/locations`, { locationId: locId }); ok++ }
       catch (e) { hatalar.push(errMsg(e, `#${locId}`)) }
     }
     setEkliyor(false); setSeciliLok([]); yenileUyeler()
@@ -85,7 +85,7 @@ export const LocationGroupForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     title: `${l.code} gruptan çıkarılsın mı?`,
     okText: 'Çıkar', okButtonProps: { danger: true }, cancelText: 'Vazgeç',
     onOk: async () => {
-      try { await axiosInstance.delete(`/api/location-group-links/${id}/locations/${l.id}`); message.success('Çıkarıldı'); yenileUyeler() }
+      try { await axiosInstance.delete(`/api/location-groups/${id}/locations/${l.id}`); message.success('Çıkarıldı'); yenileUyeler() }
       catch (e) { message.error(errMsg(e, 'Çıkarılamadı')) }
     },
   })
