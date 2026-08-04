@@ -7,7 +7,7 @@ import { PageHeader } from '../components/PageHeader'
 import { LinkTab, type LF } from '../components/LinkTab'
 import { QuickCreateSelect } from '../components/QuickCreateSelect'
 
-type F = { n: string; l: string; t?: 'text' | 'number' | 'bool' | 'select' | 'ref'; req?: boolean; opts?: { value: string; label: string }[]; ref?: string; disabled?: boolean }
+type F = { n: string; l: string; t?: 'text' | 'number' | 'bool' | 'select' | 'ref'; req?: boolean; reqUnlessCount?: boolean; opts?: { value: string; label: string }[]; ref?: string; disabled?: boolean }
 type Sec = { title: string; fields: F[] }
 
 const SECTIONS: Sec[] = [
@@ -19,7 +19,7 @@ const SECTIONS: Sec[] = [
       { n: 'name', l: 'Tanım', t: 'text', req: true },
       { n: 'direction', l: 'Kategori', t: 'select', req: true, opts: [{ value: 'INBOUND', label: 'Giriş' }, { value: 'OUTBOUND', label: 'Çıkış' }, { value: 'INTERNAL', label: 'Transfer' }, { value: 'COUNT', label: 'Sayım' }] },
       { n: 'documentType', l: 'Belge Tipi', t: 'select', opts: [{ value: 'STOCK_MOVEMENT', label: 'Stok Hareketi' }, { value: 'COUNT', label: 'Sayım' }, { value: 'PRODUCTION', label: 'Üretim' }, { value: 'ORDER', label: 'Sipariş' }, { value: 'OTHER', label: 'Diğer' }] },
-      { n: 'sequenceId', l: 'Sayaç', t: 'ref', ref: 'sequences' },
+      { n: 'sequenceId', l: 'Sayaç', t: 'ref', ref: 'sequences', reqUnlessCount: true },
       { n: 'operationSequenceId', l: 'Operasyon Sayaç', t: 'ref', ref: 'sequences' },
       { n: 'operationGroupId', l: 'Grup', t: 'ref', ref: 'operation-groups' },
       { n: 'affectsStock', l: 'Stok Etkiler', t: 'bool' },
@@ -275,7 +275,15 @@ export const OperationTypeForm = ({ mode }: { mode: 'create' | 'edit' }) => {
                 </Col>
               ) : (
                 <Col xs={24} sm={12} lg={8} key={f.n}>
-                  <Form.Item name={f.n} label={f.l} rules={f.req ? [{ required: true, message: 'Zorunlu' }] : []}>
+                  <Form.Item
+                    name={f.n}
+                    label={f.l}
+                    // Sayaç yoksa belge numarası elle yazılmak zorunda kalıyordu → belge üreten
+                    // yönlerde zorunlu. Sayım belge üretmez (kendi countNo'su var) → muaf.
+                    rules={(f.req || (f.reqUnlessCount && direction !== 'COUNT'))
+                      ? [{ required: true, message: 'Zorunlu' }] : []}
+                    extra={f.reqUnlessCount && direction === 'COUNT' ? 'Sayımda gerekmez' : undefined}
+                  >
                     {control(f)}
                   </Form.Item>
                 </Col>

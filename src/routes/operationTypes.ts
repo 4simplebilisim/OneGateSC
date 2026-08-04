@@ -65,6 +65,33 @@ const updateSchema = z.object({
   ...baseShape,
 }).partial()
 
+/**
+ * SAYAÇ ZORUNLU (belge üreten yönlerde).
+ * Sayaç yoksa belge açarken numara ELLE yazılmak zorunda kalıyordu
+ * ("documentNo gerekli — bu operasyon tipinde sayaç tanımlı değil").
+ * COUNT muaf: sayım belge üretmez, kendi countNo'su vardır.
+ */
+const SAYAC_GEREKEN = new Set(['INBOUND', 'OUTBOUND', 'INTERNAL'])
+async function sequenceRequiredError(
+  companyId: number, id: number | null,
+  d: { direction?: string; sequenceId?: number | null },
+): Promise<string | null> {
+  // Güncellemede yön/sayaç gönderilmemiş olabilir → mevcut kaydı tamamla
+  let direction = d.direction
+  let sequenceId = d.sequenceId
+  if (id != null && (direction === undefined || sequenceId === undefined)) {
+    const cur = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id, companyId }, select: { direction: true, sequenceId: true } })
+    if (!cur) return null
+    direction ??= cur.direction
+    if (sequenceId === undefined) sequenceId = cur.sequenceId
+  }
+  if (!direction || !SAYAC_GEREKEN.has(direction)) return null
+  if (sequenceId == null) {
+    return 'Sayaç zorunlu — belge numarası otomatik üretilsin diye. Uyarlamalar › Sayaçlar ekranından bir sayaç seçin (sayım operasyonları muaftır).'
+  }
+  return null
+}
+
 // Ters operasyon yön kuralı: kategorisi giriş(INBOUND) olan operasyonun ters operasyonu giriş olamaz
 // (çıkış için de simetrik) — ters hareket yönü çevirir. INTERNAL/COUNT için kısıt yok.
 async function reverseDirectionError(companyId: number, direction: string | undefined, reverseOpId: number | null | undefined): Promise<string | null> {
@@ -123,6 +150,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (lnkErr) return reply.code(400).send({ error: lnkErr })
     const refErr = await opRefsIssue(companyId, parsed.data)
     if (refErr) return reply.code(400).send({ error: refErr })
+    const seqErr = await sequenceRequiredError(companyId, null, parsed.data)
+    if (seqErr) return reply.code(400).send({ error: seqErr })
     // COUNT (Sayım) operasyonu stok HAREKETİ postlamaz — stok yalnız sayım motoru (equalize) ile düzeltilir → affectsStock DAİMA kapalı (çift-düzeltme önlenir)
     if (parsed.data.direction === 'COUNT') (parsed.data as Record<string, unknown>).affectsStock = false
     try {
@@ -153,6 +182,8 @@ export async function operationTypeRoutes(app: FastifyInstance) {
     if (revErr) return reply.code(400).send({ error: revErr })
     const lnkErr = await linkedEntryError(companyId, parsed.data.linkedEntryOperationTypeId ?? existing.linkedEntryOperationTypeId)
     if (lnkErr) return reply.code(400).send({ error: lnkErr })
+    const seqErr = await sequenceRequiredError(companyId, id, parsed.data)
+    if (seqErr) return reply.code(400).send({ error: seqErr })
     const refErr = await opRefsIssue(companyId, parsed.data)
     if (refErr) return reply.code(400).send({ error: refErr })
     const { rest: updRest, enums: updEnums } = splitEnums(parsed.data)
