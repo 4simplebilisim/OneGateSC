@@ -119,15 +119,28 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
     include: { segments: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] } },
   })) as unknown as TypeRow[]
 
-  // Sıralı zincir (legacy if/elseif): ilk eşleşen kural kazanır; SCRIPT b.matched=false derse SONRAKİ denenir.
+  // Sıralı zincir (legacy if/elseif): ilk **beceren** kural kazanır.
+  // Önceden ilk EŞLEŞEN kural zinciri bitiriyordu: kriterleri aynı bir PALLET + SEGMENT
+  // çiftinde palet bulunamayınca "Palet bulunamadı" deyip duruyor, SEGMENT hiç
+  // denenmiyordu. Artık bir kural kodu gerçekten çözemezse (ürün/palet yok, segment
+  // veya betik tanımsız) zincir devam eder; hiçbiri beceremezse İLK hata gösterilir.
+  let ilkHata: string | null = null          // zincirde kimse beceremezse gösterilecek
+  const eslesenler: string[] = []            // aynı barkodu yakalayan kurallar (belirsizlik uyarısı)
+  const devam = (hata: string) => {          // bu kural çözemedi → sıradakine geç
+    if (ilkHata === null) ilkHata = hata
+    res.matched = false; res.barcodeTypeId = undefined; res.barcodeTypeCode = undefined; res.mode = undefined
+    res.fields = {}
+  }
+
   for (const type of types) {
     if (!ruleMatches(type, code)) continue
+    eslesenler.push(type.code)
     res.matched = true; res.barcodeTypeId = type.id; res.barcodeTypeCode = type.code; res.mode = type.mode as BarcodeParseResult['mode']
 
     // ── EAN: ürün-birim tam eşleşme ──
     if (type.mode === 'EAN') {
       const p = await resolveProduct(companyId, code)
-      if (!p) { res.error = `Ürün bulunamadı: ${code} (kural: ${type.code})`; return res }
+      if (!p) { devam(`Ürün bulunamadı: ${code} (kural: ${type.code})`); continue }
       res.fields.productId = p.id; res.product = { id: p.id, code: p.code, name: p.name }
       if (p.unitId) { res.fields.unitId = p.unitId; res.unit = await unitById(p.unitId) }
       return res
@@ -138,7 +151,7 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
       const key = type.palletKeyLen ? code.slice(0, type.palletKeyLen) : code
       res.fields.palletNo = key
       const pc = await palletContents(companyId, key)
-      if (!pc) { res.error = `Palet bulunamadı: ${key} (kural: ${type.code})`; return res }
+      if (!pc) { devam(`Palet bulunamadı: ${key} (kural: ${type.code})`); continue }
       res.fields.palletId = pc.palletId
       res.pallet = pc.view
       return res
@@ -146,11 +159,11 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
 
     // ── SCRIPT: sandbox'ta betik — legacy TXTSCRIPT birebir ──
     if (type.mode === 'SCRIPT') {
-      if (!type.parseScript?.trim()) { res.error = 'Bu barkod tipinde betik (parseScript) tanımlı değil'; return res }
+      if (!type.parseScript?.trim()) { devam(`Betik tanımlı değil (kural: ${type.code})`); continue }
       const out = await runParseScript(type.parseScript, code)
       if ('__error' in out) { res.error = `Betik hatası: ${out.__error}`; return res }
       if (out.matched === false) { // betik "bu barkod benim değil" dedi → zincirde sonraki kural
-        res.matched = false; res.barcodeTypeId = undefined; res.barcodeTypeCode = undefined; res.mode = undefined
+        devam(`Betik eşleşmedi (kural: ${type.code})`)
         continue
       }
       if (typeof out.error === 'string' && out.error) { res.error = out.error; return res }
@@ -189,7 +202,7 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
 
     // ── SEGMENT: alanlara böl ──
     const segs = type.segments
-    if (!segs.length) { res.error = 'Bu barkod tipinde segment tanımlı değil'; return res }
+    if (!segs.length) { devam(`Segment tanımlı değil (kural: ${type.code})`); continue }
     let pos = 0
     const view: BarcodeSegmentView[] = []
     for (const s of segs) {
@@ -217,6 +230,10 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
     return res
   }
 
-  res.error = 'Barkod tipi bulunamadı — hatalı barkod'
+  // Hiçbir kural beceremedi: en açıklayıcı olan İLK hatayı ver (jenerik mesaj yerine)
+  res.error = ilkHata ?? 'Barkod tipi bulunamadı — hatalı barkod'
+  if (eslesenler.length > 1) {
+    res.warnings!.push(`Bu barkodu ${eslesenler.length} kural yakalıyor (${eslesenler.join(', ')}) — hiçbiri çözemedi. Kural kriterlerini ayrıştırın.`)
+  }
   return res
 }
