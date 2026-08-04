@@ -108,12 +108,16 @@ for (let i = 0; i < sevkSayisi; i++) {
   const stok = dizi((await req('GET', '/api/stock?pageSize=200')).body).filter((s) => Number(s.mainQty) > 5)
   if (!stok.length) { console.log('   stok yok, atlandı'); break }
   const satirlar = []
+  const kullanilan = new Set()
   for (let k = 0; k < 1 + rnd(3); k++) {
     const s = sec(stok)
+    if (kullanilan.has(s.id)) continue
+    kullanilan.add(s.id)
     const q = Math.max(1, Math.min(Math.floor(Number(s.mainQty) / 2), 1 + rnd(30)))
     satirlar.push({
       lineNo: k + 1, productId: s.productId, unitId: s.unitId, quantity: q,
-      sourceLocationId: s.locationId, sourceStatusId: s.statusId, batchNo: s.batchNo ?? null,
+      sourceLocationId: s.locationId, sourceStatusId: s.statusId,
+      batchNo: s.batchNo ?? null, palletId: s.palletId ?? null,
     })
   }
   const r = await akis(OP.ZC001, satirlar, cariler.length ? { partnerId: sec(cariler).id } : {})
@@ -134,7 +138,8 @@ if (OP.ZT001 && rafS.length) {
     const r = await akis(OP.ZT001, [{
       lineNo: 1, productId: s.productId, unitId: s.unitId, quantity: q,
       sourceLocationId: s.locationId, sourceStatusId: s.statusId,
-      targetLocationId: sec(rafS).id, targetStatusId: stSaglam.id, batchNo: s.batchNo ?? null,
+      targetLocationId: sec(rafS).id, targetStatusId: stSaglam.id,
+      batchNo: s.batchNo ?? null, palletId: s.palletId ?? null,
     }])
     if (r.hata) hatalar.push(`transfer#${i}: ${r.hata}`)
     else olusan.push({ id: r.id, tip: 'transfer' })
