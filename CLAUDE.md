@@ -29,7 +29,14 @@ Giriş: `admin/admin123` (super) · `operator/operator123` · `viewer/viewer123`
 - **Deploy (tek komut):** `ssh hetzner "/opt/onegate-wms/scripts/deploy.sh"` — pull→ci→migrate+**generate**→build→restart→sağlık.
 - **Sırlar yalnız sunucuda** (chat/repo'ya yazma): `/root/.onegate_wms_dbpass` · `/root/.onegate_wms_users.txt` (canlı kullanıcı şifreleri) · `/opt/onegate-wms/.env`.
 - ⚠️ **Migration'lar taze DB'de sıfırdan OYNAMAZ** (erken migration'lar public-şema döneminden). Taze DB kurulumu = `prisma/baseline/baseline.sql` uygula (şema + `public._prisma_migrations` geçmişi) → `npm run seed`; sonrası normal `migrate deploy`. Prisma 7 geçmişi **public**'te arar.
-- **Yeni PC (dev):** clone → `cp .env.example .env` → `docker compose up -d` → `docker exec -i onegate-db psql -U onegate -d onegate < prisma/baseline/baseline.sql` (bash) → `npm i && npm run generate && npm run seed` → `npm run dev`. Deploy için Hetzner SSH anahtarı ayrıca gerekir (yeni pubkey'i sunucu `authorized_keys`'e ekle).
+- **Geliştirme SUNUCUDA (lokale kurulum gerekmez — varsayılan yol):** kod `/opt/onegate-dev`, DB **`onegate_dev`** (canlıdan kopya, canlıya dokunmaz), API :3020, web :5180.
+  ```bash
+  ssh hetzner "/opt/onegate-dev/scripts/dev-server.sh start"     # başlat (stop|status|logs|pull)
+  ssh -L 5180:localhost:5180 -L 3020:localhost:3020 hetzner      # tünel → http://localhost:5180
+  ```
+  Dışarı port açılmadı (DNS/sertifika gerekmiyor); erişim yalnız SSH tüneliyle. **Kullanmadığında `stop` et** — ~450 MB RAM tutuyor, makine 3.7 GB. Docker YOK: sunucuda zaten native PG16 var, ikinci Postgres boşuna RAM yerdi.
+- **Yeni PC (lokal kurmak istersen):** clone → `cp .env.example .env` → `docker compose up -d` → `docker exec -i onegate-db psql -U onegate -d onegate < prisma/baseline/baseline.sql` (bash) → `npm i && npm run generate && npm run seed` → `npm run dev`.
+- 🔑 **SSH anahtarı format'tan ÖNCE yedeklenmeli:** `~/.ssh/hetzner_rsa`. Bu dosya olmadan sunucuya bağlanılamaz → deploy/backfill/onarım yapılamaz. Yedeği yoksa tek çıkış Hetzner web konsolu. Yeni PC'de: anahtarı `~/.ssh/` altına koy + `~/.ssh/config`'e `Host hetzner / HostName 178.104.102.17 / User root / IdentityFile ~/.ssh/hetzner_rsa` ekle.
 
 | Komut (kök) | İş |
 |---|---|

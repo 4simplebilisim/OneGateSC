@@ -50,6 +50,13 @@ case "${1:-status}" in
     echo -n "RAM  : "; free -m | awk '/Mem:/{printf "%d/%d MB kullanımda\n", $3, $2}'
     ;;
   logs)  tail -n "${2:-40}" "$API_LOG" "$WEB_LOG" ;;
-  pull)  cd "$DIR" && git pull origin main && npm ci --silent && npx prisma generate && echo "Güncellendi — 'start' ile yeniden başlat" ;;
+  pull)
+    cd "$DIR" || exit 1
+    git pull origin main
+    npm ci --silent
+    npm ci --prefix web --silent   # kök npm ci web/ bağımlılıklarını KURMAZ (vite: not found)
+    npx prisma generate
+    echo "Güncellendi — 'start' ile yeniden başlat"
+    ;;
   *)     echo "Kullanım: $0 start|stop|status|logs [satır]|pull"; exit 1 ;;
 esac
