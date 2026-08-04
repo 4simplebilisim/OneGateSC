@@ -23,5 +23,3 @@ export const STATUS_TR: Record<string, string> = {
 export const DIRECTION_TR: Record<string, string> = {
   INBOUND: 'Giriş', OUTBOUND: 'Çıkış', INTERNAL: 'Transfer', COUNT: 'Sayım',
 }
-
-export const statusLabel = (code?: string | null) => (code ? (STATUS_TR[code] ?? code) : '')

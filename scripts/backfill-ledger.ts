@@ -1,7 +1,7 @@
 // Tek seferlik: mevcut COMPLETED belgelerden hareket defterini (TBLSTOCKLEDGER) doldur.
 // Ledger sonradan eklendiği için geçmiş hareketler yoktu; bu script as-built ledger'ı kurar.
-// Idempotent: ledger boş değilse atlar. Çalıştır: npx tsx src/backfillLedger.ts
-import { prisma } from './lib/prisma.js'
+// Idempotent: ledger boş değilse atlar. Çalıştır: npx tsx scripts/backfill-ledger.ts
+import { prisma } from '../src/lib/prisma.js'
 
 async function main() {
   const existing = await prisma.tBLSTOCKLEDGER.count()
