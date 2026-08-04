@@ -279,6 +279,9 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
   // Ref'ler SEÇİLİ FİRMAYA göre — firma değişince hepsi yeniden çekilir (liste tüm firmalar; formda seçili firma)
   const units = useOpts('units', companyId)
   const productGroups = useOpts('product-groups', companyId)
+  const unitOpts = useOpts('units', companyId)   // Ana Ölçü Birimi — üründe vardı ama ekranda hiç gösterilmiyordu
+  const anaBirimId = Form.useWatch('unitId', form) as number | undefined
+  const anaBirimAdi = unitOpts.find((u) => u.value === anaBirimId)?.label
   const productSubGroups = useOpts('product-subgroups', companyId)
   const productTypes = useOpts('product-types', companyId)
   const productDetailTypes = useOpts('product-detail-types', companyId)
@@ -336,6 +339,12 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           <Col xs={24} sm={8}><Form.Item name="code" label="Ürün Kodu" rules={[{ required: true, message: 'Zorunlu' }]}><Input disabled={mode === 'edit'} /></Form.Item></Col>
           <Col xs={24} sm={10}><Form.Item name="name" label="Tanım" rules={[{ required: true, message: 'Zorunlu' }]}><Input /></Form.Item></Col>
           <Col xs={24} sm={6}><Form.Item name="shortName" label="Kısa Ad"><Input maxLength={50} /></Form.Item></Col>
+          {/* Ana ölçü birimi ürünün ZORUNLU alanıdır (stok/belge miktarları bunun üzerinden tutulur)
+              ama formda hiç yer almıyordu — veri doluyken ekranda görünmüyordu. */}
+          <Col xs={24} sm={8}><Form.Item name="unitId" label="Ana Ölçü Birimi" rules={[{ required: true, message: 'Zorunlu' }]}
+            tooltip="Stok ve belge miktarları bu birim üzerinden tutulur. Alternatif birimler (koli, palet...) 'Ölçü Birimleri' sekmesinden eklenir.">
+            <Select options={unitOpts} showSearch optionFilterProp="label" placeholder="Seçiniz" />
+          </Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productGroupId" label="Ürün Grubu"><Select options={productGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productSubGroupId" label="Ürün Alt-Grubu"><Select options={productSubGroups} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
           <Col xs={24} sm={8}><Form.Item name="productTypeId" label="Ürün Tipi"><Select options={productTypes} showSearch optionFilterProp="label" allowClear placeholder="Seçiniz" /></Form.Item></Col>
@@ -390,6 +399,14 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
     {
       key: 'units', label: 'Ölçü Birimleri', disabled: !enabled,
       children: enabled ? (
+        <>
+        {/* Ana birim üründe (TBLPRODUCT.unitId) tutulur, bu listede satırı olmayabilir.
+            Liste "Henüz kayıt yok" derken ürünün aslında bir ana birimi vardı → yanıltıcıydı. */}
+        <Alert type="info" showIcon style={{ marginBottom: 12 }}
+          title={anaBirimAdi ? `Ana ölçü birimi: ${anaBirimAdi}` : 'Ana ölçü birimi seçilmemiş'}
+          description={anaBirimAdi
+            ? 'Tanım sekmesinden değiştirilir. Bu listeye yalnız ALTERNATİF birimler (koli, palet, kutu...) ve barkodları eklenir — ana birim için satır açmak zorunlu değildir.'
+            : 'Tanım sekmesinden bir ana ölçü birimi seçin; stok ve belge miktarları onun üzerinden tutulur.'} />
         <LinkTab
           key={unitKey}
           ownerField="productId"
@@ -401,6 +418,7 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
             <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setEditUnit(row)}>Düzenle</Button>
           )}
         />
+        </>
       ) : null,
     },
     { key: 'ekgrup', label: 'Ek Gruplar', disabled: !enabled, children: enabled ? <LinkTab ownerField="productId" ownerId={id!} resource="product-additional-groups" fields={EKGRUP_FIELDS} /> : null },

@@ -145,9 +145,16 @@ export async function locationRoutes(app: FastifyInstance) {
       combos = next
     }
     const companyId = getCompanyId(request)
+    // Tesis depodan TÜRETİLİR — tekil oluşturmada yapılıyordu, toplu üretimde atlanmıştı:
+    // toplu üretilen lokasyonlarda Tesis kolonu boş kalıyordu.
+    const wh = await prisma.tBLWAREHOUSE.findFirst({ where: { id: warehouseId, companyId }, select: { facilityId: true } })
+    if (!wh) return reply.code(400).send({ error: 'Geçersiz depo' })
+    if (!(await areaBelongsToWarehouse(companyId, areaId, warehouseId))) {
+      return reply.code(400).send({ error: 'Geçersiz alan — bu depoya/firmaya ait değil' })
+    }
     const data = combos.map((combo) => {
       const code = prefix + combo.map((v, i) => String(v).padStart(lists[i]!.width, '0')).join(separator)
-      return { companyId, warehouseId, areaId, code, name: code, type }
+      return { companyId, warehouseId, areaId, facilityId: wh.facilityId, code, name: code, type }
     })
 
     try {

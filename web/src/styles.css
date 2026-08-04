@@ -199,6 +199,13 @@ h1, h2, h3, h4, h5,
 }
 .og-switchrow:hover { border-color: rgba(37, 99, 201, 0.5); background: var(--og-row-hover); }
 .og-switchrow__label { font-size: 13px; color: var(--og-muted); line-height: 1.3; }
+/* Switch kutusunun etiketi yok → hücrenin tepesinden başlıyor, yanındaki etiketli
+   input ise etiket yüksekliği kadar aşağıdan. Aynı satırda hizasız duruyorlardı.
+   AntD dikey form etiketi = 22px yazı + 8px boşluk; kutuyu o kadar indiriyoruz.
+   Alt boşluk da Form.Item'ınkiyle (24px) eşitlenir ki satır aralıkları bozulmasın. */
+.ant-col > .og-switchrow { margin-top: 30px; margin-bottom: 24px; }
+/* Kendi Form.Item'ı içindeyse hizalama zaten AntD'den gelir — çift boşluk olmasın */
+.ant-form-item .og-switchrow { margin-top: 0; margin-bottom: 0; }
 
 /* ---- Çok-satırlı işlem ekranı: satır mini-kartı ---- */
 .og-linecard {
