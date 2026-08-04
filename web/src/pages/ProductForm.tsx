@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { App, Alert, Button, Card, Col, Divider, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Table, Tabs, Typography } from 'antd'
-import { ArrowLeftOutlined, SaveOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, SaveOutlined, PlusOutlined, BarcodeOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { LinkTab, type LF } from '../components/LinkTab'
@@ -414,8 +414,11 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
           resource="product-units"
           fields={UNIT_FIELDS}
           confirmOn={(vals, rows) => (vals.isBaseUnit && rows.some((r) => r.isBaseUnit) ? 'Bu ürünün zaten bir ana birimi var. Ana birimi bununla değiştirmek istediğinize emin misiniz? (Stok/belge hareketi varsa değiştirilemez.)' : null)}
+          // LinkTab'in kalem simgesi ÜSTTEKİ satır-içi formu açar (birim/çarpan/bölen/batch/seri).
+          // Bu buton ise TAM ALAN çekmecesini açar (ölçüler, ağırlıklar, barkodlar).
+          // İkisi de "Düzenle" yazınca aynı şeyi yapıyor sanılıyordu → yaptığı işe göre adlandırıldı.
           extraActions={(row) => (
-            <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setEditUnit(row)}>Düzenle</Button>
+            <Button size="small" type="text" icon={<BarcodeOutlined />} onClick={() => setEditUnit(row)}>Detay &amp; Barkod</Button>
           )}
         />
         </>
