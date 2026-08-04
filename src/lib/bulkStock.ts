@@ -156,6 +156,8 @@ export async function bulkStockOperation(
     throw err
   }
 
-  const totalQty = usable.reduce((a, s) => a.add(s.mainQty), new Prisma.Decimal(0)).toString()
+  // İşlenen miktar = belgeye yazılan miktar (parçalıda girilen), eldeki değil.
+  // mainQty toplanıyordu: 19'luk stoktan 3 işlenince ekranda "19" yazıyordu.
+  const totalQty = usable.reduce((a, s) => a.add(useQty(s)), new Prisma.Decimal(0)).toString()
   return { documentId: doc.id, documentNo: doc.documentNo, lineCount: usable.length, totalQty, skipped }
 }

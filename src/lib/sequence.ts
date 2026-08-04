@@ -16,14 +16,28 @@ export class SequenceError extends Error {
  */
 export async function nextSequence(companyId: number, code: string, client?: Prisma.TransactionClient): Promise<{ value: number; formatted: string }> {
   const run = async (tx: Prisma.TransactionClient) => {
-    const seq = await tx.tBLSEQUENCE.findUnique({ where: { companyId_code: { companyId, code } } })
-    if (!seq) throw new SequenceError(`Sayaç bulunamadı: ${code}`)
-    if (!seq.isActive) throw new SequenceError(`Sayaç pasif: ${code}`)
-    const next = (seq.currentValue < seq.startNo - 1 ? seq.startNo - 1 : seq.currentValue) + 1
-    if (seq.endNo !== null && next > seq.endNo) throw new SequenceError(`Sayaç sınırı aşıldı (${code}): max ${seq.endNo}`)
-    await tx.tBLSEQUENCE.update({ where: { id: seq.id }, data: { currentValue: next } })
-    const formatted = `${seq.prefix ?? ''}${String(next).padStart(seq.padLength, '0')}`
-    return { value: next, formatted }
+    // ATOMİK artırım: oku-sonra-yaz yerine tek UPDATE ... RETURNING.
+    // READ COMMITTED altında iki eşzamanlı istek aynı currentValue'yu okuyup aynı
+    // numarayı üretiyordu → belge no unique çakışması (10 paralelde 8'i 409 düşüyordu).
+    // UPDATE satırı kilitler; ikinci istek kilidi bekleyip GÜNCEL değeri görür.
+    const rows = await tx.$queryRaw<Array<{ currentValue: number; prefix: string | null; padLength: number; endNo: number | null }>>`
+      UPDATE wms."TBLSEQUENCE"
+         SET "currentValue" = GREATEST("currentValue", "startNo" - 1) + 1,
+             "updatedAt"    = now()
+       WHERE "companyId" = ${companyId} AND "code" = ${code} AND "isActive" = true
+      RETURNING "currentValue", "prefix", "padLength", "endNo"
+    `
+    const row = rows[0]
+    if (!row) {
+      // Yalnız hata yolunda ek sorgu: sayaç yok mu, pasif mi — mesaj net olsun
+      const seq = await tx.tBLSEQUENCE.findUnique({ where: { companyId_code: { companyId, code } } })
+      if (!seq) throw new SequenceError(`Sayaç bulunamadı: ${code}`)
+      throw new SequenceError(`Sayaç pasif: ${code}`)
+    }
+    const { currentValue: next, prefix, padLength, endNo } = row
+    // Sınır aşıldıysa fırlat — artırım bu transaction'da geri alınır (numara yanmaz)
+    if (endNo !== null && next > endNo) throw new SequenceError(`Sayaç sınırı aşıldı (${code}): max ${endNo}`)
+    return { value: next, formatted: `${prefix ?? ''}${String(next).padStart(padLength, '0')}` }
   }
   return client ? run(client) : prisma.$transaction(run)
 }
