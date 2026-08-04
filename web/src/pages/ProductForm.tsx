@@ -405,8 +405,8 @@ export const ProductForm = ({ mode }: { mode: 'create' | 'edit' }) => {
         <Alert type="info" showIcon style={{ marginBottom: 12 }}
           title={anaBirimAdi ? `Ana ölçü birimi: ${anaBirimAdi}` : 'Ana ölçü birimi seçilmemiş'}
           description={anaBirimAdi
-            ? 'Tanım sekmesinden değiştirilir. Bu listeye yalnız ALTERNATİF birimler (koli, palet, kutu...) ve barkodları eklenir — ana birim için satır açmak zorunlu değildir.'
-            : 'Tanım sekmesinden bir ana ölçü birimi seçin; stok ve belge miktarları onun üzerinden tutulur.'} />
+            ? 'Ana birim aşağıdaki listede "Ana Birim" işaretiyle görünür (çarpan/bölen = 1) ve Tanım sekmesinden değiştirilir. Buraya ayrıca ALTERNATİF birimler (koli, palet, kutu...) ve barkodları eklenir.'
+            : 'Tanım sekmesinden bir ana ölçü birimi seçin; stok ve belge miktarları onun üzerinden tutulur ve listede otomatik görünür.'} />
         <LinkTab
           key={unitKey}
           ownerField="productId"

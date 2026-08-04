@@ -54,6 +54,27 @@ async function validFacilityIds(companyId: number, facilities: number[] | undefi
   return rows.map((r) => r.id)
 }
 
+/**
+ * Ana birimin ÖLÇÜ BİRİMLERİ listesinde de satırı olsun.
+ * Ana birim TBLPRODUCT.unitId'de tutuluyordu ama TBLPRODUCTUNIT satırı
+ * yaratılmıyordu → ürünün birimi varken "Ölçü Birimleri" sekmesi "Henüz kayıt
+ * yok" diyordu ve barkod eklenecek satır bulunmuyordu.
+ * isBaseUnit bayrağı zaten bu satırın var olmasını bekliyor (çarpan/bölen = 1).
+ */
+async function ensureBaseUnitRow(productId: number, companyId: number, unitId: number | null | undefined) {
+  if (!unitId) return
+  await prisma.tBLPRODUCTUNIT.upsert({
+    where: { productId_unitId: { productId, unitId } },
+    update: { isBaseUnit: true },
+    create: { companyId, productId, unitId, isBaseUnit: true, multiplier: 1, divisor: 1 },
+  })
+  // Ana birim değiştiyse eski satırın bayrağı düşsün (tek ana birim kuralı)
+  await prisma.tBLPRODUCTUNIT.updateMany({
+    where: { productId, isBaseUnit: true, NOT: { unitId } },
+    data: { isBaseUnit: false },
+  })
+}
+
 export async function productRoutes(app: FastifyInstance) {
   app.get('/', async (request) => {
     const q = request.query as { search?: string; app?: string }
@@ -104,6 +125,7 @@ export async function productRoutes(app: FastifyInstance) {
         data: { ...rest, shelfLifeControl, companyId, facilities: { create: facIds.map((fid) => ({ companyId, facilityId: fid })) } },
       })
       if (usageScope) await setProductScope(product.id, companyId, usageScope as ProductScope)
+      await ensureBaseUnitRow(product.id, companyId, product.unitId)
       return reply.code(201).send({ ...product, usageScope: usageScope ?? 'BOTH' })
     } catch (err) {
       const code = (err as { code?: string }).code
@@ -142,11 +164,12 @@ export async function productRoutes(app: FastifyInstance) {
       const shelfLifeDays = daysRaw ? Number(daysRaw) : undefined
       if (shelfLifeDays != null && !Number.isFinite(shelfLifeDays)) throw new Error(`Raf ömrü sayı olmalı: ${daysRaw}`)
       try {
-        await prisma.tBLPRODUCT.create({ data: {
+        const yeni = await prisma.tBLPRODUCT.create({ data: {
           companyId, code, name, shortName: str(r.shortName) || undefined,
           unitId, productGroupId, productTypeId, manufacturerCode: str(r.manufacturerCode) || undefined,
           shelfLifeDays, shelfLifeControl: (shelfLifeDays ?? 0) > 0, isActive: parseBool(r.isActive, true),
         } })
+        await ensureBaseUnitRow(yeni.id, companyId, unitId) // Excel'den gelen üründe de ana birim satırı olsun
       } catch (e) {
         if ((e as { code?: string }).code === 'P2002') throw new Error(`Kod zaten var: ${code}`)
         throw e
@@ -180,6 +203,7 @@ export async function productRoutes(app: FastifyInstance) {
     try {
       const product = await prisma.tBLPRODUCT.update({ where: { id }, data, include: { unit: true, facilities: { select: { facilityId: true } } } })
       if (usageScope) await setProductScope(id, existing.companyId, usageScope as ProductScope)
+      await ensureBaseUnitRow(id, existing.companyId, product.unitId)
       return { ...product, ...(usageScope ? { usageScope } : {}) }
     } catch (err) {
       if ((err as { code?: string }).code === 'P2003') return reply.code(400).send({ error: 'Geçersiz referans (birim/grup/tip)' })
