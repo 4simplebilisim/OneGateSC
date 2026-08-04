@@ -104,7 +104,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
 
   // origin: true tek başına metodları GET,HEAD,POST ile sınırlıyordu → tarayıcıdan PATCH/DELETE preflight'ta patlıyordu.
   await app.register(cors, { origin: true, methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] })
-  await app.register(jwt, { secret: env.jwtSecret })
+  // Token ÖMÜRLÜ olmalı: süresiz token sızarsa sonsuza kadar geçerli kalıyordu.
+  // 12 saat = bir vardiyayı kesmeden kapsar (el terminali vardiya ortasında düşmesin).
+  // Süre dolunca dataProvider 401'i yakalayıp oturumu temizler ve login'e döner.
+  await app.register(jwt, { secret: env.jwtSecret, sign: { expiresIn: env.jwtExpiresIn } })
 
   // OpenAPI/Swagger — her endpoint URL'den otomatik etiketlenir (UI ekibi için canlı kontrat)
   app.addHook('onRoute', (routeOptions) => {

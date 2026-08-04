@@ -11,6 +11,9 @@ export const env = {
   port: Number(process.env.PORT ?? 3000),
   nodeEnv: process.env.NODE_ENV ?? 'development',
   jwtSecret: process.env.JWT_SECRET ?? 'onegate-dev-secret-change-in-production',
+  // Token ömrü — vardiyayı kesmeyecek kadar uzun, süresiz olmayacak kadar kısa.
+  // Uzatmak/kısaltmak için .env: JWT_EXPIRES_IN=8h | 30m | 7d
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
   // Ürünler arası oturum devri (SSO) — 4Proc ile PAYLAŞILAN sır; yalnız sunucu ortamında tanımlı
   ssoSecret: process.env.SSO_SECRET ?? 'onegate-dev-sso-secret-change-in-production',
 }
