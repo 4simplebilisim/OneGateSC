@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
-import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, countDifferences, CountingError } from '../lib/counting.js'
+import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, deleteCount, countDifferences, CountingError } from '../lib/counting.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
@@ -149,6 +149,8 @@ export async function stockCountRoutes(app: FastifyInstance) {
   app.post('/:id/complete', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => completeCount(id, new Date())))
   app.post('/:id/cancel', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => cancelCount(id)))
   app.post('/:id/reverse-equalize', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => reverseEqualize(id)))
+  // Yanlış açılan sayımı listeden KALDIR (cancel yalnız durumu değiştiriyordu, kayıt kalıyordu)
+  app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => deleteCount(id)))
 }
 
 // Sayım Fark raporu (Sayım Fark / Onaylı Sayım Fark) — /api/count-differences

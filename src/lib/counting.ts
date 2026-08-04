@@ -147,6 +147,25 @@ export async function cancelCount(id: number) {
   return prisma.tBLSTOCKCOUNT.update({ where: { id }, data: { status: 'CANCELLED' } })
 }
 
+/**
+ * Sayımı KALICI sil (yanlış açılan sayım listeyi kirletmesin).
+ * cancel yalnız durumu CANCELLED yapar, kayıt listede kalırdı.
+ *
+ * Kural: stoğa dokunmuş sayım SİLİNMEZ — tamamlanmış sayım denetim izidir,
+ * geri almak için Eşitleme İptal kullanılır. Satırlar FK cascade ile gider.
+ */
+export async function deleteCount(id: number) {
+  const c = await prisma.tBLSTOCKCOUNT.findUniqueOrThrow({
+    where: { id },
+    include: { _count: { select: { lines: true } } },
+  })
+  if (c.status === 'COMPLETED') {
+    throw new CountingError('Tamamlanmış sayım silinemez — stok düzeltmesi ve denetim izi taşır. Önce "Eşitleme İptal" ile geri alın.')
+  }
+  await prisma.tBLSTOCKCOUNT.delete({ where: { id } })
+  return { deleted: true, countNo: c.countNo, lines: c._count.lines }
+}
+
 /** Sayım Eşitleme İptal — tamamlanmış sayımın stok düzeltmelerini geri al (countedQty → systemQty), sayımı iptal et. */
 export async function reverseEqualize(id: number) {
   return prisma.$transaction(async (tx) => {

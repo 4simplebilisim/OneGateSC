@@ -21,6 +21,7 @@ const DELETE_OK = new Set([
   'facilities', 'areas', 'regions', 'partner-groups', 'product-units', 'units',
   'statuses', 'pallet-types', 'operation-type-statuses', 'operation-type-locations', 'operation-type-reasons', 'operation-type-pallet-types',
   'location-capacities', 'operation-types', 'barcode-types', 'parameters', 'printers', 'document-statuses',
+  'stock-counts', // yanlış açılan sayım silinebilir (tamamlanmış olan backend'de 409 ile korunur)
   'document-status-actions', 'document-status-criteria', 'document-approval-types',
   'reason-categories', 'operation-group-links', 'operation-tolerances', 'operation-forbidden-products',
   'operation-conversions', 'sequential-operations', 'auto-reference-documents', 'operation-bulk-actions',
