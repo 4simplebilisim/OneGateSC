@@ -21,6 +21,12 @@ type Crit = Record<string, string>
 
 const num = (v?: string) => (v ? Number(v) : undefined)
 
+/** Rapor satır tavanı. Kullanıcı "Kayıt Sayısı" kriteriyle 5000'e kadar yükseltebilir.
+ *  Tavan SESSİZ olmamalı: çalıştırma yanıtı `truncated` döner, ekran uyarı gösterir —
+ *  aksi halde 2000'de kesilen hareket raporuyla mutabakat yapılıp yanlış sonuca varılıyordu. */
+const ROW_CAP_DEFAULT = 2000
+const rowCap = (c: Crit) => (c.limit ? Math.max(1, Math.min(Number(c.limit), 5000)) : ROW_CAP_DEFAULT)
+
 // Güncel stok (Stok Durum + Palet İzleme = paletin şu anki konumu). tesis/depo/alan/lokasyon/ürün/palet/batch/statü süzme.
 // palletOnly=true → yalnız paletli stok (Palet İzleme; paletsiz satırlar gizlenir).
 async function runStock(companyId: number, c: Crit, palletOnly = false) {
@@ -43,7 +49,7 @@ async function runStock(companyId: number, c: Crit, palletOnly = false) {
       location: { select: { code: true, warehouse: { select: { code: true, name: true, facility: { select: { code: true, name: true } } } } } },
       status: { select: { code: true } }, pallet: { select: { palletNo: true } }, unit: { select: { code: true } },
     },
-    orderBy: { id: 'asc' }, take: 2000,
+    orderBy: { id: 'asc' }, take: rowCap(c),
   })
   const cn = (co?: string, n?: string) => (co ? (n ? `${co} — ${n}` : co) : '')
   return stocks.map((s) => ({
@@ -74,7 +80,7 @@ async function runDocuments(companyId: number, c: Crit, forceOpen = false) {
       ...(Object.keys(lineFilter).length ? { lines: { some: lineFilter } } : {}),
     },
     include: { operationType: { select: { code: true, direction: true } }, documentStatus: { select: { name: true } }, partner: { select: { code: true, name: true } }, _count: { select: { lines: true } } },
-    orderBy: { id: 'desc' }, take: 2000,
+    orderBy: { id: 'desc' }, take: rowCap(c),
   })
   return docs.map((d) => ({
     belgeNo: d.documentNo, operasyon: d.operationType.code, yon: d.operationType.direction,
@@ -86,7 +92,7 @@ async function runDocuments(companyId: number, c: Crit, forceOpen = false) {
 async function runPallets(companyId: number, c: Crit) {
   const pallets = await prisma.tBLPALLET.findMany({
     where: { companyId, ...(c.palletNo ? { palletNo: { contains: c.palletNo, mode: 'insensitive' } } : {}) },
-    include: { palletType: { select: { code: true } } }, orderBy: { id: 'desc' }, take: 2000,
+    include: { palletType: { select: { code: true } } }, orderBy: { id: 'desc' }, take: rowCap(c),
   })
   return pallets.map((p) => ({ paletNo: p.palletNo, tip: p.palletType?.code ?? '', durum: p.isActive ? 'Aktif' : 'Pasif' }))
 }
@@ -148,7 +154,7 @@ async function runMovements(companyId: number, c: Crit, direction?: 'INBOUND' | 
       ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}),
     },
     orderBy: opts.chronological ? { id: 'asc' } : { id: 'desc' }, // kronolojik = giriş→çıkış (id sırası = kayıt sırası)
-    take: c.limit ? Math.max(1, Math.min(Number(c.limit), 5000)) : 2000, // Kayıt Sayısı
+    take: rowCap(c), // Kayıt Sayısı
   })
   if (!led.length) return []
   const uniq = (arr: (number | null)[]) => [...new Set(arr.filter((x): x is number => x != null))]
@@ -226,7 +232,7 @@ async function runDocLog(companyId: number, c: Crit) {
   const dateFilter = { ...(c.dateFrom ? { gte: new Date(c.dateFrom.slice(0, 10) + 'T00:00:00.000Z') } : {}), ...(c.dateTo ? { lte: new Date(c.dateTo.slice(0, 10) + 'T23:59:59.999Z') } : {}) }
   const hist = await prisma.tBLDOCUMENTSTATUSHISTORY.findMany({
     where: { companyId, ...(docIds ? { documentId: { in: docIds } } : {}), userId: num(c.userId), ...(Object.keys(dateFilter).length ? { createdAt: dateFilter } : {}) },
-    orderBy: { id: 'desc' }, take: c.limit ? Math.max(1, Math.min(Number(c.limit), 5000)) : 2000,
+    orderBy: { id: 'desc' }, take: rowCap(c),
   })
   if (!hist.length) return []
   const uniq = (arr: (number | null)[]) => [...new Set(arr.filter((x): x is number => x != null))]
@@ -278,8 +284,8 @@ async function runProductLedger(companyId: number, c: Crit) {
 }
 
 // Stok satırlarını ürün/lokasyon/depo adlarıyla zenginleştir (SKT/Lot/Rezervasyon ortak temeli)
-async function stockJoined(companyId: number, where: Record<string, unknown>) {
-  const stocks = await prisma.tBLSTOCK.findMany({ where: { companyId, ...where }, orderBy: { id: 'asc' }, take: 2000 })
+async function stockJoined(companyId: number, where: Record<string, unknown>, cap = ROW_CAP_DEFAULT) {
+  const stocks = await prisma.tBLSTOCK.findMany({ where: { companyId, ...where }, orderBy: { id: 'asc' }, take: cap })
   const [prods, locs, whs] = await Promise.all([
     prisma.tBLPRODUCT.findMany({ where: { companyId }, select: { id: true, code: true, name: true } }),
     prisma.tBLLOCATION.findMany({ where: { companyId }, select: { id: true, code: true, warehouseId: true } }),
@@ -298,7 +304,7 @@ async function runExpiryRisk(companyId: number, c: Crit) {
   const { stocks, p, l, w } = await stockJoined(companyId, {
     mainQty: { gt: 0 }, expiryDate: { not: null, lte: limit },
     ...(c.productId ? { productId: Number(c.productId) } : {}),
-  })
+  }, rowCap(c))
   const today = Date.now()
   return stocks
     .filter((s) => !c.warehouseId || l.get(s.locationId)?.warehouseId === Number(c.warehouseId))
@@ -313,7 +319,7 @@ async function runBatchTrack(companyId: number, c: Crit) {
   const { stocks, p, l, w } = await stockJoined(companyId, {
     mainQty: { gt: 0 }, batchNo: { contains: String(c.batchNo ?? ''), mode: 'insensitive' as const },
     ...(c.productId ? { productId: Number(c.productId) } : {}),
-  })
+  }, rowCap(c))
   return stocks.map((s) => ({
     urun: p.get(s.productId) ?? `#${s.productId}`,
     depo: w.get(l.get(s.locationId)?.warehouseId ?? -1) ?? '—',
@@ -326,7 +332,7 @@ async function runReservations(companyId: number, c: Crit) {
   const { stocks, p, l } = await stockJoined(companyId, {
     reservedQty: { gt: 0 },
     ...(c.productId ? { productId: Number(c.productId) } : {}),
-  })
+  }, rowCap(c))
   const docIds = [...new Set(stocks.map((s) => s.reservedDocumentId).filter((x): x is number => x != null))]
   const docs = docIds.length ? await prisma.tBLDOCUMENT.findMany({ where: { id: { in: docIds } }, select: { id: true, documentNo: true, partner: { select: { code: true, name: true } } } }) : []
   const dmap = new Map(docs.map((d) => [d.id, d]))
@@ -405,6 +411,8 @@ export async function reportRunRoutes(app: FastifyInstance) {
     if (!def) return reply.code(404).send({ error: 'Rapor bulunamadı' })
     const crit = (request.body ?? {}) as Crit
     const rows = await runReport(companyId, def.sourceKey, crit)
-    return { rows }
+    // Tavan sessiz kalmasın: ekran "ilk N kayıt gösteriliyor" uyarısı bassın
+    const cap = rowCap(crit)
+    return { rows, cap, truncated: rows.length >= cap }
   })
 }

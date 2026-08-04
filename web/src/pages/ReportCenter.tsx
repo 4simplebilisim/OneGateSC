@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { App, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, Row, Select, Table } from 'antd'
+import { Alert, App, Button, Card, Col, DatePicker, Empty, Form, Input, InputNumber, Row, Select, Table } from 'antd'
 import { PlayCircleOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
@@ -26,13 +26,22 @@ export const ReportCenter = ({ fixedCode }: { fixedCode?: string }) => {
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [running, setRunning] = useState(false)
   const [ran, setRan] = useState(false)
+  const [eksik, setEksik] = useState<string | null>(null) // menüde var ama bu firmada tanımı yok
+  const [kesildi, setKesildi] = useState<number | null>(null) // satır tavanına takıldıysa tavan değeri
 
   useEffect(() => {
+    setEksik(null)
     axiosInstance.get('/api/report-run').then((r) => {
       setReports(r.data)
       if (fixedCode) {
         const hit = (r.data as Head[]).find((h) => h.code === fixedCode)
         if (hit) selectReport(hit.id)
+        else {
+          // Tanım bu firmada yok: ÖNCEKİ raporu ekranda bırakma — kullanıcı yanlış rapora
+          // bakıp doğru sanıyordu. Temizle ve nedeni açıkça söyle.
+          setDef(null); setRows([]); setRan(false)
+          setEksik(fixedCode)
+        }
       }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,6 +73,7 @@ export const ReportCenter = ({ fixedCode }: { fixedCode?: string }) => {
       }
       const r = await axiosInstance.post(`/api/report-run/${def.id}/run`, body)
       setRows(r.data.rows); setRan(true)
+      setKesildi(r.data.truncated ? Number(r.data.cap) : null)
     } catch (e) {
       message.error((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Rapor çalıştırılamadı')
     } finally { setRunning(false) }
@@ -81,6 +91,20 @@ export const ReportCenter = ({ fixedCode }: { fixedCode?: string }) => {
     <div className="og-page">
       <PageHeader title={fixedCode ? (def?.name ?? 'Rapor') : 'Raporlar'}
         subtitle={fixedCode ? 'Kriterleri girip çalıştırın' : 'Rapor seç → kriterleri gir → çalıştır (kriter/saha tanıma göre dinamik)'} />
+
+      {eksik && (
+        <Card className="og-section-card" size="small">
+          <Empty description={
+            <>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Bu rapor bu firmada tanımlı değil</div>
+              <div style={{ color: 'var(--og-muted)', fontSize: 12 }}>
+                Rapor kodu: <b>{eksik}</b> — Yönetici, sunucuda <code>scripts/backfill-reports.mjs</code> ile
+                kanonik raporları yükleyebilir.
+              </div>
+            </>
+          } />
+        </Card>
+      )}
 
       {!fixedCode && (
         <Card className="og-section-card" size="small" title="Rapor">
@@ -108,6 +132,11 @@ export const ReportCenter = ({ fixedCode }: { fixedCode?: string }) => {
 
       {def && ran && (
         <Card className="og-section-card" size="small" title={`Sonuç (${rows.length} satır)`}>
+          {kesildi != null && (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }}
+              message={`Yalnız ilk ${kesildi} kayıt gösteriliyor — sonuç kesilmiş olabilir`}
+              description="Rapor eksik olabileceği için mutabakatta kullanmayın. Kriterleri daraltın (tarih/depo/ürün) ya da 'Kayıt Sayısı' kriterini yükseltin (en fazla 5000)." />
+          )}
           {rows.length === 0 ? <Empty description="Kayıt bulunamadı" /> : (
             <Table
               rowKey={(r) => Object.values(r).join('|')} size="small" dataSource={rows} pagination={{ pageSize: 25 }} scroll={{ x: true }}
