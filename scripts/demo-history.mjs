@@ -8,6 +8,7 @@
 // son <gun> güne YAYILIR (yalnız zaman damgası kayar, miktar/ilişki değişmez) —
 // böylece hareket raporları ve grafikler gerçek bir zaman serisi gösterir.
 import { execSync } from 'node:child_process'
+import { writeFileSync, unlinkSync } from 'node:fs'
 
 const GUN = Number(process.argv[2] ?? 90)
 const API = (process.argv.find((a) => a.startsWith('--api=')) ?? '--api=https://onegate.4simple.com.tr').slice(6)
@@ -158,7 +159,12 @@ if (ids.length) {
       FROM wms."TBLDOCUMENT" d WHERE l."documentId" = d.id AND d.id IN (${ids.join(',')});
     UPDATE wms."TBLDOCUMENTSTATUSHISTORY" h SET "createdAt" = d."createdAt"
       FROM wms."TBLDOCUMENT" d WHERE h."documentId" = d.id AND d.id IN (${ids.join(',')});`
-  execSync(`ssh hetzner "sudo -u postgres psql -d onegate_wms -q -c \\"${sql.replace(/\n\s*/g, ' ').replace(/"/g, '\\\\"')}\\""`, { stdio: 'inherit' })
+  // Tırnak kaçışı platformlar arası kırılgan → SQL'i dosyayla taşı
+  const yerel = 'demo-dates.sql'
+  writeFileSync(yerel, sql)
+  execSync(`scp -q ${yerel} hetzner:/tmp/demo-dates.sql`)
+  execSync(`ssh hetzner "sudo -u postgres psql -d onegate_wms -q -f /tmp/demo-dates.sql && rm -f /tmp/demo-dates.sql"`, { stdio: 'inherit' })
+  unlinkSync(yerel)
   console.log('   tarihler yayıldı')
 }
 

@@ -12,22 +12,25 @@ import { codeMap, resolveCode, str } from '../lib/importer.js'
 import { reserveForDocument, releaseForDocument, reservationSummary, ReservationError } from '../lib/reservation.js'
 import { getParamInt } from '../lib/parameters.js'
 
+// Opsiyonel alanlar .nullish(): istemciler (form/entegrasyon/script) boş alanı NULL gönderir;
+// .optional() null'ı reddedip "Invalid input: expected number, received null" veriyordu.
+// Aynı tuzak config route'larında da vardı (bkz. 83327d8).
 const lineSchema = z.object({
   productId: z.number().int().positive(),
   unitId: z.number().int().positive(),
   quantity: z.number().positive(),
-  referenceQty: z.number().nonnegative().optional(), // beklenen/referans miktar (tolerans kontrolü)
-  sourceLocationId: z.number().int().positive().optional(),
-  sourceStatusId: z.number().int().positive().optional(),
-  targetLocationId: z.number().int().positive().optional(),
-  targetStatusId: z.number().int().positive().optional(),
-  palletId: z.number().int().positive().optional(),
-  batchNo: z.string().max(100).optional(),
-  serialNo: z.string().max(100).optional(),
-  customerId: z.number().int().positive().optional(), // consignment — müşteri-sahipli stok
-  poNo: z.string().max(50).optional(), // PO-bazlı izlenebilirlik
-  poLine: z.string().max(50).optional(),
-  note: z.string().max(255).optional(),
+  referenceQty: z.number().nonnegative().nullish(), // beklenen/referans miktar (tolerans kontrolü)
+  sourceLocationId: z.number().int().positive().nullish(),
+  sourceStatusId: z.number().int().positive().nullish(),
+  targetLocationId: z.number().int().positive().nullish(),
+  targetStatusId: z.number().int().positive().nullish(),
+  palletId: z.number().int().positive().nullish(),
+  batchNo: z.string().max(100).nullish(),
+  serialNo: z.string().max(100).nullish(),
+  customerId: z.number().int().positive().nullish(), // consignment — müşteri-sahipli stok
+  poNo: z.string().max(50).nullish(), // PO-bazlı izlenebilirlik
+  poLine: z.string().max(50).nullish(),
+  note: z.string().max(255).nullish(),
 })
 
 const createSchema = z.object({
