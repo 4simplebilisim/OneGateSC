@@ -211,6 +211,31 @@ log('\n7. El terminali menü grupları (canlıda 0 idi → mobil ekranlara giril
   }
 }
 
+// -- 8. ETIKET TIPI + YAZICI (baski zinciri demoda da calissin) ----------
+log('\n8. Etiket tipi (tasarımlı) + yazıcı')
+{
+  const tesis = await prisma.tBLFACILITY.findFirst({ where: { companyId: CO, isAdministrative: false }, orderBy: { id: 'asc' } })
+  const LAYOUT = {"widthMm": 50, "heightMm": 30, "elements": [{"id": "e1", "type": "field", "field": "productCode", "x": 2, "y": 1.5, "w": 46, "h": 6, "fontSize": 12, "bold": true, "align": "left"}, {"id": "e2", "type": "field", "field": "productName", "x": 2, "y": 7.5, "w": 46, "h": 4, "fontSize": 7, "align": "left"}, {"id": "e3", "type": "barcode", "field": "barcode", "x": 2, "y": 11.5, "w": 46, "h": 10}, {"id": "e4", "type": "line", "x": 2, "y": 22, "w": 46, "h": 0.3}, {"id": "e5", "type": "field", "field": "batchNo", "x": 2, "y": 23, "w": 24, "h": 4, "fontSize": 7, "align": "left"}, {"id": "e6", "type": "field", "field": "quantity", "x": 26, "y": 23, "w": 12, "h": 4, "fontSize": 8, "bold": true, "align": "right"}, {"id": "e7", "type": "field", "field": "unit", "x": 38, "y": 23, "w": 10, "h": 4, "fontSize": 7, "align": "left"}]}
+
+  const et = await prisma.tBLLABELTYPE.findFirst({ where: { companyId: CO, code: 'URUN-50X30' } })
+  if (et) log('   . URUN-50X30 etiket tipi zaten var')
+  else {
+    await yap('URUN-50X30 etiket tipi (kod+ad+barkod+parti+miktar, 50x30mm)', () =>
+      prisma.tBLLABELTYPE.create({
+        data: { companyId: CO, code: 'URUN-50X30', labelName: 'Urun Etiketi 50x30', screenTitle: 'Urun Etiketi', layoutJson: JSON.stringify(LAYOUT), isActive: true },
+      }))
+  }
+
+  const yz = await prisma.tBLPRINTER.findFirst({ where: { companyId: CO, name: 'Depo Etiket Yazicisi' } })
+  if (yz) log('   . Yazici zaten var')
+  else if (tesis) {
+    await yap('Depo Etiket Yazicisi (varsayilan)', () =>
+      prisma.tBLPRINTER.create({
+        data: { companyId: CO, facilityId: tesis.id, name: "Depo Etiket Yazicisi", address: "\\SRV-DEPO\ZEBRA-01", isDefault: true, isActive: true },
+      }))
+  }
+}
+
 log(`\n${'═'.repeat(60)}`)
 log(uygula ? '✔ Kurulum tamam. Sonraki: demo-history.mjs (hareket geçmişi)' : 'ÖN İZLEME — hiçbir şey değişmedi. --uygula ile çalıştırın.')
 await prisma.$disconnect()
