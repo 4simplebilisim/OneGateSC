@@ -60,7 +60,7 @@ export async function suggestionListRoutes(app: FastifyInstance) {
         })
       } else {
         // Giriş/Transfer: nereye girilecek — yönlendirme kuralından önerilen hedef (öneri = hedef lokasyon)
-        const sugg = await suggestPutawayLocations(companyId, line.productId)
+        const sugg = await suggestPutawayLocations(companyId, line.productId, { operationTypeId: doc.operationTypeId, facilityId: null })
         const hedef = sugg[0]
         const stok = hedef
           ? await prisma.tBLSTOCK.aggregate({ where: { companyId, productId: line.productId, locationId: hedef.id, mainQty: { gt: 0 } }, _sum: { mainQty: true } })

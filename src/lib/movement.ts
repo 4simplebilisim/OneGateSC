@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { writeBackOnComplete } from './procurementBridge.js'
-import { suggestPutawayLocations } from './routing.js'
+import { suggestPutawayLocations, resolveRoutingPolicy, routingTypeIdsForOperation } from './routing.js'
 import { writeLedger } from './ledger.js'
 import { refreshDocStatus } from './documentStatus.js'
 import { nextSequence } from './sequence.js'
@@ -485,12 +485,27 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     const toleranceRules = await tx.tBLOPERATIONTYPETOLERANCE.findMany({ where: { operationTypeId: op.id, companyId: doc.companyId, isActive: true }, include: { details: true } })
     // Directed putaway: ürün başına önerilen lokasyonlar (yönlendirme kuralı varsa hedef bu listede olmalı) — ürün bazında cache
     const putawayCache = new Map<number, Set<number>>()
+    // Yönlendirme parametresi "Uyarı" derse işlem durmaz; uyarılar tamamlama yanıtında döner
+    const uyarilar: string[] = []
     // Koşul kırma geçerli mi? Şifre + neden birlikte gerekli; şifre aktif kırma-şifresi tablosunda (cari null veya belge carisi) olmalı
     let breakOk = false
     if (condParams.length > 0 && breakOpts.breakPassword && breakOpts.breakReasonCode) {
       const pw = (await tx.tBLENTRYCONDITIONBREAKPASSWORD.findFirst({ where: { companyId: doc.companyId, password: breakOpts.breakPassword, isActive: true, OR: [{ businessPartnerId: null }, { businessPartnerId: doc.partnerId }] } }))
         ?? (await tx.tBLEXITCONDITIONBREAKPASSWORD.findFirst({ where: { companyId: doc.companyId, password: breakOpts.breakPassword, isActive: true, OR: [{ businessPartnerId: null }, { businessPartnerId: doc.partnerId }] } }))
       breakOk = !!pw
+    }
+    // YÖNLENDİRME kırma AYRI tablolara bakar (TBLROUTINGBREAKPASSWORD/REASON).
+    // Önceden giriş/çıkış koşulunun şifresi kullanılıyordu — yanlış kapı, üstelik
+    // koşul parametresi yoksa hiç hesaplanmıyordu.
+    let routingBreakOk = false
+    if (breakOpts.breakPassword && breakOpts.breakReasonCode) {
+      const rpw = await tx.tBLROUTINGBREAKPASSWORD.findFirst({
+        where: { companyId: doc.companyId, password: breakOpts.breakPassword, isActive: true },
+      })
+      const rrs = await tx.tBLROUTINGBREAKREASON.findFirst({
+        where: { companyId: doc.companyId, code: breakOpts.breakReasonCode, isActive: true },
+      })
+      routingBreakOk = !!rpw && !!rrs
     }
 
     // KONTROLSÜZ okutma kapısı: kontrolsüz belge okutmayla oluşur — hiç okutma yoksa stok işlenemez (legacy)
@@ -682,15 +697,40 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           }
         }
 
-        // Directed Putaway: ürünün yönlendirme kuralı varsa hedef lokasyon önerilen listede olmalı
+        // Directed Putaway: ürünün yönlendirme kuralı varsa hedef lokasyon önerilen listede olmalı.
+        // Öneri artık OPERASYONA göre süzülür (Yönlendirme Tipi ↔ Operasyon eşlemesi) ve
+        // uymama durumunun sonucu Yönlendirme Parametresi'nden gelir (Uyarı mı Hata mı,
+        // koşul kırma serbest mi). Önceden ikisi de yok sayılıp her zaman sert hata veriliyordu.
         if ((dir === 'INBOUND' || dir === 'INTERNAL') && line.targetLocationId != null) {
           let allowed = putawayCache.get(line.productId)
           if (allowed === undefined) {
-            allowed = new Set((await suggestPutawayLocations(doc.companyId, line.productId)).map((s) => s.id))
+            const oneri = await suggestPutawayLocations(doc.companyId, line.productId, {
+              operationTypeId: op.id, facilityId: op.facilityId ?? null,
+            })
+            allowed = new Set(oneri.map((s) => s.id))
             putawayCache.set(line.productId, allowed)
           }
           if (allowed.size > 0 && !allowed.has(line.targetLocationId)) {
-            throw new MovementError(`Satır ${line.lineNo}: hedef lokasyon ürünün yönlendirme kuralına uymuyor (directed putaway)`)
+            const politika = await resolveRoutingPolicy(doc.companyId, {
+              routingTypeIds: await routingTypeIdsForOperation(doc.companyId, op.id, op.facilityId ?? null),
+              partnerId: doc.partnerId, partnerGroupId: docPartnerGroupId,
+              productId: line.productId, productGroupId: product?.productGroupId ?? null,
+            })
+            const mesaj = `Satır ${line.lineNo}: hedef lokasyon ürünün yönlendirme kuralına uymuyor (directed putaway)`
+            if (politika.messageType === 'WARNING') {
+              uyarilar.push(mesaj)
+            } else if (politika.conditionBreak && routingBreakOk) {
+              await tx.tBLCONDITIONBREAKLOG.create({
+                data: {
+                  companyId: doc.companyId, documentId: doc.id, conditionType: 'ROUTING',
+                  conditionParameterId: politika.parameterId ?? null,
+                  breakReasonCode: breakOpts.breakReasonCode ?? null, userId: breakOpts.userId ?? null,
+                  note: mesaj,
+                },
+              })
+            } else {
+              throw new MovementError(mesaj + (politika.conditionBreak ? ' — kırma şifresi+nedeni gerekli' : ''))
+            }
           }
         }
 
@@ -908,7 +948,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
       data: { status: 'COMPLETED', completedAt: new Date() },
       include: { lines: { orderBy: { lineNo: 'asc' } } },
     })
-    return Object.assign(updated, { referenceDocument, sequentialDocument })
+    return Object.assign(updated, { referenceDocument, sequentialDocument, warnings: uyarilar.length ? uyarilar : undefined })
   })
 
   // Procurement köprüsü: belge bir satınalma siparişinden doğduysa sonucu siparişe yaz

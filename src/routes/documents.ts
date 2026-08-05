@@ -364,7 +364,7 @@ export async function documentRoutes(app: FastifyInstance) {
         if (opType.direction !== 'INBOUND') return line
         let next = { ...line }
         if (!next.targetLocationId) {
-          const suggestions = await suggestPutawayLocations(companyId, line.productId)
+          const suggestions = await suggestPutawayLocations(companyId, line.productId, { operationTypeId: opType.id, facilityId: opType.facilityId ?? null })
           if (suggestions.length > 0) {
             autoRoutedLines++
             next.targetLocationId = suggestions[0]!.id

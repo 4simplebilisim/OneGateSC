@@ -19,9 +19,14 @@ const updateSchema = createSchema.partial()
 export async function routingRuleRoutes(app: FastifyInstance) {
   // Directed putaway önerisi — bir ürün için önerilen lokasyon(lar)
   app.get('/suggest', async (request, reply) => {
-    const productId = Number((request.query as { productId?: string }).productId)
+    const q = request.query as { productId?: string; operationTypeId?: string; facilityId?: string }
+    const productId = Number(q.productId)
     if (!Number.isInteger(productId)) return reply.code(400).send({ error: 'productId (query) gerekli' })
-    return suggestPutawayLocations(getCompanyId(request), productId)
+    // operationTypeId verilirse Yönlendirme Tipi ↔ Operasyon eşlemesi uygulanır
+    return suggestPutawayLocations(getCompanyId(request), productId, {
+      operationTypeId: q.operationTypeId ? Number(q.operationTypeId) : null,
+      facilityId: q.facilityId ? Number(q.facilityId) : null,
+    })
   })
 
   app.get('/', async (request) =>

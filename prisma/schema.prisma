@@ -2075,7 +2075,7 @@ model TBLCONDITIONBREAKLOG {
   id                   Int      @id @default(autoincrement())
   companyId            Int
   documentId           Int
-  conditionType        String   @db.VarChar(10) // 'ENTRY' | 'EXIT'
+  conditionType        String   @db.VarChar(10) // 'ENTRY' | 'EXIT' | 'ROUTING'
   conditionParameterId Int? // hangi parametre kırıldı (gevşek ref)
   breakReasonCode      String?  @db.VarChar(20)
   userId               Int?
