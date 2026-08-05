@@ -231,7 +231,7 @@ log('\n8. Etiket tipi (tasarımlı) + yazıcı')
   else if (tesis) {
     await yap('Depo Etiket Yazicisi (varsayilan)', () =>
       prisma.tBLPRINTER.create({
-        data: { companyId: CO, facilityId: tesis.id, name: "Depo Etiket Yazicisi", address: "\\SRV-DEPO\ZEBRA-01", isDefault: true, isActive: true },
+        data: { companyId: CO, facilityId: tesis.id, name: "Depo Etiket Yazicisi", address: String.raw`\SRV-DEPO\ZEBRA-01`, isDefault: true, isActive: true },
       }))
   }
 }
