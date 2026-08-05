@@ -33,6 +33,29 @@ export async function bulkStockOperation(
   const op = await prisma.tBLOPERATIONTYPE.findFirst({ where: { id: operationTypeId, companyId }, include: { sequence: true } })
   if (!op) throw new BulkStockError('Operasyon bulunamadı', 404)
   if (!op.bulkAction) throw new BulkStockError("Bu operasyonda 'Toplu İşlem' işaretli değil — Operasyon Tipi › Toplu İşlem parametresini açın")
+
+  // TOPLU İŞLEM TÜRÜ kısıtı (TBLOPERATIONTYPEBULKACTION).
+  // İki tanım yeri var ve MÜKERRER DEĞİL: operasyondaki `bulkAction` ANA ANAHTAR
+  // ("bu operasyon toplu işlemde görünür"), bu tablo ise HANGİ TÜRLERE izin
+  // verildiği (Toplu İşlem / Kontrollü Toplu / Rezervasyon / Seçimli Belge /
+  // Batch Değiştirme). Tablo hiç okunmuyordu → tanımlanan kısıt işlemiyordu.
+  // Kısıtlama listesi deseni: satır yoksa tüm türler serbest.
+  const izinliTurler = await prisma.tBLOPERATIONTYPEBULKACTION.findMany({
+    where: { companyId, operationTypeId: op.id, isActive: true },
+    select: { bulkActionType: true, facilityId: true },
+  })
+  if (izinliTurler.length) {
+    // Bu ekran STOK-bazlı toplu işlem yapar → BULK ya da CONTROLLED_BULK gerekir.
+    const kapsam = izinliTurler.filter((t) => t.facilityId == null || t.facilityId === op.facilityId)
+    const uygun = kapsam.some((t) => t.bulkActionType === 'BULK' || t.bulkActionType === 'CONTROLLED_BULK')
+    if (!uygun) {
+      const turler = [...new Set(kapsam.map((t) => t.bulkActionType).filter(Boolean))].join(', ')
+      throw new BulkStockError(
+        `Bu operasyonda stok-bazlı toplu işleme izin verilmemiş${turler ? ` — tanımlı türler: ${turler}` : ''}. `
+        + "Operasyon Tipi › Toplu İşlem sekmesinden 'Toplu İşlem' ya da 'Kontrollü Toplu İşlem' ekleyin.",
+      )
+    }
+  }
   if (op.direction !== 'OUTBOUND' && op.direction !== 'INTERNAL') throw new BulkStockError('Toplu İşlem yalnız Çıkış/Transfer operasyonlarıyla yapılır')
 
   const stocks = await prisma.tBLSTOCK.findMany({ where: { id: { in: stockIds }, companyId } })
