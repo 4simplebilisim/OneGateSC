@@ -49,6 +49,7 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'documents-in-obs', label: 'Gözlem', section: 'İşlemler', group: 'Giriş', apiName: 'documents', filter: { direction: 'INBOUND' }, observe: true },
   { name: 'entry-labeling', label: 'Giriş Etiketleme', section: 'İşlemler', group: 'Giriş' },
   { name: 'putaway-suggest', label: 'Giriş Öneri Listesi', section: 'İşlemler', group: 'Giriş' },
+  { name: 'replenishment', label: 'Raf Besleme', section: 'İşlemler', group: 'Giriş' },
   { name: 'stock-entry', label: 'Stok Giriş', section: 'İşlemler', group: 'Giriş' },
   { name: 'bulk-doc-ops-in', label: 'Toplu Belge İşlemi', section: 'İşlemler', group: 'Giriş' },
   { name: 'doc-assign-in', label: 'İş Atama', section: 'İşlemler', group: 'Giriş' },

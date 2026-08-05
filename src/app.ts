@@ -79,6 +79,7 @@ import { productGroupRoutes } from './routes/productGroups.js'
 import { sequenceRoutes } from './routes/sequences.js'
 import { reasonRoutes, locationGroupRoutes, operationGroupRoutes, labelTypeRoutes, productSubGroupRoutes, entryConditionTypeRoutes, exitConditionTypeRoutes, routingTypeRoutes, facilityRoutes, regionRoutes, partnerGroupRoutes, statusRoutes, palletTypeRoutes, parameterRoutes, documentStatusRoutes } from './routes/wmsMasters.js'
 import { barcodeTypeRoutes, barcodeSegmentRoutes } from './routes/barcodeTypes.js'
+import { replenishmentRoutes } from './routes/replenishment.js'
 import { routingRuleRoutes } from './routes/routing.js'
 import { productUnitRoutes } from './routes/productUnits.js'
 import { operationTypeStatusRoutes, operationTypeLocationRoutes, operationTypeReasonRoutes, operationTypePalletTypeRoutes } from './routes/operationLinks.js'
@@ -270,6 +271,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(exitConditionTypeRoutes, { prefix: '/api/exit-condition-types' })
   await app.register(routingTypeRoutes, { prefix: '/api/routing-types' })
   await app.register(routingRuleRoutes, { prefix: '/api/routing-rules' })
+  await app.register(replenishmentRoutes, { prefix: '/api/replenishment' })
   await app.register(facilityRoutes, { prefix: '/api/facilities' })
   await app.register(regionRoutes, { prefix: '/api/regions' })
   await app.register(partnerGroupRoutes, { prefix: '/api/partner-groups' })

@@ -17,6 +17,7 @@ import { ProductUnitBarcodes } from './pages/ProductUnitBarcodes'
 import { LocationBulkGenerate } from './pages/LocationBulkGenerate'
 import { OperationTypeForm } from './pages/OperationTypeForm'
 import { LocationGroupForm } from './pages/LocationGroupForm'
+import { Replenishment } from './pages/Replenishment'
 import { BarcodeTypeForm } from './pages/BarcodeTypeForm'
 import { IntegrationPackageForm } from './pages/IntegrationPackageForm'
 import { IntegrationTransfer } from './pages/IntegrationTransfer'
@@ -185,6 +186,7 @@ export default function App() {
           <Route path="stock-reclassify" element={<StockReclassify />} />
           <Route path="putaway-suggest" element={<SuggestList mode="putaway" />} />
           <Route path="pick-suggest" element={<SuggestList mode="pick" />} />
+          <Route path="replenishment" element={<Replenishment />} />
           <Route path="stock-entry" element={<StockEntry direction="INBOUND" />} />
           <Route path="entry-labeling" element={<EntryLabeling direction="INBOUND" />} />
           <Route path="stock-exit" element={<StockEntry direction="OUTBOUND" />} />
@@ -200,7 +202,7 @@ export default function App() {
           {RESOURCES.filter((r) => hasDetail(r.name)).map((r) => (
             <Route key={`${r.name}-detail`} path={`${r.name}/:id`} element={<GenericDetail resource={r.name} label={r.label} />} />
           ))}
-          {RESOURCES.filter((r) => !['pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'bulk-doc-ops-in', 'bulk-doc-ops-tr', 'bulk-stock-ops', 'bulk-stock-ops-tr', 'doc-assign-in', 'doc-assign-out', 'doc-assign-tr', 'reservation-out', 'reservation-tr', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
+          {RESOURCES.filter((r) => !['replenishment', 'pallets-bulk', 'count-differences', 'pallets', 'report-center', 'stock-report', 'documents-in-obs', 'documents-out-obs', 'documents-tr-obs', 'bulk-doc-ops', 'bulk-doc-ops-in', 'bulk-doc-ops-tr', 'bulk-stock-ops', 'bulk-stock-ops-tr', 'doc-assign-in', 'doc-assign-out', 'doc-assign-tr', 'reservation-out', 'reservation-tr', 'stock-reclassify', 'putaway-suggest', 'pick-suggest', 'stock-entry', 'entry-labeling', 'stock-exit', 'exit-labeling'].includes(r.name)).map((r) => (
             <Route key={r.name} path={r.name} element={<GenericList resource={r.apiName ?? r.name} label={r.label} filter={r.filter} observe={r.observe} />} />
           ))}
         </Route>
