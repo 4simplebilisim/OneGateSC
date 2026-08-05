@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
 import { writeLedger } from './ledger.js'
 
@@ -100,10 +101,46 @@ export async function setCounted(countId: number, lineId: number, countedQty: nu
 }
 
 /** Tamamla: sayılan ≠ sistem olan satırlarda stok mainQty'yi sayılan değere çeker. Tek transaction. */
-export async function completeCount(countId: number, now: Date) {
+/**
+ * SAYIM ONAY YETKİSİ — Sayım Onay Kullanıcı Grubu (TBLCOUNTAPPROVALUSERGROUP).
+ * Tablo "bu operasyonun sayımını hangi kullanıcı grubu onaylayabilir" diye
+ * tanımlanıyordu ama HİÇBİR yerde okunmuyordu: yazma yetkisi olan herkes
+ * sayımı tamamlayıp stoğu düzeltebiliyordu.
+ *
+ * Kural (kısıtlama listesi deseni): operasyon için satır YOKSA serbest;
+ * varsa onaylayan kullanıcı o gruplardan birine üye olmalı.
+ * Cari bazlı satır varsa (businessPartnerId) o da eşleşmeli — cari-özel kural
+ * genel kuralı daraltır, ikisi de yoksa serbesttir.
+ */
+export async function assertCountApprover(
+  tx: Prisma.TransactionClient,
+  count: { companyId: number; operationTypeId: number | null },
+  userId: number | null | undefined,
+): Promise<void> {
+  if (!count.operationTypeId) return // operasyon bağı yoksa kural tanımlanamaz
+  const kurallar = await tx.tBLCOUNTAPPROVALUSERGROUP.findMany({
+    where: { companyId: count.companyId, operationTypeId: count.operationTypeId, isActive: true },
+    select: { userGroupId: true },
+  })
+  if (!kurallar.length) return // tanım yok → serbest
+  if (!userId) throw new CountingError('Sayımı onaylayan kullanıcı belirlenemedi')
+
+  const uyelikler = await tx.tBLUSERGROUPMEMBER.findMany({ where: { userId }, select: { groupId: true } })
+  const uyeSet = new Set(uyelikler.map((u) => u.groupId))
+  if (kurallar.some((k) => uyeSet.has(k.userGroupId))) return
+
+  const gruplar = await tx.tBLUSERGROUP.findMany({
+    where: { id: { in: kurallar.map((k) => k.userGroupId) } }, select: { name: true, code: true },
+  })
+  const adlar = gruplar.map((g) => g.name ?? g.code).join(', ')
+  throw new CountingError(`Bu sayımı onaylama yetkiniz yok — yalnız şu kullanıcı grupları onaylayabilir: ${adlar}`)
+}
+
+export async function completeCount(countId: number, now: Date, userId?: number | null) {
   return prisma.$transaction(async (tx) => {
     const count = await tx.tBLSTOCKCOUNT.findUniqueOrThrow({ where: { id: countId }, include: { lines: true } })
     if (count.status === 'COMPLETED') throw new CountingError('Sayım zaten tamamlandı')
+    await assertCountApprover(tx, count, userId)
     if (count.status === 'CANCELLED') throw new CountingError('İptal edilmiş sayım tamamlanamaz')
 
     // Sayım kriteri: aktif "zorunlu" kriter varsa tüm satırlar sayılmadan tamamlanamaz (TBLCOUNTCRITERIA)
@@ -167,10 +204,11 @@ export async function deleteCount(id: number) {
 }
 
 /** Sayım Eşitleme İptal — tamamlanmış sayımın stok düzeltmelerini geri al (countedQty → systemQty), sayımı iptal et. */
-export async function reverseEqualize(id: number) {
+export async function reverseEqualize(id: number, userId?: number | null) {
   return prisma.$transaction(async (tx) => {
     const c = await tx.tBLSTOCKCOUNT.findUniqueOrThrow({ where: { id }, include: { lines: true } })
     if (c.status !== 'COMPLETED') throw new CountingError('Sadece tamamlanmış sayımın eşitlemesi iptal edilebilir')
+    await assertCountApprover(tx, c, userId) // geri alma da stok düzeltir → aynı yetki
     // Eşitleme kapalıysa tamamlamada stok değişmemişti → geri alacak bir şey yok, yalnız iptal.
     let reverted = 0
     if (c.equalize) {

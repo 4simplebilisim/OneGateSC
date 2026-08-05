@@ -134,21 +134,22 @@ export async function stockCountRoutes(app: FastifyInstance) {
     }
   })
 
-  const wrap = (fn: (id: number) => Promise<unknown>) => async (request: FastifyRequest, reply: FastifyReply) => {
+  const wrap = (fn: (id: number, userId: number | null) => Promise<unknown>) => async (request: FastifyRequest, reply: FastifyReply) => {
     const id = idOf(request)
     if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
     if (!(await assertCountAuth(request, reply, id))) return reply
+    const userId = Number((request.user as { sub?: number | string })?.sub) || null
     try {
-      return await fn(id)
+      return await fn(id, userId)
     } catch (err) {
       if (err instanceof CountingError) return reply.code(409).send({ error: err.message })
       throw err
     }
   }
 
-  app.post('/:id/complete', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => completeCount(id, new Date())))
+  app.post('/:id/complete', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id, userId) => completeCount(id, new Date(), userId)))
   app.post('/:id/cancel', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => cancelCount(id)))
-  app.post('/:id/reverse-equalize', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => reverseEqualize(id)))
+  app.post('/:id/reverse-equalize', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id, userId) => reverseEqualize(id, userId)))
   // Yanlış açılan sayımı listeden KALDIR (cancel yalnız durumu değiştiriyordu, kayıt kalıyordu)
   app.delete('/:id', { preHandler: [app.authenticate, app.requireWrite] }, wrap((id) => deleteCount(id)))
 }
