@@ -46,12 +46,14 @@ const createSchema = z.object({
 })
 
 const lineInclude = {
-  product: { select: { id: true, code: true, name: true } },
+  // barcode + pallet: etiket basımı bunları kullanır (Giriş/Çıkış Etiketleme)
+  product: { select: { id: true, code: true, name: true, barcode: true } },
   unit: { select: { id: true, code: true } },
   sourceLocation: { select: { id: true, code: true } },
   targetLocation: { select: { id: true, code: true } },
   sourceStatus: { select: { id: true, code: true } },
   targetStatus: { select: { id: true, code: true } },
+  pallet: { select: { id: true, palletNo: true } },
 } as const
 
 // Yaşam-döngüsü uçları için yetki kapısı: belgenin depo/tesis/operasyonu kullanıcının kısıt listesine uymalı → 403

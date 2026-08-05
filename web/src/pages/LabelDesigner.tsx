@@ -7,6 +7,7 @@ import {
 } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
+import { printLabels } from '../labelRender'
 import { code128Modules, code128Svg } from '../code128'
 
 // Etikette bağlanabilir veri alanları (örnek değerlerle — canlı önizleme)
@@ -143,21 +144,12 @@ export const LabelDesigner = () => {
     } finally { setSaving(false) }
   }
 
+  // Basım TEK KAYNAKTAN: etiketleme ekranıyla aynı işleyici (labelRender).
+  // Önizleme örnek veriyle, gerçek baskı belge satırlarıyla — düzen birebir aynı.
   const print = () => {
-    const w = window.open('', '_blank', 'width=600,height=400')
-    if (!w) return
-    const els = layout.elements.map((el) => {
-      const style = `position:absolute;left:${el.x}mm;top:${el.y}mm;width:${el.w}mm;height:${el.h}mm;font-size:${el.fontSize ?? 9}pt;font-weight:${el.bold ? 700 : 400};text-align:${el.align ?? 'left'};overflow:hidden;white-space:nowrap;display:flex;align-items:center;${el.align === 'center' ? 'justify-content:center;' : el.align === 'right' ? 'justify-content:flex-end;' : ''}`
-      if (el.type === 'line') return `<div style="position:absolute;left:${el.x}mm;top:${el.y}mm;width:${el.w}mm;height:${Math.max(0.3, el.h)}mm;background:#000"></div>`
-      if (el.type === 'barcode') {
-        const val = fieldSample(el.field)
-        return `<div style="position:absolute;left:${el.x}mm;top:${el.y}mm;width:${el.w}mm;height:${el.h}mm;display:flex;flex-direction:column;justify-content:center">${code128Svg(val, el.h * 2.6)}<div style="font-size:7pt;text-align:center">${val}</div></div>`
-      }
-      const content = el.type === 'text' ? (el.text || '') : fieldSample(el.field)
-      return `<div style="${style}">${content}</div>`
-    }).join('')
-    w.document.write(`<html><head><style>@page{size:${layout.widthMm}mm ${layout.heightMm}mm;margin:0}body{margin:0}.lbl{position:relative;width:${layout.widthMm}mm;height:${layout.heightMm}mm}</style></head><body><div class="lbl">${els}</div><script>window.onload=()=>{window.print()}<\/script></body></html>`)
-    w.document.close()
+    if (!printLabels(layout, [], { baslik: meta.labelName || meta.code || 'Etiket' })) {
+      message.error('Yazdırma penceresi açılamadı (popup engeli olabilir)')
+    }
   }
 
   if (loading) return <div style={{ padding: 80, textAlign: 'center' }}><Spin size="large" /></div>
