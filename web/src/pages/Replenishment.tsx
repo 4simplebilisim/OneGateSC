@@ -44,8 +44,11 @@ export const Replenishment = () => {
     setYukleniyor(true)
     axiosInstance.get('/api/replenishment/suggest', { params: grupId ? { locationGroupId: grupId } : {} })
       .then((r) => {
-        const list = arr(r.data) as Ihtiyac[]
+        const gelen = r.data as { needs?: Ihtiyac[]; defaultOperationTypeId?: number | null }
+        const list = (Array.isArray(gelen?.needs) ? gelen.needs : arr(r.data)) as Ihtiyac[]
         setSatirlar(list)
+        // Besleme operasyonu İş Emri Genel Parametresi'nde tanımlıysa seçili gelsin
+        if (gelen?.defaultOperationTypeId) setOpId((v) => v ?? gelen.defaultOperationTypeId!)
         // Her ihtiyaç için en büyük kaynağı ve gereken miktarı öner
         const s: Record<string, { stockId?: number; quantity: number }> = {}
         for (const x of list) {

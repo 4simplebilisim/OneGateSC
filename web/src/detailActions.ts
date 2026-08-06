@@ -13,6 +13,7 @@ export const DETAIL_ACTIONS: Record<string, DetailAction[]> = {
     { action: 'start-picking', label: 'Toplamaya Başla', when: ['DRAFT'] }, // Bekliyor → Toplanıyor
     { action: 'confirm', label: 'Onaya Gönder', when: ['DRAFT'] }, // → Onay Bekliyor (eksik toplamada engellenir)
     { action: 'split', label: 'Böl', when: ['DRAFT'] }, // toplanan kısmı yeni belgeye ayır (eksik toplamada)
+    { action: 'plan', label: 'Planla', when: ['DRAFT'] }, // toplamadan ÖNCE parçalara ayır (Belge Planlama Parametresi)
     { action: 'complete', label: 'Onayla (stok işle)', when: ['CONFIRMED'] }, // → Onaylandı
     { action: 'cancel', label: 'İptal', when: ['DRAFT', 'CONFIRMED'], danger: true },
     { action: 'reverse', label: 'Onay İptal', when: ['COMPLETED'], danger: true }, // stok geri al + Bekliyor'a dön (yeniden onaylanabilir)

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { userGroupIds } from '../lib/userAuth.js'
+import { loadWorkOrderParameter, workOrderAlarmMs } from '../lib/workOrderParams.js'
 
 // Kullanıcıya özel canlı bildirimler — depoya iş üreten olaylar. Kalıcı bildirim tablosu YOK:
 // gerçek-zamanlı türetilir (her istek anlık hesaplar). Zil ikonu + ilk giriş popup'ı bunu tüketir.
@@ -27,6 +28,11 @@ export async function notificationRoutes(app: FastifyInstance) {
       : 0
 
     const overdueBefore = new Date(Date.now() - OVERDUE_DAYS * 86400_000)
+    // İŞ EMRİ ALARMI (TBLWORKORDERGENERALPARAMETER): süre tanımlıysa o kadar süredir
+    // açık duran iş emri uyarı üretir. Parametre yoksa alarm hiç çalışmaz.
+    const woParam = await loadWorkOrderParameter(companyId)
+    const alarmMs = workOrderAlarmMs(woParam)
+    const alarmBefore = alarmMs ? new Date(Date.now() - alarmMs) : null
     const [assignedWO, overdueDocs, pendingCounts] = await Promise.all([
       // (2) Bana atanmış açık iş emirleri
       prisma.tBLWORKORDER.count({ where: { companyId, assignedToUserId: userId, status: { in: ['PLANNED', 'IN_PROGRESS'] } } }),
@@ -35,11 +41,18 @@ export async function notificationRoutes(app: FastifyInstance) {
       // (4) İşlem bekleyen sayımlar (oluşturulmuş/sayımda)
       prisma.tBLSTOCKCOUNT.count({ where: { companyId, status: { in: ['DRAFT', 'COUNTING'] } } }),
     ])
+    const alarmWO = alarmBefore
+      ? await prisma.tBLWORKORDER.count({ where: { companyId, status: { in: ['PLANNED', 'IN_PROGRESS'] }, createdAt: { lt: alarmBefore } } })
+      : 0
 
     const items: NotificationItem[] = []
     if (assignedOpen) items.push({ type: 'assigned-docs', severity: 'info', title: 'Size atanmış belgeler', detail: `${assignedOpen} açık belge size/grubunuza atanmış`, link: '/documents?assignedFor=me', count: assignedOpen })
     if (assignedWO) items.push({ type: 'assigned-wo', severity: 'info', title: 'Size atanmış iş emirleri', detail: `${assignedWO} iş emri size atanmış`, link: '/work-orders', count: assignedWO })
     if (overdueDocs) items.push({ type: 'overdue-docs', severity: 'warning', title: 'Gecikmiş belgeler', detail: `${overdueDocs} belge ${OVERDUE_DAYS} günden uzun süredir açık`, link: '/documents', count: overdueDocs })
+    if (alarmWO) {
+      const birim = woParam?.alarmUnit === 1 ? 'dakika' : woParam?.alarmUnit === 3 ? 'gün' : 'saat'
+      items.push({ type: 'wo-alarm', severity: 'warning', title: 'İş emri alarmı', detail: `${alarmWO} iş emri ${woParam?.alarmDuration} ${birim}tir açık`, link: '/work-orders', count: alarmWO })
+    }
     if (pendingCounts) items.push({ type: 'pending-counts', severity: 'info', title: 'Bekleyen sayımlar', detail: `${pendingCounts} sayım işlem bekliyor`, link: '/stock-counts', count: pendingCounts })
 
     const total = items.reduce((s, i) => s + i.count, 0)

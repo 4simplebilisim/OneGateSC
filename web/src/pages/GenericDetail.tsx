@@ -10,6 +10,7 @@ import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
 import { STATUS_COLOR, STATUS_TR } from '../statusMeta'
 
 const PRETTY: Record<string, string> = {
+  oncelik: 'Öncelik', // cari önceliği (Stok Kontrol Parametresi) — tanımlıysa belge listesinde
   id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Aktif',
   documentNo: 'Belge No', orderNo: 'No', status: 'Durum', type: 'Tip', direction: 'Yön',
   quantity: 'Miktar', mainQty: 'Miktar', reservedQty: 'Rezerve', batchNo: 'Parti', serialNo: 'Seri',
@@ -95,8 +96,13 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   const runAction = async (action: string, body?: Record<string, unknown>, busyKey?: string) => {
     setBusy(busyKey ?? action)
     try {
-      await axiosInstance.post(`/api/${resource}/${id}/${action}`, body ?? {})
-      message.success('İşlem tamamlandı')
+      const r = await axiosInstance.post(`/api/${resource}/${id}/${action}`, body ?? {})
+      // Planlama parçaları döner — kaç parça, hangi numaralar: kullanıcı sonucu görmeli
+      const parts = (r?.data as { parts?: Array<{ documentNo: string; lineCount: number }>; assignedLocations?: number } | undefined)?.parts
+      if (parts?.length) {
+        const ek = r.data.assignedLocations ? ` · ${r.data.assignedLocations} satıra lokasyon atandı` : ''
+        message.success(`${parts.length} parçaya ayrıldı: ${parts.map((x) => `${x.documentNo} (${x.lineCount})`).join(' · ')}${ek}`, 8)
+      } else message.success('İşlem tamamlandı')
       load()
     } catch (e) {
       const msg = errOf(e) ?? 'İşlem başarısız'

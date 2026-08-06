@@ -4,6 +4,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { suggestReplenishment } from '../lib/replenishment.js'
 import { nextSequence } from '../lib/sequence.js'
+import { loadWorkOrderParameter } from '../lib/workOrderParams.js'
 
 // RAF BESLEME — Raf Besleme Parametresi'ne göre beslenmesi gereken toplama gözleri
 // ve kaynak önerileri. Öneri ekrandan onaylanınca TRANSFER belgesi doğar.
@@ -11,11 +12,15 @@ export async function replenishmentRoutes(app: FastifyInstance) {
   /** Beslenmesi gereken gözler (+ kaynak seçenekleri). */
   app.get('/suggest', { preHandler: [app.authenticate] }, async (request) => {
     const q = request.query as { partnerId?: string; locationGroupId?: string; limit?: string }
-    return suggestReplenishment(getCompanyId(request), {
+    const companyId = getCompanyId(request)
+    const p = await loadWorkOrderParameter(companyId, q.partnerId ? Number(q.partnerId) : null)
+    const needs = await suggestReplenishment(companyId, {
       partnerId: q.partnerId ? Number(q.partnerId) : null,
       locationGroupId: q.locationGroupId ? Number(q.locationGroupId) : null,
       limit: q.limit ? Number(q.limit) : undefined,
     })
+    // Besleme operasyonu tanımlıysa ekran onu seçili getirsin (İş Emri Genel Parametresi)
+    return { needs, defaultOperationTypeId: p?.rackFeedbackOpId ?? null }
   })
 
   /**

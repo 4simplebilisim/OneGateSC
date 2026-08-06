@@ -3,6 +3,8 @@ import type { Prisma } from '@prisma/client'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
+import { planDocument, PlanningError } from '../lib/documentPlanning.js'
+import { loadPartnerPriorities, sortByPriority, priorityLabel } from '../lib/stockControl.js'
 import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, referenceGate, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
@@ -104,7 +106,7 @@ export async function documentRoutes(app: FastifyInstance) {
         if (allowedOps) andClauses.push({ operationTypeId: { in: [...allowedOps] } })
       }
     }
-    return prisma.tBLDOCUMENT.findMany({
+    const docs = await prisma.tBLDOCUMENT.findMany({
       where: {
         ...companyListFilter(request), // süper: aktif firma / ?companyId=N / ?companyId=all — normal: kilitli
         warehouseId: num(q.warehouseId),
@@ -131,6 +133,15 @@ export async function documentRoutes(app: FastifyInstance) {
         _count: { select: { lines: true } },
       },
     })
+
+    // CARİ ÖNCELİĞİ (TBLSTOCKCONTROLPARAMETER): tanımlıysa iş sırası müşteri/sevkiyat
+    // önceliğine göre dizilir — el terminali toplama listesi öncelikli müşteriyle başlar.
+    // Tanım yoksa hiçbir şey değişmez (liste id desc kalır).
+    const oncelikler = await loadPartnerPriorities(getCompanyId(request))
+    if (!oncelikler.size) return docs
+    return sortByPriority(docs, oncelikler).map((d) => ({
+      ...d, oncelik: priorityLabel(d.partnerId != null ? oncelikler.get(d.partnerId) : undefined),
+    }))
   })
 
   app.get('/:id', async (request, reply) => {
@@ -538,6 +549,22 @@ export async function documentRoutes(app: FastifyInstance) {
       return reply.code(201).send(result)
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
+      throw err
+    }
+  })
+
+  // Planla — belgeyi Belge Planlama Parametresi'ne göre parçalara ayır (toplamadan ÖNCE, işi paylaştırmak için).
+  // Parça 1 = bu belge (numara korunur), 2..N yeni belge; satırlar kopyalanmaz TAŞINIR.
+  app.post('/:id/plan', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
+    const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId: getCompanyId(request) } })
+    if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    try {
+      return await planDocument(id, Number((request.user as { sub?: number | string })?.sub) || undefined)
+    } catch (err) {
+      if (err instanceof PlanningError) return reply.code(409).send({ error: err.message })
       throw err
     }
   })

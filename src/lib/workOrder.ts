@@ -1,3 +1,4 @@
+import { resolveWorkOrderOperation } from './workOrderParams.js'
 import { prisma } from './prisma.js'
 import { completeDocument, MovementError } from './movement.js'
 import { refreshDocStatus } from './documentStatus.js'
@@ -58,11 +59,10 @@ export async function completeWorkOrder(id: number, userId: number, now: Date) {
 
   let generatedDocumentId: number | null = null
   if (moveLines.length > 0) {
-    const op = await prisma.tBLOPERATIONTYPE.findFirst({
-      where: { companyId: wo.companyId, direction: 'INTERNAL' },
-      orderBy: { code: 'asc' },
-    })
-    if (!op) throw new WorkOrderError('INTERNAL operasyon tipi (ör. TR) tanımlı değil — stok hareketi üretilemedi')
+    // Hareketi hangi operasyon üretecek: İş Emri Referans Operasyon → Genel Parametre → alfabetik ilk INTERNAL
+    const secim = await resolveWorkOrderOperation(wo.companyId, { type: wo.type })
+    if (!secim) throw new WorkOrderError('INTERNAL operasyon tipi (ör. TR) tanımlı değil — stok hareketi üretilemedi')
+    const op = { id: secim.operationTypeId }
 
     const doc = await prisma.tBLDOCUMENT.create({
       data: {

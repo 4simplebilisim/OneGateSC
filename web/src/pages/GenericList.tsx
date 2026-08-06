@@ -42,6 +42,7 @@ const DELETE_OK = new Set([
 ])
 
 const PRETTY: Record<string, string> = {
+  oncelik: 'Öncelik', // cari önceliği (Stok Kontrol Parametresi) — tanımlıysa belge listesinde
   id: '#', code: 'Kod', name: 'Ad', shortName: 'Kısa Ad', barcode: 'Barkod', isActive: 'Durum',
   username: 'Kullanıcı Adı', fullName: 'Ad Soyad', isSuperAdmin: 'Süper Admin', lastLoginAt: 'Son Giriş',
   prefix: 'Önek', currentValue: 'Değer', padLength: 'Hane', direction: 'Yön', type: 'Tip', status: 'Durum',
