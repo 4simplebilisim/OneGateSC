@@ -56,6 +56,25 @@ export async function suggestionListRoutes(app: FastifyInstance) {
           .filter((s) => s.avail > 0)
           .sort((a, b) => Number(b.own) - Number(a.own)) // stable: kendi rezervi öne, gerisi rotasyon sırasında
         const available = usable.reduce((s, u) => s + u.avail, 0)
+        // MUADİL (TBLPRODUCTSUBSTITUTE): stok satırı karşılamıyorsa muadil ürünün
+        // eldeki miktarı öneri olarak gösterilir. Tanım yoksa kolon boş kalır.
+        let muadilBilgi = ''
+        if (available < Number(line.quantity)) {
+          const muadiller = await prisma.tBLPRODUCTSUBSTITUTE.findMany({
+            where: { companyId, productId: line.productId },
+            include: { substitute: { select: { id: true, code: true } } },
+          })
+          const secenekler: string[] = []
+          for (const mu of muadiller) {
+            const ms = await prisma.tBLSTOCK.aggregate({
+              where: { companyId, productId: mu.substituteProductId, mainQty: { gt: 0 } },
+              _sum: { mainQty: true, reservedQty: true },
+            })
+            const serbest = Number(ms._sum.mainQty ?? 0) - Number(ms._sum.reservedQty ?? 0)
+            if (serbest > 0) secenekler.push(`${mu.substitute.code} (${serbest})`)
+          }
+          muadilBilgi = secenekler.join(' · ')
+        }
         // TOPLAMA KIRILIMI (TBLPICKORDERPARAMETER): tam palet / tam koli / parçalı
         // ve o kırılımı hangi operasyonun karşılayacağı. Parametre yoksa kolon boş kalır.
         const plan = await resolvePickPlan(companyId, { productId: line.productId, quantity: line.quantity, partnerId: doc.partnerId }, pickParam)
@@ -66,6 +85,7 @@ export async function suggestionListRoutes(app: FastifyInstance) {
           stokMiktari: String(available), birim: line.unit.code, miktar: line.quantity.toString(),
           toplamaKirilimi: plan ? pickGranularityLabel(plan.granularity) : '',
           toplamaOperasyonu: plan?.operationCode ?? '',
+          muadil: muadilBilgi,
         })
       } else {
         // Giriş/Transfer: nereye girilecek — yönlendirme kuralından önerilen hedef (öneri = hedef lokasyon)
@@ -79,7 +99,7 @@ export async function suggestionListRoutes(app: FastifyInstance) {
           kaynakLokasyon: line.sourceLocation?.code ?? '—',
           hedefLokasyon: hedef?.code ?? '— (kural yok)',
           stokMiktari: stok?._sum.mainQty?.toString() ?? '0', birim: line.unit.code, miktar: line.quantity.toString(),
-          toplamaKirilimi: '', toplamaOperasyonu: '',
+          toplamaKirilimi: '', toplamaOperasyonu: '', muadil: '',
         })
       }
     }

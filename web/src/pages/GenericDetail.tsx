@@ -39,6 +39,7 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
   // Koşul kırma akışı: complete 409 "kırma gerekli" alınca şifre+neden modalı
   const [breakReq, setBreakReq] = useState<{ action: string; busyKey?: string; err: string } | null>(null)
   const [breakReasons, setBreakReasons] = useState<{ value: string; label: string }[]>([])
+  const [woNeedsPw, setWoNeedsPw] = useState<Record<string, boolean>>({}) // iptal nedeni → şifre ister mi
   const [bpw, setBpw] = useState('')
   const [brc, setBrc] = useState<string | undefined>()
   const [breaking, setBreaking] = useState(false)
@@ -81,6 +82,16 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   const errOf = (e: unknown) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error
   const isBreakErr = (msg?: string) => !!msg && /kırma şifresi/i.test(msg)
+  // İş emri iptali: İş Emri Nedeni tanımlıysa neden (ve nedenin şifresi) istenir
+  const isWoReasonErr = (msg?: string) => !!msg && /İptal nedeni zorunlu|nedeni şifre ister|Geçersiz iptal nedeni/i.test(msg)
+
+  const loadWoReasons = () => {
+    axiosInstance.get('/api/work-orders/cancel-reasons').then((r) => {
+      const list = (Array.isArray(r.data) ? r.data : []) as Array<{ code: string; description: string | null; needsPassword: boolean }>
+      setWoNeedsPw(Object.fromEntries(list.map((x) => [x.code, x.needsPassword])))
+      setBreakReasons(list.map((x) => ({ value: x.code, label: x.description ? `${x.code} — ${x.description}` : x.code })))
+    }).catch(() => undefined)
+  }
 
   const loadBreakReasons = () => {
     if (breakReasons.length) return
@@ -107,7 +118,8 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
       load()
     } catch (e) {
       const msg = errOf(e) ?? 'İşlem başarısız'
-      if (isBreakErr(msg)) { loadBreakReasons(); setBreakReq({ action, busyKey, err: msg }) } // koşul kırma gerekli → modal
+      if (isWoReasonErr(msg)) { loadWoReasons(); setBreakReq({ action, busyKey, err: msg }) } // iptal nedeni gerekli → modal
+      else if (isBreakErr(msg)) { loadBreakReasons(); setBreakReq({ action, busyKey, err: msg }) } // koşul kırma gerekli → modal
       else message.error(msg)
     } finally {
       setBusy(null)
@@ -116,10 +128,14 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
   const submitBreak = async () => {
     if (!breakReq) return
-    if (!bpw || !brc) { message.warning('Kırma şifresi ve nedeni gerekli'); return }
+    const woIptal = resource === 'work-orders'
+    // İş emrinde şifre yalnız nedene şifre bağlıysa zorunlu
+    const sifreGerek = woIptal ? (brc ? woNeedsPw[brc] : false) : true
+    if (!brc || (sifreGerek && !bpw)) { message.warning(sifreGerek ? 'Neden ve şifre gerekli' : 'Neden gerekli'); return }
     setBreaking(true)
     try {
-      await axiosInstance.post(`/api/${resource}/${id}/${breakReq.action}`, { breakPassword: bpw, breakReasonCode: brc })
+      await axiosInstance.post(`/api/${resource}/${id}/${breakReq.action}`,
+        woIptal ? { reasonCode: brc, breakPassword: bpw || undefined } : { breakPassword: bpw, breakReasonCode: brc })
       message.success('Koşul kırıldı — işlem tamamlandı')
       setBreakReq(null); setBpw(''); setBrc(undefined)
       load()
@@ -219,8 +235,8 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
 
       <Modal
         open={!!breakReq}
-        title="Koşul Kırma — Onay Gerekli"
-        okText="Onayla ve Tamamla"
+        title={resource === 'work-orders' ? 'İş Emri İptali — Neden Gerekli' : 'Koşul Kırma — Onay Gerekli'}
+        okText={resource === 'work-orders' ? 'İptal Et' : 'Onayla ve Tamamla'}
         cancelText="İptal"
         confirmLoading={breaking}
         onOk={submitBreak}
@@ -228,8 +244,12 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
       >
         {breakReq?.err && <Alert type="warning" showIcon style={{ marginBottom: 14 }} title={breakReq.err} />}
         <Space orientation="vertical" style={{ width: '100%' }} size={12}>
-          <Input.Password placeholder="Kırma Şifresi" value={bpw} onChange={(e) => setBpw(e.target.value)} onPressEnter={submitBreak} autoFocus />
-          <Select style={{ width: '100%' }} placeholder="Kırma Nedeni" value={brc} onChange={setBrc} options={breakReasons} showSearch optionFilterProp="label" />
+          <Select style={{ width: '100%' }} placeholder={resource === 'work-orders' ? 'İptal Nedeni' : 'Kırma Nedeni'}
+            value={brc} onChange={setBrc} options={breakReasons} showSearch optionFilterProp="label" autoFocus />
+          {/* İş emrinde şifre yalnız nedene şifre bağlıysa istenir */}
+          {(resource !== 'work-orders' || (brc && woNeedsPw[brc])) && (
+            <Input.Password placeholder="Kırma Şifresi" value={bpw} onChange={(e) => setBpw(e.target.value)} onPressEnter={submitBreak} />
+          )}
         </Space>
       </Modal>
     </div>

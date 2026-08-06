@@ -113,10 +113,38 @@ export async function completeWorkOrder(id: number, userId: number, now: Date) {
   return { ...updated, generatedDocumentId }
 }
 
-/** → CANCELLED (tamamlanmamış). */
-export async function cancelWorkOrder(id: number) {
+/**
+ * → CANCELLED (tamamlanmamış).
+ * İŞ EMRİ NEDENİ (TBLWORKORDERREASON): iptal nedeni tanımlıysa neden ZORUNLU olur
+ * ve nedene şifre tanımlıysa doğru şifre gerekir. Tanım yoksa eski davranış.
+ */
+export async function cancelWorkOrder(id: number, opts: { reasonCode?: string; breakPassword?: string } = {}) {
   const wo = await prisma.tBLWORKORDER.findUniqueOrThrow({ where: { id } })
   if (wo.status === 'COMPLETED') throw new WorkOrderError('Tamamlanmış iş emri iptal edilemez')
   if (wo.status === 'CANCELLED') throw new WorkOrderError('İş emri zaten iptal edilmiş')
+
+  const nedenler = await prisma.tBLWORKORDERREASON.findMany({
+    where: { companyId: wo.companyId, isCancel: true, isActive: true },
+    orderBy: { code: 'asc' },
+  })
+  if (nedenler.length) {
+    if (!opts.reasonCode) {
+      throw new WorkOrderError(`İptal nedeni zorunlu — geçerli nedenler: ${nedenler.map((n) => n.code).join(', ')}`)
+    }
+    const neden = nedenler.find((n) => n.code === opts.reasonCode)
+    if (!neden) throw new WorkOrderError(`Geçersiz iptal nedeni: ${opts.reasonCode}`)
+    if (neden.breakPassword && neden.breakPassword !== opts.breakPassword) {
+      throw new WorkOrderError(`"${neden.description ?? neden.code}" nedeni şifre ister — şifre hatalı`)
+    }
+  }
   return prisma.tBLWORKORDER.update({ where: { id }, data: { status: 'CANCELLED' } })
+}
+
+/** Aktif iptal nedenleri (ekranın seçenek listesi). */
+export async function cancelReasons(companyId: number) {
+  return prisma.tBLWORKORDERREASON.findMany({
+    where: { companyId, isCancel: true, isActive: true },
+    select: { code: true, description: true, breakPassword: true },
+    orderBy: { code: 'asc' },
+  })
 }

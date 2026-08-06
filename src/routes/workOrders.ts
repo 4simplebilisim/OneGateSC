@@ -5,7 +5,7 @@ import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { parsePagination, paginated } from '../lib/pagination.js'
 import { nextSequence } from '../lib/sequence.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
-import { assignWorkOrder, startWorkOrder, reportLine, completeWorkOrder, cancelWorkOrder, WorkOrderError } from '../lib/workOrder.js'
+import { assignWorkOrder, startWorkOrder, reportLine, completeWorkOrder, cancelWorkOrder, cancelReasons, WorkOrderError } from '../lib/workOrder.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
 // İş emri yetki kapısı: deposu (→tesisi) kullanıcının kısıt listesine uymalı → 403
@@ -150,7 +150,17 @@ export async function workOrderRoutes(app: FastifyInstance) {
 
   app.post('/:id/start', { preHandler: [app.authenticate, app.requireWrite] }, wrap((req) => startWorkOrder(idOf(req), new Date())))
   app.post('/:id/complete', { preHandler: [app.authenticate, app.requireWrite] }, wrap((req) => completeWorkOrder(idOf(req), req.user.sub, new Date())))
-  app.post('/:id/cancel', { preHandler: [app.authenticate, app.requireWrite] }, wrap((req) => cancelWorkOrder(idOf(req))))
+  // İptal — iptal nedeni tanımlıysa neden (ve nedenin şifresi) zorunlu
+  app.post('/:id/cancel', { preHandler: [app.authenticate, app.requireWrite] }, wrap((req) => {
+    const b = (req.body ?? {}) as { reasonCode?: string; breakPassword?: string }
+    return cancelWorkOrder(idOf(req), { reasonCode: b.reasonCode, breakPassword: b.breakPassword })
+  }))
+
+  /** İptal nedeni seçenekleri (ekran listesi — şifre gerekip gerekmediği de döner) */
+  app.get('/cancel-reasons', { preHandler: [app.authenticate] }, async (request) => {
+    const rows = await cancelReasons(getCompanyId(request))
+    return rows.map((r) => ({ code: r.code, description: r.description, needsPassword: !!r.breakPassword }))
+  })
 
   app.post('/:id/lines/:lineId/report', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
     const id = idOf(request)
