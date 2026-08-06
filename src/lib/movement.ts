@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { copyExtraValuesOnSplit } from './extraFields.js'
+import { checkPalletRules } from './palletRules.js'
 import { prisma } from './prisma.js'
 import { writeBackOnComplete } from './procurementBridge.js'
 import { suggestPutawayLocations, resolveRoutingPolicy, routingTypeIdsForOperation } from './routing.js'
@@ -758,15 +759,14 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
           }
         }
 
-        // Palet: aynı palet kullanımı kapalıysa, girişte zaten kullanımda olan palete ekleme engellenir
-        if (dir === 'INBOUND' && line.palletId != null && !op.sameUsePallet) {
-          const palletInUse = await tx.tBLSTOCK.findFirst({
-            where: { companyId: doc.companyId, palletId: line.palletId, mainQty: { gt: 0 } },
-            select: { id: true },
+        // Palet kuralları (okutmasız satır yolu — okutmalı yol scope POST'ta denetlenir):
+        // aynı palet kullanılsın · tek ürün paleti · parti kontrolü · bölünebilirlik
+        if (line.palletId != null) {
+          const palletErr = await checkPalletRules(tx, {
+            companyId: doc.companyId, palletId: line.palletId, productId: line.productId,
+            batchNo: line.batchNo, direction: dir, sameUsePallet: op.sameUsePallet, quantity: line.quantity,
           })
-          if (palletInUse) {
-            throw new MovementError(`Satır ${line.lineNo}: palet zaten kullanımda — yeni palet gerekli (veya operasyonda 'aynı palet kullanılsın')`)
-          }
+          if (palletErr) throw new MovementError(`Satır ${line.lineNo}: ${palletErr}`)
         }
 
         const qty = line.quantity

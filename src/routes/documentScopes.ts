@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
 import { resolveOrCreatePallet, PalletResolveError } from '../lib/palletResolve.js'
+import { checkPalletRules } from '../lib/palletRules.js'
 import { getCompanyId } from '../lib/company.js'
 import { refreshDocStatus } from '../lib/documentStatus.js'
 import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '../lib/movement.js'
@@ -144,9 +145,34 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         sourceLocationId: true, sourceStatusId: true, targetLocationId: true, targetStatusId: true, productId: true,
         batchNo: true, serialNo: true, quantity: true,
         product: { select: { productGroupId: true } },
-        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true, reserveTransfer: true } } } },
+        document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true, reserveTransfer: true, sameUsePallet: true } } } },
       },
     })
+    // BİRİM UYUMU: okutulan birim ÜRÜNE tanımlı olmalı.
+    // (Ana birim ya da Ürün › Birimler'de satırı olan bir birim.) Tanımsız birimde
+    // çarpan bilinmediği için stok toplamları ve raporlar yanlış çıkar.
+    {
+      const urunId = productId ?? (documentLineId
+        ? (await prisma.tBLDOCUMENTLINE.findUnique({ where: { id: documentLineId }, select: { productId: true } }))?.productId
+        : null)
+      if (urunId) {
+        const urun = await prisma.tBLPRODUCT.findFirst({ where: { id: urunId, companyId }, select: { code: true, unitId: true } })
+        if (urun && urun.unitId !== scopeData.unitId) {
+          const pu = await prisma.tBLPRODUCTUNIT.findFirst({ where: { productId: urunId, unitId: scopeData.unitId }, select: { id: true } })
+          if (!pu) {
+            const [okutulan, ana] = await Promise.all([
+              prisma.tBLUNIT.findUnique({ where: { id: scopeData.unitId }, select: { code: true } }),
+              urun.unitId ? prisma.tBLUNIT.findUnique({ where: { id: urun.unitId }, select: { code: true } }) : null,
+            ])
+            return reply.code(400).send({
+              error: `Birim uyumsuz — "${okutulan?.code ?? scopeData.unitId}" birimi ${urun.code} ürününe tanımlı değil` +
+                (ana ? ` (ana birim ${ana.code})` : '') + '. Ürün › Birimler sekmesinden ekleyin.',
+            })
+          }
+        }
+      }
+    }
+
     // PALET: etiketten gelen palet NUMARASI kayda bağlanır.
     // Palet no basılı bir kâğıttır — sisteme ancak BURADA, okutmayla girer:
     // önce palet kaydı açılır (id alınır), stok complete'te o id ile yazılır.
@@ -227,6 +253,20 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         }
       }
     }
+    // PALET KURALLARI: aynı palet kullanılsın · tek ürün paleti · parti kontrolü · bölünebilirlik.
+    // (movement.ts'teki palet kontrolü okutmalı satırlarda erken `continue` yüzünden hiç
+    //  çalışmıyordu — kural artık okutma anında, operatörün karşısında.)
+    if (scopeData.palletId != null && ln?.document.operationType) {
+      const kuralHatasi = await checkPalletRules(prisma, {
+        companyId, palletId: scopeData.palletId, productId: ln.productId,
+        batchNo: scopeData.batchNo ?? ln.batchNo ?? null,
+        direction: ln.document.operationType.direction,
+        sameUsePallet: ln.document.operationType.sameUsePallet,
+        quantity: scopeData.quantity,
+      })
+      if (kuralHatasi) return reply.code(400).send({ error: kuralHatasi })
+    }
+
     // Rezerv kapısı (legacy LNGREZERVEBELGEKOD): kaynak stok BAŞKA belgeye rezerveyse yalnız SERBEST kısmı okutulabilir.
     // (complete'teki adjustStock kesin kapı — bu erken, kullanıcı-dostu red.)
     if (ln?.document.operationType && (ln.document.operationType.direction === 'OUTBOUND' || ln.document.operationType.direction === 'INTERNAL') && eff.sourceLocationId && eff.sourceStatusId) {

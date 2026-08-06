@@ -37,6 +37,17 @@ export async function suggestionListRoutes(app: FastifyInstance) {
     // Toplama sırası parametresi bir kez çözülür (satır başına sorgu yapılmasın)
     const pickParam = direction === 'OUTBOUND' ? await loadPickOrderParameter(companyId, doc.partnerId) : null
 
+    // STATÜ SÜZGECİ: öneri, operasyonun ÇIKABİLDİĞİ statülerle sınırlıdır.
+    // Aksi halde bloke/karantina stok da "elde var" diye gösteriliyor, toplayıcı
+    // gidip bulamıyordu (hareket zaten reddediliyor — sorun yanlış yönlendirme).
+    // Operasyonda statü geçişi tanımlı değilse süzgeç uygulanmaz (davranış değişmez).
+    const izinliKaynakStatuler = direction === 'OUTBOUND'
+      ? (await prisma.tBLOPERATIONTYPESTATUS.findMany({
+          where: { companyId, operationTypeId: doc.operationTypeId, sourceStatusId: { not: null } },
+          select: { sourceStatusId: true },
+        })).map((t) => t.sourceStatusId!).filter((v, i, a2) => a2.indexOf(v) === i)
+      : []
+
     const rows = []
     for (const line of doc.lines) {
       if (direction === 'OUTBOUND') {
@@ -44,7 +55,12 @@ export async function suggestionListRoutes(app: FastifyInstance) {
         // Rezerv kuralı (legacy BYTREZERVASYONFIFOYUEZSIN): BU BELGEYE rezerve satırlar rotasyonu EZER (öne gelir);
         // başkasına/blokaja rezerveli kısım kullanılamaz — tamamı rezerveli yabancı satır hiç önerilmez.
         const stocks = await prisma.tBLSTOCK.findMany({
-          where: { companyId, productId: line.productId, mainQty: { gt: 0 } },
+          where: {
+            companyId, productId: line.productId, mainQty: { gt: 0 },
+            // Satır statü belirtmişse ona, yoksa operasyonun izinli statülerine kısıtla
+            ...(line.sourceStatusId ? { statusId: line.sourceStatusId }
+              : izinliKaynakStatuler.length ? { statusId: { in: izinliKaynakStatuler } } : {}),
+          },
           include: { location: { select: { code: true } } }, orderBy: rotationOrderBy(rotation),
         })
         const usable = stocks

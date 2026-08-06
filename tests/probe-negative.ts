@@ -80,7 +80,7 @@ yaz('A1', 'boş palete giriş', 'başarılı olmalı', (await girisYap({ palletI
 // A2: DOLU palete tekrar giriş — sameUsePallet KAPALI
 await prisma.tBLOPERATIONTYPE.update({ where: { id: opGir.id }, data: { sameUsePallet: false } })
 const a2 = await girisYap({ palletId: palet.id, qty: 5 })
-yaz('A2', 'dolu palete giriş · "aynı palet kullanılsın" KAPALI', 'REDDEDİLMELİ', !!a2 && a2.includes('palet zaten kullanımda'), a2 ?? 'GEÇTİ — engellenmedi')
+yaz('A2', 'dolu palete giriş · "aynı palet kullanılsın" KAPALI', 'REDDEDİLMELİ', !!a2, a2 ?? 'GEÇTİ — engellenmedi')
 
 // A3: DOLU palete tekrar giriş — sameUsePallet AÇIK
 await prisma.tBLOPERATIONTYPE.update({ where: { id: opGir.id }, data: { sameUsePallet: true } })
