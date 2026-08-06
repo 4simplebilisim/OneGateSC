@@ -5,6 +5,7 @@ import { ArrowLeftOutlined, HistoryOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
 import { DETAIL_ACTIONS } from '../detailActions'
+import { ExtraFields } from '../components/ExtraFields'
 import { canWrite } from '../formConfig'
 import { FK_RESOURCE, FK_LABEL } from '../fieldMeta'
 import { STATUS_COLOR, STATUS_TR } from '../statusMeta'
@@ -205,6 +206,10 @@ export const GenericDetail = ({ resource, label }: { resource: string; label: st
           ))}
         </Descriptions>
       </Card>
+
+      {resource === 'documents' && id && (
+        <ExtraFields documentId={id} readOnly={status === 'COMPLETED' || status === 'CANCELLED'} />
+      )}
 
       {lines.length > 0 && (
         <Card className="og-section-card" size="small" title={`Satırlar (${lines.length})`}>

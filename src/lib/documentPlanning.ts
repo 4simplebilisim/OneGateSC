@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from './prisma.js'
+import { copyExtraValuesOnSplit } from './extraFields.js'
 import { nextSequence } from './sequence.js'
 import { refreshDocStatus } from './documentStatus.js'
 import { suggestPutawayLocations } from './routing.js'
@@ -134,6 +135,7 @@ export async function planDocument(documentId: number, userId?: number): Promise
         sira++
         await tx.tBLDOCUMENTLINE.update({ where: { id: l.id }, data: { documentId: yeni.id, lineNo: sira } })
       }
+      await copyExtraValuesOnSplit(doc.companyId, 'DOC_HEADER', doc.id, yeni.id, tx)
       parts.push({ id: yeni.id, documentNo: no, lineCount: kume.length, original: false })
     }
 

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { copyExtraValuesOnSplit } from './extraFields.js'
 import { prisma } from './prisma.js'
 import { writeBackOnComplete } from './procurementBridge.js'
 import { suggestPutawayLocations, resolveRoutingPolicy, routingTypeIdsForOperation } from './routing.js'
@@ -1139,6 +1140,8 @@ export async function splitDocument(documentId: number, userId?: number) {
       if (remaining.lte(0)) await tx.tBLDOCUMENTLINE.delete({ where: { id: line.id } }) // tamamı taşındı
       else await tx.tBLDOCUMENTLINE.update({ where: { id: line.id }, data: { quantity: remaining, collectedQty: new Prisma.Decimal(0) } })
     }
+    // Ek saha: "Bölme İşleminde Aktar" işaretli değerler yeni belgeye taşınır
+    await copyExtraValuesOnSplit(doc.companyId, 'DOC_HEADER', doc.id, newDoc.id, tx)
     await refreshDocStatus(tx, newDoc.id) // toplanan kısım → Onay Bekliyor (tam)
     await refreshDocStatus(tx, documentId) // kalan → Bekliyor (toplanmamış)
     return { originalId: documentId, newDocumentId: newDoc.id, newDocumentNo: newNo }

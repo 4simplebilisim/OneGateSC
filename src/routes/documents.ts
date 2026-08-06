@@ -5,6 +5,7 @@ import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
 import { planDocument, PlanningError } from '../lib/documentPlanning.js'
 import { loadPartnerPriorities, sortByPriority, priorityLabel } from '../lib/stockControl.js'
+import { extraFieldsForOperation, loadExtraValue, saveExtraValues, assertRequiredExtraFields, ExtraFieldError } from '../lib/extraFields.js'
 import { completeDocument, reverseDocument, splitDocument, collectionShortfall, uncontrolledScanGate, referenceGate, MovementError } from '../lib/movement.js'
 import { docStatusId, DOC_STATUS, refreshDocStatus, missingDocStatuses } from '../lib/documentStatus.js'
 import { nextSequence } from '../lib/sequence.js'
@@ -444,6 +445,13 @@ export async function documentRoutes(app: FastifyInstance) {
     // Referans kontrollü op: belge referanstan doğmuş olmalı
     const refErr = await referenceGate(prisma, id)
     if (refErr) return reply.code(409).send({ error: refErr })
+    // EK SAHA: operasyonun zorunlu belge-başlık ek sahaları dolu olmalı (tanım yoksa kontrol yok)
+    try {
+      await assertRequiredExtraFields(getCompanyId(request), doc.operationTypeId, 'DOC_HEADER', id)
+    } catch (err) {
+      if (err instanceof ExtraFieldError) return reply.code(409).send({ error: err.message })
+      throw err
+    }
     await prisma.tBLDOCUMENT.update({ where: { id }, data: { status: 'CONFIRMED' } })
     await refreshDocStatus(prisma, id, { source: 'confirm', userId: Number((request.user as { sub?: number | string })?.sub) || null }) // → OBK
     return prisma.tBLDOCUMENT.findUnique({ where: { id }, include: { documentStatus: true } })
@@ -549,6 +557,41 @@ export async function documentRoutes(app: FastifyInstance) {
       return reply.code(201).send(result)
     } catch (err) {
       if (err instanceof MovementError) return reply.code(409).send({ error: err.message })
+      throw err
+    }
+  })
+
+  // EK SAHALAR — belge başlığının operasyonuna bağlı tanımlar + girilmiş değerler
+  app.get('/:id/extra-fields', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    const companyId = getCompanyId(request)
+    const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId }, select: { operationTypeId: true } })
+    if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    const [defs, values] = await Promise.all([
+      extraFieldsForOperation(companyId, doc.operationTypeId, 'DOC_HEADER'),
+      loadExtraValue(companyId, 'DOC_HEADER', id),
+    ])
+    return { defs, values }
+  })
+
+  app.put('/:id/extra-fields', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const id = Number((request.params as { id: string }).id)
+    if (!Number.isInteger(id)) return reply.code(400).send({ error: 'Invalid id' })
+    if (!(await docAuth(request, reply, id))) return
+    const companyId = getCompanyId(request)
+    const doc = await prisma.tBLDOCUMENT.findFirst({ where: { id, companyId }, select: { operationTypeId: true, status: true } })
+    if (!doc) return reply.code(404).send({ error: 'Document not found' })
+    if (doc.status === 'COMPLETED' || doc.status === 'CANCELLED') {
+      return reply.code(409).send({ error: `Kapalı belgenin (${doc.status}) ek sahaları değiştirilemez` })
+    }
+    const parsed = z.object({ values: z.record(z.string(), z.string().nullable()) }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    try {
+      const r = await saveExtraValues(companyId, doc.operationTypeId, 'DOC_HEADER', id, parsed.data.values)
+      return { ...r, values: await loadExtraValue(companyId, 'DOC_HEADER', id) }
+    } catch (err) {
+      if (err instanceof ExtraFieldError) return reply.code(409).send({ error: err.message })
       throw err
     }
   })

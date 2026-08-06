@@ -3839,6 +3839,7 @@ enum ExtraFieldDataType {
 
 // Ek Saha tanımı (Dinamik + Statik birleşik)
 model TBLEXTRAFIELD {
+  values TBLEXTRAFIELDVALUE[]
   id                 Int                @id @default(autoincrement())
   companyId          Int
   facilityId         Int? // tesis (opsiyonel — boş=tüm tesisler). Tenant'ın birden çok tesisi olabilir; ek saha tesise göre tanımlanabilir.
@@ -3867,6 +3868,26 @@ model TBLEXTRAFIELD {
 }
 
 // Ek Saha seçenekleri (Çoktan Seçmeli / Rehber için) — legacy TBLEKSAHASECENEK
+/// Ek saha DEĞERİ — legacy'de varlık başına ayrı tablo (TBLSBBELGEBASLIKEKSAHA /
+/// BELGEDETAYEKSAHA / BELGEKAPSAMEKSAHA / PALETEKSAHA); bizde tek polimorfik tablo.
+/// entityType + entityId = değerin bağlandığı kayıt (belge, satır, kapsam, palet, stok...).
+model TBLEXTRAFIELDVALUE {
+  id           Int              @id @default(autoincrement())
+  companyId    Int
+  extraFieldId Int
+  entityType   ExtraFieldEntity
+  entityId     Int
+  value        String?          @db.VarChar(400) // TXTEKSAHAACIKLAMA
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  extraField TBLEXTRAFIELD @relation(fields: [extraFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([extraFieldId, entityType, entityId])
+  @@index([companyId, entityType, entityId])
+  @@schema("wms")
+}
+
 model TBLEXTRAFIELDOPTION {
   id           Int      @id @default(autoincrement())
   companyId    Int
