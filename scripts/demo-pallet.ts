@@ -37,8 +37,10 @@ const main = async () => {
   if (!palTip.sequenceId) {
     throw new Error(`Palet tipi ${palTip.code} için SAYAÇ tanımlı değil — önce: npx tsx scripts/demo-pallet-label.ts --uygula`)
   }
-  if (kural.matchPrefix && !palTip.code.toUpperCase().startsWith(kural.matchPrefix.toUpperCase())) {
-    throw new Error(`Palet barkod kuralının öneki "${kural.matchPrefix}" ama palet tipi "${palTip.code}" — sayaçtan doğan numaralar okunmaz. demo-pallet-label.ts hizalar.`)
+  // Okutma kuralının öneki, numarayı üreten SAYACIN önekiyle uyuşmalı
+  const sayacOneki = palTip.sequence?.prefix ?? palTip.code
+  if (kural.matchPrefix && !sayacOneki.toUpperCase().startsWith(kural.matchPrefix.toUpperCase())) {
+    throw new Error(`Palet barkod kuralının öneki "${kural.matchPrefix}" ama sayaç öneki "${sayacOneki}" — sayaçtan doğan numaralar okunmaz. demo-pallet-label.ts hizalar.`)
   }
 
   // Dolu palet için: stoklu bir ürün + onun barkodu + giriş operasyonu + hedef lokasyon/statü
@@ -66,7 +68,7 @@ const main = async () => {
 
   const ADET = Number(process.env.DEMO_PALLET_COUNT ?? 3)
   console.log(`\nFirma ${CO} · palet kuralı "${kural.code}" (önek "${kural.matchPrefix ?? '-'}") · palet tipi ${palTip.code}`)
-  console.log(`Açılacak palet: ${ADET} adet — numaralar SAYAÇTAN (${palTip.sequence?.code}, uzunluk ${palTip.palletNoLength ?? '-'})`)
+  console.log(`Açılacak palet: ${ADET} adet — numaralar SAYAÇTAN (${palTip.sequence?.code}, önek "${sayacOneki}", uzunluk ${palTip.palletNoLength ?? '-'})`)
   console.log(`Dolu palet için ürün: ${stok.product.code} · lokasyon ${stok.location.code} · birim ${stok.unit?.code ?? '?'}`)
   console.log(`Giriş operasyonu: ${opGir.code} (${opGir.controlMode}) · hedef statü #${hedefStatuId}`)
   if (urunBarkod) console.log(`Ürün barkodu (EAN): ${urunBarkod.barcode}`)
