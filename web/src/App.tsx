@@ -18,6 +18,7 @@ import { LocationBulkGenerate } from './pages/LocationBulkGenerate'
 import { OperationTypeForm } from './pages/OperationTypeForm'
 import { LocationGroupForm } from './pages/LocationGroupForm'
 import { Replenishment } from './pages/Replenishment'
+import { ControlCount } from './pages/ControlCount'
 import { BarcodeTypeForm } from './pages/BarcodeTypeForm'
 import { IntegrationPackageForm } from './pages/IntegrationPackageForm'
 import { IntegrationTransfer } from './pages/IntegrationTransfer'
@@ -187,6 +188,7 @@ export default function App() {
           <Route path="putaway-suggest" element={<SuggestList mode="putaway" />} />
           <Route path="pick-suggest" element={<SuggestList mode="pick" />} />
           <Route path="replenishment" element={<Replenishment />} />
+          <Route path="control-counts" element={<ControlCount />} />
           <Route path="stock-entry" element={<StockEntry direction="INBOUND" />} />
           <Route path="entry-labeling" element={<EntryLabeling direction="INBOUND" />} />
           <Route path="stock-exit" element={<StockEntry direction="OUTBOUND" />} />

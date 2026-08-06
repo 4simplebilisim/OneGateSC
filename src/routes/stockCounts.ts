@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId, companyListFilter } from '../lib/company.js'
-import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, deleteCount, countDifferences, CountingError } from '../lib/counting.js'
+import { createCount, setCounted, completeCount, cancelCount, reverseEqualize, deleteCount, countDifferences, CountingError, assignedCountIds} from '../lib/counting.js'
 import { firstBadRef, type RefModel } from '../lib/refGuard.js'
 import { assertUserAuthorized, AuthorizationError } from '../lib/userAuth.js'
 
@@ -40,12 +40,22 @@ export async function stockCountRoutes(app: FastifyInstance) {
   }
 
   app.get('/', async (request) => {
-    const q = request.query as { status?: string }
+    const q = request.query as { status?: string; assignedFor?: string }
     const statuses = ['DRAFT', 'COUNTING', 'COMPLETED', 'CANCELLED'] as const
+    const companyId = getCompanyId(request)
+    // El terminali: ?assignedFor=me → yalnız bana atanmış sayımlar.
+    // Hiç atama tanımlanmamışsa liste kısıtlanmaz (kısıtlama-listesi deseni).
+    let idFilter: { in: number[] } | undefined
+    if (q.assignedFor === 'me') {
+      const uid = Number((request.user as { sub?: number | string })?.sub) || 0
+      const varMi = await prisma.tBLCOUNTASSIGNMENT.count({ where: { companyId, isActive: true } })
+      if (varMi) idFilter = { in: await assignedCountIds(companyId, uid) }
+    }
     return prisma.tBLSTOCKCOUNT.findMany({
       where: {
-        companyId: getCompanyId(request),
+        companyId,
         status: statuses.includes(q.status as (typeof statuses)[number]) ? (q.status as (typeof statuses)[number]) : undefined,
+        ...(idFilter ? { id: idFilter } : {}),
       },
       orderBy: { id: 'desc' },
       include: { _count: { select: { lines: true } } },
@@ -127,7 +137,7 @@ export async function stockCountRoutes(app: FastifyInstance) {
     if (!body.success) return reply.code(400).send({ error: 'Invalid body', details: body.error.flatten() })
     if (!(await assertCountAuth(request, reply, id))) return reply // yetki: bu sayımın deposu/operasyonu
     try {
-      return await setCounted(id, lineId, body.data.countedQty)
+      return await setCounted(id, lineId, body.data.countedQty, Number((request.user as { sub?: number | string })?.sub) || null)
     } catch (err) {
       if (err instanceof CountingError) return reply.code(409).send({ error: err.message })
       throw err

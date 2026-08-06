@@ -79,7 +79,8 @@ export const RESOURCES: ResourceDef[] = [
   { name: 'count-differences', label: 'Sayım Fark', section: 'İşlemler', group: 'Sayım' },
   { name: 'count-approval', label: 'Sayım Onayı', section: 'İşlemler', group: 'Sayım', apiName: 'stock-counts', filter: { status: 'COUNTING' } },
   { name: 'count-approval-cancel', label: 'Sayım Onayı İptal', section: 'İşlemler', group: 'Sayım', apiName: 'stock-counts', filter: { status: 'COMPLETED' } },
-  // Kontrol Sayım + Sayım İş Atama: menüden kaldırıldı (altı boş, davranış bağlanmadı) — API/kod durur
+  { name: 'count-assignments', label: 'Sayım İş Atama', section: 'İşlemler', group: 'Sayım' }, // atama varsa yalnız atanan sayar
+  { name: 'control-counts', label: 'Kontrol Sayım', section: 'İşlemler', group: 'Sayım' }, // stok DEĞİŞTİRMEZ — sistem/sayılan farkı
   { name: 'pallets', label: 'Palet İşlemleri', section: 'İşlemler', group: 'Palet' },
   { name: 'pallets-bulk', label: 'Toplu Palet Güncelleme', section: 'İşlemler', group: 'Palet' },
   // Palet Bildirim: menüden kaldırıldı (altı boş) — API/kod durur

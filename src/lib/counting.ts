@@ -89,11 +89,12 @@ export async function createCount(
 }
 
 /** Satıra sayılan miktarı yaz. */
-export async function setCounted(countId: number, lineId: number, countedQty: number) {
+export async function setCounted(countId: number, lineId: number, countedQty: number, userId?: number | null) {
   const count = await prisma.tBLSTOCKCOUNT.findUniqueOrThrow({ where: { id: countId } })
   if (count.status === 'COMPLETED' || count.status === 'CANCELLED') {
     throw new CountingError(`Sayım kapalı (${count.status}) — düzenlenemez`)
   }
+  await assertCountAssignee(prisma, count, userId) // atanmışsa yalnız atanan sayar
   const line = await prisma.tBLSTOCKCOUNTLINE.findFirst({ where: { id: lineId, countId } })
   if (!line) throw new CountingError('Sayım satırı bulunamadı')
   if (count.status === 'DRAFT') await prisma.tBLSTOCKCOUNT.update({ where: { id: countId }, data: { status: 'COUNTING' } })
@@ -112,6 +113,37 @@ export async function setCounted(countId: number, lineId: number, countedQty: nu
  * Cari bazlı satır varsa (businessPartnerId) o da eşleşmeli — cari-özel kural
  * genel kuralı daraltır, ikisi de yoksa serbesttir.
  */
+/**
+ * SAYIM ATAMASI (TBLCOUNTASSIGNMENT) — sayım kullanıcılara atanır.
+ * Atama YOKSA sayım serbesttir (kısıtlama-listesi deseni: satır yok = kısıt yok).
+ * Atama VARSA yalnız atanan kullanıcı sayabilir/tamamlayabilir.
+ */
+export async function assertCountAssignee(
+  tx: Prisma.TransactionClient,
+  count: { id: number; companyId: number },
+  userId: number | null | undefined,
+): Promise<void> {
+  const atamalar = await tx.tBLCOUNTASSIGNMENT.findMany({
+    where: { companyId: count.companyId, stockCountId: count.id, isActive: true },
+    select: { userId: true },
+  })
+  if (!atamalar.length) return // atama yok → serbest
+  if (!userId) throw new CountingError('Sayımı yapan kullanıcı belirlenemedi')
+  if (atamalar.some((a) => a.userId === userId)) return
+  const kullanicilar = await tx.tBLUSER.findMany({
+    where: { id: { in: atamalar.map((a) => a.userId) } }, select: { username: true },
+  })
+  throw new CountingError(`Bu sayım size atanmamış — atanan: ${kullanicilar.map((k) => k.username).join(', ')}`)
+}
+
+/** Bir kullanıcıya atanmış sayım id'leri (el terminali listesi için). */
+export async function assignedCountIds(companyId: number, userId: number): Promise<number[]> {
+  const rows = await prisma.tBLCOUNTASSIGNMENT.findMany({
+    where: { companyId, userId, isActive: true }, select: { stockCountId: true },
+  })
+  return [...new Set(rows.map((r) => r.stockCountId))]
+}
+
 export async function assertCountApprover(
   tx: Prisma.TransactionClient,
   count: { companyId: number; operationTypeId: number | null },
@@ -140,6 +172,7 @@ export async function completeCount(countId: number, now: Date, userId?: number 
   return prisma.$transaction(async (tx) => {
     const count = await tx.tBLSTOCKCOUNT.findUniqueOrThrow({ where: { id: countId }, include: { lines: true } })
     if (count.status === 'COMPLETED') throw new CountingError('Sayım zaten tamamlandı')
+    await assertCountAssignee(tx, count, userId) // atanmışsa yalnız atanan tamamlar
     await assertCountApprover(tx, count, userId)
     if (count.status === 'CANCELLED') throw new CountingError('İptal edilmiş sayım tamamlanamaz')
 

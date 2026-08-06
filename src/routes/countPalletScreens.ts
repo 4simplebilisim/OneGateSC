@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
 import { simpleCrud, type Delegate } from './documentTypes.js'
+import type { FastifyInstance } from 'fastify'
+import { getCompanyId } from '../lib/company.js'
+import { createControlCount, setControlCounted, approveControlCount, controlCountDifferences, ControlCountError } from '../lib/controlCount.js'
 
 // Sayım/Palet ek ekranları — StokBar parite (legacy TBLSBKONTROLSAYIM / PALETBILDIRIM / PALETTARIHCE / REFERANSSAYIMBELGEISATAMA)
 const pInt = z.number().int().positive()
@@ -22,7 +25,50 @@ const controlCount = z.object({
   note: z.string().max(200).optional(),
   isActive: z.boolean().optional(),
 })
-export const controlCountRoutes = simpleCrud(prisma.tBLCONTROLCOUNT as unknown as Delegate, controlCount, controlCount.partial(), 'Kontrol sayım bulunamadı')
+const controlCountCrud = simpleCrud(prisma.tBLCONTROLCOUNT as unknown as Delegate, controlCount, controlCount.partial(), 'Kontrol sayım bulunamadı')
+
+// Kontrol sayım MOTORU: depo fotoğrafı → sayım → fark. Stok DEĞİŞMEZ.
+export async function controlCountRoutes(app: FastifyInstance) {
+  const hata = (reply: { code: (n: number) => { send: (b: unknown) => unknown } }, err: unknown) => {
+    if (err instanceof ControlCountError) return reply.code(409).send({ error: err.message })
+    throw err
+  }
+
+  /** Depo stoğunu fotoğrafla → satırlar otomatik doğar */
+  app.post('/snapshot', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const parsed = z.object({
+      warehouseId: pInt, code: z.string().max(40).optional(),
+      referenceCode: z.string().max(40).optional(), note: z.string().max(200).optional(),
+    }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    try {
+      return reply.code(201).send(await createControlCount(getCompanyId(request), parsed.data))
+    } catch (err) { return hata(reply, err) }
+  })
+
+  app.post('/:id/lines/:lineId/count', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    const { id, lineId } = request.params as { id: string; lineId: string }
+    const parsed = z.object({ countedQty: z.number().min(0) }).safeParse(request.body)
+    if (!parsed.success) return reply.code(400).send({ error: 'Invalid body', details: parsed.error.flatten() })
+    try {
+      return await setControlCounted(getCompanyId(request), Number(id), Number(lineId), parsed.data.countedQty)
+    } catch (err) { return hata(reply, err) }
+  })
+
+  app.post('/:id/approve', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {
+    try {
+      return await approveControlCount(getCompanyId(request), Number((request.params as { id: string }).id))
+    } catch (err) { return hata(reply, err) }
+  })
+
+  app.get('/:id/differences', { preHandler: [app.authenticate] }, async (request, reply) => {
+    try {
+      return await controlCountDifferences(getCompanyId(request), Number((request.params as { id: string }).id))
+    } catch (err) { return hata(reply, err) }
+  })
+
+  await app.register(controlCountCrud)
+}
 
 // Kontrol Sayım satır — controlCountId ile filtrelenir
 const controlCountLine = z.object({
