@@ -46,12 +46,16 @@ const main = async () => {
   })
   if (!stok) throw new Error('Firmada stok yok — önce demo verisi kurun')
 
-  const opGir = await prisma.tBLOPERATIONTYPE.findFirst({
-    where: { companyId: CO, direction: 'INBOUND', controlMode: 'UNCONTROLLED', statusLinks: { some: { targetStatusId: { not: null } } } },
+  // Kontrolsüz varsa okutmayla dolar; yoksa KONTROLLÜ operasyonla plan satırı açılıp ona okutulur
+  const girisAdaylari = await prisma.tBLOPERATIONTYPE.findMany({
+    where: { companyId: CO, direction: 'INBOUND', statusLinks: { some: { targetStatusId: { not: null } } } },
     include: { statusLinks: true, sequence: true },
     orderBy: { id: 'asc' },
   })
-  if (!opGir) throw new Error('Statü geçişi tanımlı, kontrolsüz bir GİRİŞ operasyonu yok')
+  const opGir = girisAdaylari.find((o) => o.controlMode === 'UNCONTROLLED')
+    ?? girisAdaylari.find((o) => o.controlMode === 'CONTROLLED')
+  if (!opGir) throw new Error('Statü geçişi tanımlı bir GİRİŞ operasyonu yok')
+  const kontrollu = opGir.controlMode === 'CONTROLLED'
   const hedefStatuId = opGir.statusLinks.find((s) => s.targetStatusId)!.targetStatusId!
   const urunBarkod = await prisma.tBLPRODUCTUNITBARCODE.findFirst({
     where: { companyId: CO, isActive: true, productUnit: { productId: stok.productId } },
@@ -61,7 +65,7 @@ const main = async () => {
   console.log(`\nFirma ${CO} · palet kuralı "${kural.code}" (önek "${onek}") · palet tipi ${palTip.code}`)
   console.log(`Açılacak paletler: ${[1, 2, 3].map(palNo).join(', ')}  (mevcut: ${varOlan.length})`)
   console.log(`Dolu palet için ürün: ${stok.product.code} · lokasyon ${stok.location.code} · birim ${stok.unit?.code ?? '?'}`)
-  console.log(`Giriş operasyonu: ${opGir.code} · hedef statü #${hedefStatuId}`)
+  console.log(`Giriş operasyonu: ${opGir.code} (${opGir.controlMode}) · hedef statü #${hedefStatuId}`)
   if (urunBarkod) console.log(`Ürün barkodu (EAN): ${urunBarkod.barcode}`)
 
   if (!UYGULA) {
@@ -86,19 +90,27 @@ const main = async () => {
   const doluMu = await prisma.tBLSTOCK.count({ where: { companyId: CO, palletId: ilk.id, mainQty: { gt: 0 } } })
   let belgeNo: string | null = null
   if (!doluMu) {
+    const satir = {
+      productId: stok.productId, unitId: stok.unitId, quantity: 100,
+      targetLocationId: stok.locationId, targetStatusId: hedefStatuId, palletId: ilk.id, batchNo: 'DEMO-PALET',
+    }
     const bg = await app.inject({
       method: 'POST', url: '/api/documents', headers: auth,
-      payload: { operationTypeId: opGir.id, ...(opGir.sequenceId ? {} : { documentNo: `DEMO-PAL-${Date.now().toString(36).toUpperCase().slice(-5)}` }), note: 'Demo palet dolumu' },
+      payload: {
+        operationTypeId: opGir.id,
+        ...(opGir.sequenceId ? {} : { documentNo: `DEMO-PAL-${Date.now().toString(36).toUpperCase().slice(-5)}` }),
+        note: 'Demo palet dolumu',
+        ...(kontrollu ? { lines: [satir] } : {}), // kontrollü: içerik plandan belli
+      },
     })
     if (bg.statusCode !== 201) throw new Error('Belge açılamadı: ' + bg.body)
     const belge = bg.json()
     belgeNo = belge.documentNo
     const sc = await app.inject({
       method: 'POST', url: '/api/document-line-scopes', headers: auth,
-      payload: {
-        documentId: belge.id, productId: stok.productId, unitId: stok.unitId, quantity: 100,
-        targetLocationId: stok.locationId, targetStatusId: hedefStatuId, palletId: ilk.id, batchNo: 'DEMO-PALET',
-      },
+      payload: kontrollu
+        ? { documentLineId: belge.lines[0].id, unitId: stok.unitId, quantity: 100, targetLocationId: stok.locationId, targetStatusId: hedefStatuId, palletId: ilk.id, batchNo: 'DEMO-PALET' }
+        : { documentId: belge.id, ...satir },
     })
     if (sc.statusCode !== 201) throw new Error('Okutma başarısız: ' + sc.body)
     const c = await app.inject({ method: 'POST', url: `/api/documents/${belge.id}/confirm`, headers: auth, payload: {} })
