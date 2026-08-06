@@ -5,18 +5,21 @@
 //
 // Kurduğu düzen:
 //   1) PALET SAYACI  — palet tipine sayaç + numara uzunluğu bağlar; palet no artık
-//      ELLE değil MOTORDAN doğar: <tip kodu><sıfır dolgulu sayaç>  (legacy LNGPALETNOUZUNLUK).
-//   2) PALET BARKODU — sade palet no okutması (mevcut paletler de okunsun diye
-//      kuralın öneki palet TİPİNİN koduyla hizalanır).
+//      ELLE değil MOTORDAN doğar: <SAYAÇ ÖNEKİ><sıfır dolgulu sayaç>
+//      (legacy: önek TBLSBSAYAC.TXTONEK, uzunluk TBLSBPALETTIPI.LNGPALETNOUZUNLUK).
+//   2) PALET BARKODU — sade palet no okutması; kuralın öneki SAYAÇ önekiyle hizalanır.
+//      Eskiden tip koduyla üretilmiş numaralar için ayrı kural korunur.
 //   3) PALET ETİKETİ — bileşik barkod:  paletno/ürün/parti/SKT/adet/birim
 //      SEGMENT modu, "/" ayracı, altı alan. Okutunca hepsi tek seferde çözülür.
 //
-// Numara uzunluğu PALLET_NO_LEN ile değiştirilebilir (varsayılan 7 → EUR+7 = 10 karakter).
+// Önek PALLET_PREFIX (varsayılan P), uzunluk PALLET_NO_LEN (varsayılan 9) → P000000025 = 10 karakter.
+// 15 karakter için: PALLET_NO_LEN=14
 import { prisma } from '../src/lib/prisma.js'
 import { parseBarcode } from '../src/lib/barcodeParse.js'
 
 const UYGULA = process.argv.includes('--uygula')
-const NO_UZUNLUK = Number(process.env.PALLET_NO_LEN ?? 7)
+const NO_UZUNLUK = Number(process.env.PALLET_NO_LEN ?? 9)
+const ONEK = (process.env.PALLET_PREFIX ?? 'P').toUpperCase() // legacy TBLSBSAYAC.TXTONEK
 const SKT_FORMAT = process.env.EXPIRY_FORMAT ?? 'YYYYAAGG'
 
 const main = async () => {
@@ -32,17 +35,17 @@ const main = async () => {
 
   const sayacKodu = `PALET-${tip.code}`
   const mevcutSayac = await prisma.tBLSEQUENCE.findFirst({ where: { companyId: CO, code: sayacKodu } })
-  const etiketKodu = `PALETETIKET-${tip.code}`
+  const etiketKodu = 'PALETETIKET'
   const mevcutEtiket = await prisma.tBLBARCODETYPE.findFirst({ where: { companyId: CO, code: etiketKodu } })
   const paletKurali = await prisma.tBLBARCODETYPE.findFirst({
     where: { companyId: CO, mode: 'PALLET', isActive: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
   })
 
-  const ornekNo = `${tip.code}${String(mevcutEnBuyuk + 1).padStart(NO_UZUNLUK, '0')}`
+  const ornekNo = `${ONEK}${String(mevcutEnBuyuk + 1).padStart(NO_UZUNLUK, '0')}`
   console.log(`\nFirma ${CO} · palet tipi ${tip.code}`)
   console.log(`  Sayaç         : ${mevcutSayac ? `${sayacKodu} (var, değer ${mevcutSayac.currentValue})` : `${sayacKodu} (AÇILACAK, ${mevcutEnBuyuk}'den devam)`}`)
   console.log(`  Numara uzunluk: ${NO_UZUNLUK} → örnek palet no ${ornekNo} (${ornekNo.length} karakter)`)
-  console.log(`  Palet barkodu : ${paletKurali ? `${paletKurali.code} (önek "${paletKurali.matchPrefix ?? '-'}" → "${tip.code}" olacak)` : 'AÇILACAK'}`)
+  console.log(`  Palet barkodu : ${paletKurali ? `${paletKurali.code} (önek "${paletKurali.matchPrefix ?? '-'}" → "${ONEK}" olacak)` : 'AÇILACAK'}`)
   console.log(`  Palet etiketi : ${mevcutEtiket ? `${etiketKodu} (var, segmentler yenilenecek)` : `${etiketKodu} (AÇILACAK)`}`)
   console.log(`  Etiket deseni : paletno/ürün/parti/SKT/adet/birim   (ayraç "/", SKT ${SKT_FORMAT})`)
 
@@ -52,30 +55,46 @@ const main = async () => {
   const sayac = mevcutSayac ?? await prisma.tBLSEQUENCE.create({
     data: {
       companyId: CO, code: sayacKodu, name: `${tip.name ?? tip.code} palet numarası`,
-      prefix: tip.code, startNo: 1, currentValue: mevcutEnBuyuk, padLength: NO_UZUNLUK, isActive: true,
+      prefix: ONEK, startNo: 1, currentValue: mevcutEnBuyuk, padLength: NO_UZUNLUK, isActive: true,
     },
   })
+  await prisma.tBLSEQUENCE.update({ where: { id: sayac.id }, data: { prefix: ONEK, padLength: NO_UZUNLUK } })
   await prisma.tBLPALLETTYPE.update({ where: { id: tip.id }, data: { sequenceId: sayac.id, palletNoLength: NO_UZUNLUK } })
 
-  // 2) PALET BARKODU — öneki palet tipiyle hizala ki MEVCUT paletler de okunsun
+  // 2) PALET BARKODU — öneki SAYAÇ önekiyle hizala (yeni numaralar okunsun)
   if (paletKurali) {
-    await prisma.tBLBARCODETYPE.update({ where: { id: paletKurali.id }, data: { matchPrefix: tip.code, matchContains: null, sortOrder: 100 } })
+    await prisma.tBLBARCODETYPE.update({ where: { id: paletKurali.id }, data: { matchPrefix: ONEK, matchContains: null, sortOrder: 100 } })
   } else {
     await prisma.tBLBARCODETYPE.create({
-      data: { companyId: CO, code: `PALET-${tip.code}`, name: 'Palet no okutma', mode: 'PALLET', matchPrefix: tip.code, isActive: true, sortOrder: 100 },
+      data: { companyId: CO, code: `PALET-${ONEK}`, name: 'Palet no okutma', mode: 'PALLET', matchPrefix: ONEK, isActive: true, sortOrder: 100 },
     })
+  }
+  // Eskiden tip koduyla üretilmiş numaralar (ör. EUR000018) da okunmaya devam etsin
+  if (tip.code.toUpperCase() !== ONEK) {
+    const eskiVar = await prisma.tBLPALLET.count({ where: { companyId: CO, palletNo: { startsWith: tip.code } } })
+    if (eskiVar) {
+      const eskiKod = `PALET-ESKI-${tip.code}`
+      const mevcutEski = await prisma.tBLBARCODETYPE.findFirst({ where: { companyId: CO, code: eskiKod } })
+      if (!mevcutEski) {
+        await prisma.tBLBARCODETYPE.create({
+          data: { companyId: CO, code: eskiKod, name: `Eski palet no (${tip.code} önekli)`, mode: 'PALLET', matchPrefix: tip.code, isActive: true, sortOrder: 110 },
+        })
+      }
+      console.log(`  (${eskiVar} adet eski "${tip.code}" önekli palet için ayrı kural korunuyor)`)
+    }
   }
 
   // 3) PALET ETİKETİ — bileşik barkod. "/" içerdiği için sade palet kuralından ÖNCE denenir.
   const etiket = mevcutEtiket ?? await prisma.tBLBARCODETYPE.create({
     data: {
       companyId: CO, code: etiketKodu, name: 'Palet etiketi (palet/ürün/parti/SKT/adet/birim)',
-      mode: 'SEGMENT', matchPrefix: tip.code, matchContains: '/', separator: '/', isActive: true, sortOrder: 10,
+      mode: 'SEGMENT', matchPrefix: null, matchContains: '/', separator: '/', isActive: true, sortOrder: 10,
     },
   })
   await prisma.tBLBARCODETYPE.update({
     where: { id: etiket.id },
-    data: { mode: 'SEGMENT', matchPrefix: tip.code, matchContains: '/', separator: '/', isActive: true, sortOrder: 10 },
+    // Önek YOK: etiket hem yeni (P…) hem eski (EUR…) palet numarasıyla gelebilir; ayırt edici olan "/"
+    data: { mode: 'SEGMENT', matchPrefix: null, matchContains: '/', separator: '/', isActive: true, sortOrder: 10 },
   })
   await prisma.tBLBARCODESEGMENT.deleteMany({ where: { barcodeTypeId: etiket.id } })
   await prisma.tBLBARCODESEGMENT.createMany({

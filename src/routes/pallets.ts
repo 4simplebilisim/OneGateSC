@@ -56,7 +56,10 @@ export async function palletRoutes(app: FastifyInstance) {
       const seq = await nextSequence(companyId, palletType.sequence.code)
       const len = palletType.palletNoLength ?? 0
       const num = len > 0 ? String(seq.value).padStart(len, '0') : String(seq.value)
-      palletNo = `${palletType.code}${num}` // öne­k + sıralı no
+      // ÖNEK SAYAÇTAN gelir (legacy TBLSBSAYAC.TXTONEK) — belge numaralarında olduğu gibi.
+      // Sayaçta önek tanımlı değilse palet tipinin kodu kullanılır (geriye dönük uyum).
+      const onek = palletType.sequence.prefix ?? palletType.code
+      palletNo = `${onek}${num}`
     }
 
     try {

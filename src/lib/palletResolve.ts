@@ -29,13 +29,18 @@ export interface PalletResolveResult {
 async function palletTypeFor(
   tx: Prisma.TransactionClient, companyId: number, palletNo: string, operationTypeId?: number | null,
 ) {
-  const tipler = await tx.tBLPALLETTYPE.findMany({ where: { companyId, isActive: true }, orderBy: { id: 'asc' } })
+  const tipler = await tx.tBLPALLETTYPE.findMany({
+    where: { companyId, isActive: true }, include: { sequence: { select: { prefix: true } } }, orderBy: { id: 'asc' },
+  })
   if (!tipler.length) throw new PalletResolveError('Palet tipi tanımlı değil — Uyarlamalar › Genel › Palet Tipleri')
 
-  const onekli = tipler
-    .filter((t) => t.code && palletNo.toUpperCase().startsWith(t.code.toUpperCase()))
-    .sort((a, b) => b.code.length - a.code.length)[0]
-  if (onekli) return onekli
+  // Önek: önce tipin SAYACININ öneki (numarayı o üretiyor), sonra tip kodu.
+  // En uzun eşleşen önek kazanır (P ile PLT çakışmasın).
+  const adaylar = tipler
+    .flatMap((t) => [t.sequence?.prefix, t.code].filter((v): v is string => !!v).map((onek) => ({ t, onek })))
+    .filter((x) => palletNo.toUpperCase().startsWith(x.onek.toUpperCase()))
+    .sort((a, b) => b.onek.length - a.onek.length)
+  if (adaylar[0]) return adaylar[0].t
 
   if (operationTypeId) {
     const baglar = await tx.tBLOPERATIONTYPEPALLETTYPE.findMany({
@@ -50,7 +55,8 @@ async function palletTypeFor(
 
   if (tipler.length === 1) return tipler[0]!
   throw new PalletResolveError(
-    `"${palletNo}" için palet tipi belirlenemedi — numara hiçbir tip öneki ile başlamıyor (${tipler.map((t) => t.code).join(', ')})`,
+    `"${palletNo}" için palet tipi belirlenemedi — numara tanımlı öneklerin hiçbiriyle başlamıyor ` +
+      `(${tipler.map((t) => `${t.code}${t.sequence?.prefix && t.sequence.prefix !== t.code ? ` [sayaç öneki ${t.sequence.prefix}]` : ''}`).join(', ')})`,
   )
 }
 
