@@ -1,0 +1,117 @@
+// PALET ETİKETİ BARKODU — bileşik barkod kuralı + palet sayacı kurulumu.
+//
+//   npx tsx scripts/demo-pallet-label.ts            → RAPOR (hiçbir şey yazmaz)
+//   npx tsx scripts/demo-pallet-label.ts --uygula
+//
+// Kurduğu düzen:
+//   1) PALET SAYACI  — palet tipine sayaç + numara uzunluğu bağlar; palet no artık
+//      ELLE değil MOTORDAN doğar: <tip kodu><sıfır dolgulu sayaç>  (legacy LNGPALETNOUZUNLUK).
+//   2) PALET BARKODU — sade palet no okutması (mevcut paletler de okunsun diye
+//      kuralın öneki palet TİPİNİN koduyla hizalanır).
+//   3) PALET ETİKETİ — bileşik barkod:  paletno/ürün/parti/SKT/adet/birim
+//      SEGMENT modu, "/" ayracı, altı alan. Okutunca hepsi tek seferde çözülür.
+//
+// Numara uzunluğu PALLET_NO_LEN ile değiştirilebilir (varsayılan 7 → EUR+7 = 10 karakter).
+import { prisma } from '../src/lib/prisma.js'
+import { parseBarcode } from '../src/lib/barcodeParse.js'
+
+const UYGULA = process.argv.includes('--uygula')
+const NO_UZUNLUK = Number(process.env.PALLET_NO_LEN ?? 7)
+const SKT_FORMAT = process.env.EXPIRY_FORMAT ?? 'YYYYAAGG'
+
+const main = async () => {
+  const CO = Number(process.env.DEMO_COMPANY_ID ?? 0) || (await prisma.tBLPALLETTYPE.findFirstOrThrow({ where: { isActive: true } })).companyId
+  const tip = await prisma.tBLPALLETTYPE.findFirst({ where: { companyId: CO, isActive: true }, orderBy: { id: 'asc' } })
+  if (!tip) throw new Error(`Firma ${CO}: palet tipi yok — Uyarlamalar › Genel › Palet Tipleri`)
+
+  const enBuyuk = await prisma.tBLPALLET.findMany({ where: { companyId: CO }, select: { palletNo: true } })
+  const mevcutEnBuyuk = enBuyuk
+    .map((p) => Number(p.palletNo.replace(/\D/g, '')))
+    .filter((n) => Number.isFinite(n))
+    .reduce((a, b) => Math.max(a, b), 0)
+
+  const sayacKodu = `PALET-${tip.code}`
+  const mevcutSayac = await prisma.tBLSEQUENCE.findFirst({ where: { companyId: CO, code: sayacKodu } })
+  const etiketKodu = `PALETETIKET-${tip.code}`
+  const mevcutEtiket = await prisma.tBLBARCODETYPE.findFirst({ where: { companyId: CO, code: etiketKodu } })
+  const paletKurali = await prisma.tBLBARCODETYPE.findFirst({
+    where: { companyId: CO, mode: 'PALLET', isActive: true }, orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
+  })
+
+  const ornekNo = `${tip.code}${String(mevcutEnBuyuk + 1).padStart(NO_UZUNLUK, '0')}`
+  console.log(`\nFirma ${CO} · palet tipi ${tip.code}`)
+  console.log(`  Sayaç         : ${mevcutSayac ? `${sayacKodu} (var, değer ${mevcutSayac.currentValue})` : `${sayacKodu} (AÇILACAK, ${mevcutEnBuyuk}'den devam)`}`)
+  console.log(`  Numara uzunluk: ${NO_UZUNLUK} → örnek palet no ${ornekNo} (${ornekNo.length} karakter)`)
+  console.log(`  Palet barkodu : ${paletKurali ? `${paletKurali.code} (önek "${paletKurali.matchPrefix ?? '-'}" → "${tip.code}" olacak)` : 'AÇILACAK'}`)
+  console.log(`  Palet etiketi : ${mevcutEtiket ? `${etiketKodu} (var, segmentler yenilenecek)` : `${etiketKodu} (AÇILACAK)`}`)
+  console.log(`  Etiket deseni : paletno/ürün/parti/SKT/adet/birim   (ayraç "/", SKT ${SKT_FORMAT})`)
+
+  if (!UYGULA) { console.log('\nRAPOR modu — hiçbir şey yazılmadı. Uygulamak için --uygula ekleyin.'); return }
+
+  // 1) SAYAÇ — mevcut en büyük numaradan devam et (çakışma olmasın)
+  const sayac = mevcutSayac ?? await prisma.tBLSEQUENCE.create({
+    data: {
+      companyId: CO, code: sayacKodu, name: `${tip.name ?? tip.code} palet numarası`,
+      prefix: tip.code, startNo: 1, currentValue: mevcutEnBuyuk, padLength: NO_UZUNLUK, isActive: true,
+    },
+  })
+  await prisma.tBLPALLETTYPE.update({ where: { id: tip.id }, data: { sequenceId: sayac.id, palletNoLength: NO_UZUNLUK } })
+
+  // 2) PALET BARKODU — öneki palet tipiyle hizala ki MEVCUT paletler de okunsun
+  if (paletKurali) {
+    await prisma.tBLBARCODETYPE.update({ where: { id: paletKurali.id }, data: { matchPrefix: tip.code, matchContains: null, sortOrder: 100 } })
+  } else {
+    await prisma.tBLBARCODETYPE.create({
+      data: { companyId: CO, code: `PALET-${tip.code}`, name: 'Palet no okutma', mode: 'PALLET', matchPrefix: tip.code, isActive: true, sortOrder: 100 },
+    })
+  }
+
+  // 3) PALET ETİKETİ — bileşik barkod. "/" içerdiği için sade palet kuralından ÖNCE denenir.
+  const etiket = mevcutEtiket ?? await prisma.tBLBARCODETYPE.create({
+    data: {
+      companyId: CO, code: etiketKodu, name: 'Palet etiketi (palet/ürün/parti/SKT/adet/birim)',
+      mode: 'SEGMENT', matchPrefix: tip.code, matchContains: '/', separator: '/', isActive: true, sortOrder: 10,
+    },
+  })
+  await prisma.tBLBARCODETYPE.update({
+    where: { id: etiket.id },
+    data: { mode: 'SEGMENT', matchPrefix: tip.code, matchContains: '/', separator: '/', isActive: true, sortOrder: 10 },
+  })
+  await prisma.tBLBARCODESEGMENT.deleteMany({ where: { barcodeTypeId: etiket.id } })
+  await prisma.tBLBARCODESEGMENT.createMany({
+    data: [
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 1, field: 'PALLET', parseType: 'UNTIL', separator: '/' },
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 2, field: 'PRODUCT', parseType: 'UNTIL', separator: '/' },
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 3, field: 'BATCH', parseType: 'UNTIL', separator: '/' },
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 4, field: 'EXPIRY', parseType: 'UNTIL', separator: '/', dateFormat: SKT_FORMAT },
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 5, field: 'QUANTITY', parseType: 'UNTIL', separator: '/' },
+      { companyId: CO, barcodeTypeId: etiket.id, sortOrder: 6, field: 'UNIT', parseType: 'UNTIL', separator: '/' },
+    ],
+  })
+
+  // ── DOĞRULAMA: gerçek verilerle bileşik barkod üret ve motordan geçir ──
+  console.log('\n── DOĞRULAMA ──')
+  const dolu = await prisma.tBLSTOCK.findFirst({
+    where: { companyId: CO, palletId: { not: null }, mainQty: { gt: 0 } },
+    include: { pallet: true, product: true, unit: true },
+  })
+  const paletNo = dolu?.pallet?.palletNo ?? (await prisma.tBLPALLET.findFirst({ where: { companyId: CO }, orderBy: { id: 'desc' } }))?.palletNo
+  if (paletNo) {
+    const sade = await parseBarcode(CO, paletNo)
+    console.log(`  ${paletNo.padEnd(14)} → ${sade.matched ? sade.mode : 'EŞLEŞMEDİ'}${sade.error ? ' · ' + sade.error : ''} · içerik ${sade.pallet?.lines.length ?? 0} satır`)
+  }
+  if (dolu) {
+    const bilesik = [paletNo, dolu.product.code, dolu.batchNo || 'L001', '20271231', String(dolu.mainQty), dolu.unit?.code ?? ''].join('/')
+    const r = await parseBarcode(CO, bilesik)
+    console.log(`  ${bilesik}`)
+    console.log(`    mod=${r.mode} kural=${r.barcodeTypeCode}`)
+    console.log(`    palet=${r.fields.palletNo} (id ${r.fields.palletId ?? 'ÇÖZÜLEMEDİ'}) · ürün=${r.product?.code ?? '-'} · parti=${r.fields.batchNo ?? '-'}`)
+    console.log(`    SKT=${r.fields.expiryDate ?? '-'} · miktar=${r.fields.quantity ?? '-'} · birim=${r.unit?.code ?? '-'}`)
+    if (r.warnings?.length) console.log(`    uyarı: ${r.warnings.join(' · ')}`)
+  }
+  console.log('\nTamam. Yeni palet açarken palletNo VERMEYİN — sayaçtan üretilir.')
+}
+
+main()
+  .catch((e) => { console.error(e.message ?? e); process.exitCode = 1 })
+  .finally(() => prisma.$disconnect())

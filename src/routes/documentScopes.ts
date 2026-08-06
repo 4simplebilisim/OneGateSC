@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma.js'
+import { resolveOrCreatePallet, PalletResolveError } from '../lib/palletResolve.js'
 import { getCompanyId } from '../lib/company.js'
 import { refreshDocStatus } from '../lib/documentStatus.js'
 import { validateScopeAgainstOperation, loadTolerances, pickTolerance } from '../lib/movement.js'
@@ -30,6 +31,9 @@ const scopeSchema = z.object({
   targetLocationId: z.number().int().positive().nullable().optional(),
   targetStatusId: z.number().int().positive().nullable().optional(),
   palletId: z.number().int().positive().nullable().optional(),
+  // Etiketten okunan palet NUMARASI. Palet sistemde yoksa GİRİŞTE otomatik açılır
+  // (tedarikçi etiketi ilk kez burada görülür); çıkış/transferde olmayan palet hatadır.
+  palletNo: z.string().max(40).nullable().optional(),
   batchNo: z.string().max(100).nullable().optional(),
   serialNo: z.string().max(100).nullable().optional(),
   productionDate: dateOnly,
@@ -94,7 +98,7 @@ export async function documentScopeRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: `Tek okutmada en fazla ${maxQty} girilebilir (ElTerminalindeMaxMiktarDegeri) — girilen: ${parsed.data.quantity}` })
     }
     // documentId/productId scope kolonu değil — satır çözümlemesinde kullanılır, create'e spread edilmez
-    const { documentLineId: givenLineId, documentId, productId, ...scopeData } = parsed.data
+    const { documentLineId: givenLineId, documentId, productId, palletNo: verilenPaletNo, ...scopeData } = parsed.data
 
     let documentLineId = givenLineId
     if (!documentLineId) {
@@ -143,6 +147,26 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         document: { select: { partnerId: true, operationType: { select: { id: true, direction: true, qualityControl: true, controlMode: true, stockRotation: true, reserveTransfer: true } } } },
       },
     })
+    // PALET: etiketten gelen palet NUMARASI kayda bağlanır.
+    // Palet no basılı bir kâğıttır — sisteme ancak BURADA, okutmayla girer:
+    // önce palet kaydı açılır (id alınır), stok complete'te o id ile yazılır.
+    let paletAcildi: { palletNo: string; palletTypeCode: string } | null = null
+    if (verilenPaletNo && scopeData.palletId == null) {
+      const yon = ln?.document.operationType.direction
+      try {
+        const r = await prisma.$transaction((tx) => resolveOrCreatePallet(tx, companyId, verilenPaletNo, {
+          allowCreate: yon === 'INBOUND',            // yalnız girişte aç
+          operationTypeId: ln?.document.operationType.id ?? null,
+          baseUnitId: scopeData.unitId,
+        }))
+        scopeData.palletId = r.palletId
+        if (r.created) paletAcildi = { palletNo: r.palletNo, palletTypeCode: r.palletTypeCode }
+      } catch (err) {
+        if (err instanceof PalletResolveError) return reply.code(400).send({ error: err.message })
+        throw err
+      }
+    }
+
     // Okutulan (miras dahil) kaynak/hedef lokasyon+statü
     const eff = {
       sourceLocationId: scopeData.sourceLocationId ?? ln?.sourceLocationId ?? null,
@@ -248,7 +272,9 @@ export async function documentScopeRoutes(app: FastifyInstance) {
         pickedBatchNo: scopeData.batchNo ?? ln!.batchNo ?? null,
       })
     }
-    return reply.code(201).send(warning ? { ...created, _warning: warning } : created)
+    // Palet ilk kez bu okutmada açıldıysa ekran haber versin (operatör yeni palet doğduğunu görsün)
+    const paletBilgi = paletAcildi ? { _palletCreated: paletAcildi } : {}
+    return reply.code(201).send({ ...created, ...(warning ? { _warning: warning } : {}), ...paletBilgi })
   })
 
   app.patch('/:id', { preHandler: [app.authenticate, app.requireWrite] }, async (request, reply) => {

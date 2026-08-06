@@ -223,7 +223,18 @@ export async function parseBarcode(companyId: number, rawCode: string, opts: { f
       else if (s.field === 'EXPIRY') { value = parseBarcodeDate(raw, s.dateFormat); res.fields.expiryDate = value }
       else if (s.field === 'BATCH') { res.fields.batchNo = raw.trim() || undefined }
       else if (s.field === 'SERIAL') { res.fields.serialNo = raw.trim() || undefined }
-      else if (s.field === 'PALLET') { res.fields.palletNo = raw.trim() || undefined }
+      else if (s.field === 'PALLET') {
+        // Paleti ÇÖZ: yalnız numarayı taşımak yetmez — okutmada stok palete bağlanacak,
+        // bunun için palletId gerekir. Palet yoksa uyarı verilir (barkod yine çözülür:
+        // ürün/parti/miktar okunmuş durumda, ekran paleti açmayı önerebilir).
+        const pno = raw.trim()
+        res.fields.palletNo = pno || undefined
+        if (pno) {
+          const pc = await palletContents(companyId, pno)
+          if (pc) { res.fields.palletId = pc.palletId; res.pallet = pc.view }
+          else res.warnings!.push(`Palet bulunamadı: ${pno}`)
+        }
+      }
       view.push({ field: s.field, raw, value })
     }
     res.segments = view

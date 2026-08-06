@@ -12,6 +12,7 @@
     "reset": "node prisma/reset-data.mjs && tsx src/bootstrap.ts",
     "test:smoke": "tsx tests/smoke.ts",
     "test:round": "tsx tests/e2e-round.ts",
+    "test:pallet": "tsx tests/e2e-pallet-label.ts",
     "test:e2e": "node tests/run-all.mjs",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
