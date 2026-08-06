@@ -32,11 +32,14 @@ const main = async () => {
   if (kural.matchContains) {
     console.log(`⚠ Kural "${kural.code}" barkodun "${kural.matchContains}" içermesini istiyor — palet no buna göre üretiliyor.`)
   }
-  const onek = kural.matchPrefix ?? 'P'
-  const palNo = (n: number) => `${onek}${String(n).padStart(4, '0')}${kural.matchContains ?? ''}`
-
-  const palTip = await prisma.tBLPALLETTYPE.findFirst({ where: { companyId: CO, isActive: true } })
+  const palTip = await prisma.tBLPALLETTYPE.findFirst({ where: { companyId: CO, isActive: true }, include: { sequence: true } })
   if (!palTip) throw new Error('Palet tipi tanımlı değil — Uyarlamalar › Genel › Palet Tipleri')
+  if (!palTip.sequenceId) {
+    throw new Error(`Palet tipi ${palTip.code} için SAYAÇ tanımlı değil — önce: npx tsx scripts/demo-pallet-label.ts --uygula`)
+  }
+  if (kural.matchPrefix && !palTip.code.toUpperCase().startsWith(kural.matchPrefix.toUpperCase())) {
+    throw new Error(`Palet barkod kuralının öneki "${kural.matchPrefix}" ama palet tipi "${palTip.code}" — sayaçtan doğan numaralar okunmaz. demo-pallet-label.ts hizalar.`)
+  }
 
   // Dolu palet için: stoklu bir ürün + onun barkodu + giriş operasyonu + hedef lokasyon/statü
   const stok = await prisma.tBLSTOCK.findFirst({
@@ -61,9 +64,9 @@ const main = async () => {
     where: { companyId: CO, isActive: true, productUnit: { productId: stok.productId } },
   })
 
-  const varOlan = await prisma.tBLPALLET.findMany({ where: { companyId: CO, palletNo: { in: [1, 2, 3].map(palNo) } } })
-  console.log(`\nFirma ${CO} · palet kuralı "${kural.code}" (önek "${onek}") · palet tipi ${palTip.code}`)
-  console.log(`Açılacak paletler: ${[1, 2, 3].map(palNo).join(', ')}  (mevcut: ${varOlan.length})`)
+  const ADET = Number(process.env.DEMO_PALLET_COUNT ?? 3)
+  console.log(`\nFirma ${CO} · palet kuralı "${kural.code}" (önek "${kural.matchPrefix ?? '-'}") · palet tipi ${palTip.code}`)
+  console.log(`Açılacak palet: ${ADET} adet — numaralar SAYAÇTAN (${palTip.sequence?.code}, uzunluk ${palTip.palletNoLength ?? '-'})`)
   console.log(`Dolu palet için ürün: ${stok.product.code} · lokasyon ${stok.location.code} · birim ${stok.unit?.code ?? '?'}`)
   console.log(`Giriş operasyonu: ${opGir.code} (${opGir.controlMode}) · hedef statü #${hedefStatuId}`)
   if (urunBarkod) console.log(`Ürün barkodu (EAN): ${urunBarkod.barcode}`)
@@ -74,15 +77,15 @@ const main = async () => {
     return
   }
 
+  // Paletleri API'den aç: palletNo VERİLMEZ → palet tipinin sayacından doğar
   const paletler: Array<{ no: string; id: number; yeni: boolean }> = []
-  for (const n of [1, 2, 3]) {
-    const no = palNo(n)
-    const mevcut = varOlan.find((p) => p.palletNo === no)
-    if (mevcut) { paletler.push({ no, id: mevcut.id, yeni: false }); continue }
-    const p = await prisma.tBLPALLET.create({
-      data: { companyId: CO, palletNo: no, palletTypeId: palTip.id, baseUnitId: stok.unitId, isActive: true },
+  for (let n = 0; n < ADET; n++) {
+    const r = await app.inject({
+      method: 'POST', url: '/api/pallets', headers: auth,
+      payload: { palletTypeId: palTip.id, baseUnitId: stok.unitId },
     })
-    paletler.push({ no, id: p.id, yeni: true })
+    if (r.statusCode !== 201) throw new Error('Palet açılamadı: ' + r.body)
+    paletler.push({ no: r.json().palletNo, id: r.json().id, yeni: true })
   }
 
   // 1. palete GERÇEK belgeyle stok koy (zaten doluysa dokunma)
