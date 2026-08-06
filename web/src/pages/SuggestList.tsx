@@ -8,6 +8,7 @@ type OpType = { id: number; code: string; name?: string; direction: string }
 type Row = {
   malzeme: string; aciklama: string; kaynakLokasyon: string; hedefLokasyon: string
   stokMiktari: string; birim: string; miktar: string
+  toplamaKirilimi?: string; toplamaOperasyonu?: string
 }
 
 // Öneri Listesi — SALT GÖSTERİM. Var olan bir belge seçilir → o belgenin ürünleri için
@@ -116,6 +117,9 @@ export const SuggestList = ({ mode }: { mode: 'putaway' | 'pick' }) => {
                 otherCol,
                 suggestCol,
                 { title: 'Stok Miktarı', dataIndex: 'stokMiktari', align: 'right' as const },
+                // Toplama sırası parametresi tanımlıysa kırılım + o kırılımın operasyonu
+                { title: 'Toplama Kırılımı', dataIndex: 'toplamaKirilimi', width: 130, render: (v: string) => v || '—' },
+                { title: 'Toplama Op.', dataIndex: 'toplamaOperasyonu', width: 120, render: (v: string) => v || '—' },
                 { title: 'Birim', dataIndex: 'birim' },
                 { title: 'Miktar', dataIndex: 'miktar', align: 'right' as const },
               ]} />

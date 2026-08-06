@@ -863,19 +863,75 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
     // ikinci operasyonun belgesi otomatik doğar (ör. mal kabul → yerleştirme transferi).
     // Kapsam filtreleri: cari (belge düzeyi), malzeme + lokasyon (satır düzeyi). İdempotent (reverse→re-complete üretmez).
     let sequentialDocument: { id: number; documentNo: string } | null = null
-    const seqRules = await tx.tBLSEQUENTIALOPERATION.findMany({
+
+    /** Tetik kuralı — sıralı operasyon VE toplama stratejisi aynı mekanizmayı kullanır. */
+    type TetikKurali = {
+      secondOperationId: number
+      cariLinkType: string | null; cariLinkId: number | null
+      materialLinkType: string | null; materialLinkId: number | null
+      locationLinkType: string | null; locationLinkId: number | null
+      muafLokIds?: Set<number>   // ürün bazlı toplamada muaf lokasyonlar
+      kaynakAdi: string          // belge notunda görünür
+    }
+
+    const seqRows = await tx.tBLSEQUENTIALOPERATION.findMany({
       where: {
         companyId: doc.companyId, firstOperationId: op.id, isActive: true,
         OR: [{ facilityId: null }, { facilityId: op.facilityId ?? -1 }],
       },
       orderBy: { id: 'asc' },
     })
+
+    // TOPLAMA STRATEJİSİ (ürün bazlı / sefer bazlı) — ekranları vardı, hiçbir kod okumuyordu.
+    // Yapıları sıralı operasyonla aynı: cari + kaynak operasyon → hedef operasyon.
+    // Ürün bazlıda ayrıca MUAF LOKASYONLAR (o gözlerden toplama devri yapılmaz).
+    const urunBazli = await tx.tBLPRODUCTBASEDCOLLECTION.findMany({
+      where: { companyId: doc.companyId, sourceOperationTypeId: op.id, isActive: true },
+      orderBy: { id: 'asc' },
+    })
+    const seferBazli = await tx.tBLTRIPBASEDCOLLECTION.findMany({
+      where: { companyId: doc.companyId, sourceOperationTypeId: op.id, isActive: true },
+      orderBy: { id: 'asc' },
+    })
+
+    // Muaf lokasyon KODLARI → id (virgülle ayrılmış metin)
+    const muafKodlar = [...new Set(urunBazli.flatMap((r) => (r.exemptLocations ?? '').split(',').map((x) => x.trim()).filter(Boolean)))]
+    const muafIdOf = new Map<string, number>()
+    if (muafKodlar.length) {
+      const locs = await tx.tBLLOCATION.findMany({ where: { companyId: doc.companyId, code: { in: muafKodlar } }, select: { id: true, code: true } })
+      for (const l of locs) muafIdOf.set(l.code, l.id)
+    }
+
+    const seqRules: TetikKurali[] = [
+      ...seqRows.map((r) => ({
+        secondOperationId: r.secondOperationId,
+        cariLinkType: r.cariLinkType as string | null, cariLinkId: r.cariLinkId,
+        materialLinkType: r.materialLinkType as string | null, materialLinkId: r.materialLinkId,
+        locationLinkType: r.locationLinkType as string | null, locationLinkId: r.locationLinkId,
+        kaynakAdi: 'Sıralı operasyon',
+      })),
+      ...urunBazli.map((r) => ({
+        secondOperationId: r.targetOperationTypeId,
+        cariLinkType: 'SPECIFIC' as string | null, cariLinkId: r.businessPartnerId,
+        materialLinkType: null, materialLinkId: null, locationLinkType: null, locationLinkId: null,
+        muafLokIds: new Set((r.exemptLocations ?? '').split(',').map((x) => x.trim()).filter(Boolean)
+          .map((c) => muafIdOf.get(c)).filter((v): v is number => v != null)),
+        kaynakAdi: 'Ürün bazlı toplama',
+      })),
+      ...seferBazli.map((r) => ({
+        secondOperationId: r.targetOperationTypeId,
+        cariLinkType: 'SPECIFIC' as string | null, cariLinkId: r.businessPartnerId,
+        materialLinkType: null, materialLinkId: null, locationLinkType: null, locationLinkId: null,
+        kaynakAdi: 'Sefer bazlı toplama',
+      })),
+    ]
+
     if (seqRules.length) {
       // Cari kapsamı (belge düzeyi): ALL/boş geçer; SPECIFIC=cari, GROUP=cari grubu eşleşmeli
       const partnerGroupId = doc.partnerId
         ? (await tx.tBLBUSINESSPARTNER.findUnique({ where: { id: doc.partnerId }, select: { partnerGroupId: true } }))?.partnerGroupId ?? null
         : null
-      const cariOk = (r: (typeof seqRules)[number]) =>
+      const cariOk = (r: TetikKurali) =>
         !r.cariLinkType || r.cariLinkType === 'ALL' ||
         (r.cariLinkType === 'SPECIFIC' && doc.partnerId === r.cariLinkId) ||
         (r.cariLinkType === 'GROUP' && partnerGroupId != null && partnerGroupId === r.cariLinkId)
@@ -906,6 +962,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
               const push = (qty: Prisma.Decimal, batchNo: string | null, serialNo: string | null, locId: number | null, staId: number | null) => {
                 if (qty.lte(0)) return
                 if (rule.locationLinkType === 'SPECIFIC' && locId !== rule.locationLinkId) return
+                if (rule.muafLokIds?.size && locId != null && rule.muafLokIds.has(locId)) return // muaf lokasyon
                 const key = [l.productId, l.unitId, batchNo ?? '', serialNo ?? '', locId ?? '', staId ?? ''].join('|')
                 const ex = units.get(key)
                 if (ex) ex.quantity = ex.quantity.add(qty)
@@ -924,7 +981,7 @@ export async function completeDocument(documentId: number, breakOpts: CompleteOp
                 data: {
                   companyId: doc.companyId, documentNo: seqNo, operationTypeId: secondOp.id, status: 'DRAFT',
                   createdById: doc.createdById, partnerId: doc.partnerId, referenceDocumentId: doc.id,
-                  note: `Sıralı operasyon: ${doc.documentNo}`,
+                  note: `${rule.kaynakAdi}: ${doc.documentNo}`,
                   lines: {
                     create: [...units.values()].map((u, i) => ({
                       companyId: doc.companyId, lineNo: i + 1, productId: u.productId, unitId: u.unitId,

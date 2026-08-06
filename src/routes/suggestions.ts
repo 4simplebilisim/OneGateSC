@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { prisma } from '../lib/prisma.js'
 import { getCompanyId } from '../lib/company.js'
 import { suggestPutawayLocations } from '../lib/routing.js'
+import { loadPickOrderParameter, resolvePickPlan, pickGranularityLabel } from '../lib/pickOrder.js'
 import { rotationOrderBy, type Rotation } from '../lib/rotation.js'
 
 // Öneri Listesi — SALT GÖSTERİM (belge oluşturmaz):
@@ -33,6 +34,9 @@ export async function suggestionListRoutes(app: FastifyInstance) {
     // Çıkış stok rotasyonu operasyondan gelir (FEFO=SKT / FIFO=üretim / NONE=giriş sırası)
     const rotation = (doc.operationType.stockRotation ?? 'NONE') as Rotation
 
+    // Toplama sırası parametresi bir kez çözülür (satır başına sorgu yapılmasın)
+    const pickParam = direction === 'OUTBOUND' ? await loadPickOrderParameter(companyId, doc.partnerId) : null
+
     const rows = []
     for (const line of doc.lines) {
       if (direction === 'OUTBOUND') {
@@ -52,11 +56,16 @@ export async function suggestionListRoutes(app: FastifyInstance) {
           .filter((s) => s.avail > 0)
           .sort((a, b) => Number(b.own) - Number(a.own)) // stable: kendi rezervi öne, gerisi rotasyon sırasında
         const available = usable.reduce((s, u) => s + u.avail, 0)
+        // TOPLAMA KIRILIMI (TBLPICKORDERPARAMETER): tam palet / tam koli / parçalı
+        // ve o kırılımı hangi operasyonun karşılayacağı. Parametre yoksa kolon boş kalır.
+        const plan = await resolvePickPlan(companyId, { productId: line.productId, quantity: line.quantity, partnerId: doc.partnerId }, pickParam)
         rows.push({
           malzeme: line.product.code, aciklama: line.product.name ?? '',
           kaynakLokasyon: usable[0] ? `${usable[0].x.location.code}${usable[0].own ? ' (rezerve)' : ''}` : '— (stok yok)',
           hedefLokasyon: line.targetLocation?.code ?? 'Sevkiyat',
           stokMiktari: String(available), birim: line.unit.code, miktar: line.quantity.toString(),
+          toplamaKirilimi: plan ? pickGranularityLabel(plan.granularity) : '',
+          toplamaOperasyonu: plan?.operationCode ?? '',
         })
       } else {
         // Giriş/Transfer: nereye girilecek — yönlendirme kuralından önerilen hedef (öneri = hedef lokasyon)
@@ -70,6 +79,7 @@ export async function suggestionListRoutes(app: FastifyInstance) {
           kaynakLokasyon: line.sourceLocation?.code ?? '—',
           hedefLokasyon: hedef?.code ?? '— (kural yok)',
           stokMiktari: stok?._sum.mainQty?.toString() ?? '0', birim: line.unit.code, miktar: line.quantity.toString(),
+          toplamaKirilimi: '', toplamaOperasyonu: '',
         })
       }
     }
