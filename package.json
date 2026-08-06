@@ -13,6 +13,7 @@
     "test:smoke": "tsx tests/smoke.ts",
     "test:round": "tsx tests/e2e-round.ts",
     "test:pallet": "tsx tests/e2e-pallet-label.ts",
+    "probe:negative": "tsx tests/probe-negative.ts",
     "test:e2e": "node tests/run-all.mjs",
     "migrate": "prisma migrate dev",
     "generate": "prisma generate",
