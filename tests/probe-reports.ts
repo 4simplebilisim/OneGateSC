@@ -38,7 +38,7 @@ const sonuc: Array<{ ad: string; kaynak: string; durum: string; detay: string }>
 
 for (const d of defs) {
   const motorVar = MOTORLU.has(d.sourceKey)
-  const r = await app.inject({ method: 'POST', url: `/api/report-defs/${d.id}/run`, headers: auth, payload: {} })
+  const r = await app.inject({ method: 'POST', url: `/api/report-run/${d.id}/run`, headers: auth, payload: {} })
   let durum: string, detay: string
   if (r.statusCode !== 200) {
     durum = 'HATA'
