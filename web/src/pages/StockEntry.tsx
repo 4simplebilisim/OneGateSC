@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { App, Button, Card, Empty, Input, InputNumber, Select, Space, Table, Tag } from 'antd'
-import { ScanOutlined, PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons'
+import { TableOutlined, ScanOutlined, PlusOutlined, DeleteOutlined, SaveOutlined } from '@ant-design/icons'
 import { axiosInstance } from '../providers/dataProvider'
 import { PageHeader } from '../components/PageHeader'
+import { StockPicker, type StokSatiri } from '../components/StockPicker'
 
 type Opt = { value: number; label: string }
 type OpType = { id: number; code: string; name?: string; direction: string }
-type Line = { key: number; productId?: number; unitId?: number; quantity: number; locationId?: number; statusId?: number; batchNo?: string; serialNo?: string }
+type Line = { key: number; productId?: number; unitId?: number; quantity: number; locationId?: number; statusId?: number; batchNo?: string; serialNo?: string; palletId?: number; palletNo?: string }
 
 const errMsg = (e: unknown, f: string) => (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? f
 const arr = (d: unknown) => (Array.isArray(d) ? d : ((d as { data?: unknown[] })?.data ?? []))
@@ -22,6 +23,7 @@ export const StockEntry = ({ direction = 'INBOUND' }: { direction?: 'INBOUND' | 
   const { message } = App.useApp()
   const navigate = useNavigate()
   const isOut = direction === 'OUTBOUND'
+  const [rehberAcik, setRehberAcik] = useState(false)
   const [ops, setOps] = useState<Opt[]>([])
   const [warehouses, setWarehouses] = useState<Opt[]>([])
   const [products, setProducts] = useState<Opt[]>([])
@@ -121,6 +123,31 @@ export const StockEntry = ({ direction = 'INBOUND' }: { direction?: 'INBOUND' | 
       return [...prev, { key: keyRef.current++, quantity: 1, statusId: tekStatu, ...partial }]
     })
 
+  // Rehberden seçilen stok satırları: anahtarı (lokasyon+statü+parti+seri+palet) AYNEN taşınır,
+  // miktar serbest miktardan gelir. Böylece "olmayan kombinasyon yazma" hatası kalmaz.
+  const rehberdenEkle = (secilenler: StokSatiri[]) => {
+    setLines((prev) => {
+      const yeni = [...prev]
+      for (const r of secilenler) {
+        const ayni = yeni.findIndex((l) =>
+          l.productId === r.productId && l.unitId === (r.unitId ?? undefined) &&
+          l.locationId === r.locationId && l.statusId === (r.statusId ?? undefined) &&
+          (l.batchNo ?? '') === (r.batchNo ?? '') && (l.serialNo ?? '') === (r.serialNo ?? '') &&
+          (l.palletId ?? 0) === (r.palletId ?? 0))
+        if (ayni >= 0) { yeni[ayni] = { ...yeni[ayni]!, quantity: r.serbest }; continue }
+        yeni.push({
+          key: keyRef.current++, productId: r.productId, unitId: r.unitId ?? undefined,
+          quantity: r.serbest, locationId: r.locationId, statusId: r.statusId ?? undefined,
+          batchNo: r.batchNo ?? undefined, serialNo: r.serialNo ?? undefined,
+          palletId: r.palletId ?? undefined, palletNo: r.palletNo ?? undefined,
+        })
+      }
+      return yeni
+    })
+    for (const r of secilenler) loadUnits(r.productId)
+    message.success(`${secilenler.length} stok satırı eklendi`)
+  }
+
   const scan = () => {
     const code = barcode.trim()
     if (!code) return
@@ -154,6 +181,7 @@ export const StockEntry = ({ direction = 'INBOUND' }: { direction?: 'INBOUND' | 
             ? { sourceLocationId: l.locationId, sourceStatusId: l.statusId }
             : { targetLocationId: l.locationId, targetStatusId: l.statusId }),
           batchNo: l.batchNo || undefined, serialNo: l.serialNo || undefined,
+          ...(l.palletId ? { palletId: l.palletId } : {}), // rehberden seçilen stoğun paleti korunur
         })),
       })
       docId = doc.data.id
@@ -170,6 +198,7 @@ export const StockEntry = ({ direction = 'INBOUND' }: { direction?: 'INBOUND' | 
               ? { sourceLocationId: l.locationId, sourceStatusId: l.statusId }
               : { targetLocationId: l.locationId, targetStatusId: l.statusId }),
             batchNo: l.batchNo || null, serialNo: l.serialNo || null,
+            ...(l.palletId ? { palletId: l.palletId } : {}),
           })
         } catch (e) {
           throw new Error(`Satır ${i + 1}: ${errMsg(e, 'okutma kaydedilemedi')}`)
@@ -215,9 +244,21 @@ export const StockEntry = ({ direction = 'INBOUND' }: { direction?: 'INBOUND' | 
             value={barcode} onChange={(e) => setBarcode(e.target.value)} onPressEnter={scan} allowClear autoFocus
           />
           <Button onClick={scan}>Okut</Button>
-          <Button icon={<PlusOutlined />} onClick={() => addLine({})}>Rehberden Satır Ekle</Button>
+          {/* ÇIKIŞTA rehber: eldeki stok satırlarından seçtirir (lokasyon/statü/parti/palet kendiliğinden gelir).
+              GİRİŞTE böyle bir liste yok — mal henüz depoda değil, satır elle/okutmayla eklenir. */}
+          {isOut
+            ? <Button type="dashed" icon={<TableOutlined />} onClick={() => setRehberAcik(true)}>Stoktan Seç (Rehber)</Button>
+            : <Button icon={<PlusOutlined />} onClick={() => addLine({})}>Boş Satır Ekle</Button>}
         </Space>
       </Card>
+
+      {isOut && (
+        <StockPicker
+          open={rehberAcik} onClose={() => setRehberAcik(false)} onPick={rehberdenEkle}
+          warehouseId={warehouseId}
+          allowedStatusIds={statusOpts.map((o) => o.value)}
+        />
+      )}
 
       <Card className="og-section-card" size="small" title={`Satırlar (${lines.length})`}
         extra={<Button type="primary" icon={<SaveOutlined />} loading={busy} disabled={!lines.length} onClick={submit}>{isOut ? 'Çıkış Yap' : 'Giriş Yap'}</Button>}>
