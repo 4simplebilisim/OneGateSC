@@ -164,9 +164,11 @@ export async function documentScopeRoutes(app: FastifyInstance) {
               prisma.tBLUNIT.findUnique({ where: { id: scopeData.unitId }, select: { code: true } }),
               urun.unitId ? prisma.tBLUNIT.findUnique({ where: { id: urun.unitId }, select: { code: true } }) : null,
             ])
+            // Ürünün ana birimi HİÇ yoksa asıl sorun o — mesaj oraya işaret etsin
             return reply.code(400).send({
-              error: `Birim uyumsuz — "${okutulan?.code ?? scopeData.unitId}" birimi ${urun.code} ürününe tanımlı değil` +
-                (ana ? ` (ana birim ${ana.code})` : '') + '. Ürün › Birimler sekmesinden ekleyin.',
+              error: ana
+                ? `Birim uyumsuz — "${okutulan?.code ?? scopeData.unitId}" birimi ${urun.code} ürününe tanımlı değil (ana birim ${ana.code}). Ürün › Ölçü Birimleri sekmesinden ekleyin.`
+                : `${urun.code} ürününün ANA ÖLÇÜ BİRİMİ tanımlı değil — okutma yapılamaz. Ürün kartından ana birimi seçin.`,
             })
           }
         }
